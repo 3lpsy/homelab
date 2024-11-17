@@ -1,18 +1,4 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
 
-# Configure the AWS Provider
-provider "aws" {
-  region     = var.aws_region
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-}
 
 # Create VPC
 resource "aws_vpc" "main" {
@@ -52,22 +38,30 @@ resource "aws_network_acl" "main" {
     from_port  = 0
     to_port    = 65535
   }
-
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 200
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 443
-    to_port    = 443
+  egress {
+    protocol        = "tcp"
+    rule_no         = 200
+    action          = "allow"
+    ipv6_cidr_block = "::/0"
+    from_port       = 0
+    to_port         = 65535
   }
   ingress {
     protocol   = "tcp"
     rule_no    = 300
     action     = "allow"
     cidr_block = "0.0.0.0/0"
-    from_port  = 22
-    to_port    = 22
+    from_port  = 0
+    to_port    = 65535
+  }
+
+  ingress {
+    protocol        = "tcp"
+    rule_no         = 400
+    action          = "allow"
+    ipv6_cidr_block = "::/0"
+    from_port       = 0
+    to_port         = 65535
   }
 
   tags = {
@@ -144,15 +138,28 @@ resource "aws_security_group" "main" {
   }
 }
 
-# Create EC2 Instance
 resource "aws_instance" "main" {
-  ami           = "ami-0557a15b87f6559cf"
-  instance_type = "t2.micro"
-
+  ami                    = var.ami
+  instance_type          = var.instance_type
   vpc_security_group_ids = [aws_security_group.main.id]
   subnet_id              = aws_subnet.main.id
-
+  user_data              = <<-EOF
+    #!/bin/bash
+    mkdir -p /home/${var.ec2_user}/.ssh
+    echo "${var.ssh_pub_key}" >> /home/${var.ec2_user}/.ssh/authorized_keys
+    chown -R ${var.ec2_user}:${var.ec2_user} /home/${var.ec2_user}/.ssh
+    chmod 600 /home/${var.ec2_user}/.ssh/authorized_keys
+  EOF
   tags = {
     Name = "headscale"
   }
+}
+
+resource "aws_eip" "main" {
+  instance = aws_instance.main.id
+  domain   = "vpc"
+  tags = {
+    Name = "headscale"
+  }
+  depends_on = [aws_internet_gateway.main]
 }
