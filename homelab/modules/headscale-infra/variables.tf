@@ -15,3 +15,8 @@ variable "instance_type" {
   type    = string
   default = "t2.micro"
 }
+
+# for backups
+variable "backup_bucket_name" {
+  type = string
+}

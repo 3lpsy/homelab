@@ -138,22 +138,6 @@ resource "aws_security_group" "main" {
   }
 }
 
-resource "aws_instance" "main" {
-  ami                    = var.ami
-  instance_type          = var.instance_type
-  vpc_security_group_ids = [aws_security_group.main.id]
-  subnet_id              = aws_subnet.main.id
-  user_data              = <<-EOF
-    #!/bin/bash
-    mkdir -p /home/${var.ec2_user}/.ssh
-    echo "${var.ssh_pub_key}" >> /home/${var.ec2_user}/.ssh/authorized_keys
-    chown -R ${var.ec2_user}:${var.ec2_user} /home/${var.ec2_user}/.ssh
-    chmod 600 /home/${var.ec2_user}/.ssh/authorized_keys
-  EOF
-  tags = {
-    Name = "headscale"
-  }
-}
 
 resource "aws_eip" "main" {
   instance = aws_instance.main.id
@@ -162,4 +146,93 @@ resource "aws_eip" "main" {
     Name = "headscale"
   }
   depends_on = [aws_internet_gateway.main]
+}
+
+
+# Backup
+resource "aws_s3_bucket" "main" {
+  bucket = var.backup_bucket_name # Replace with a unique bucket name
+  tags = {
+    Name = var.backup_bucket_name
+  }
+}
+resource "aws_s3_bucket_ownership_controls" "main" {
+  bucket = aws_s3_bucket.main.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+resource "aws_s3_bucket_acl" "main" {
+  depends_on = [aws_s3_bucket_ownership_controls.main]
+
+  bucket = aws_s3_bucket.main.id
+  acl    = "private"
+}
+
+# IAM Role for EC2 instance
+resource "aws_iam_role" "main" {
+  name               = "homelab-headscale-s3-append"
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      }
+    }
+  ]
+}
+EOF
+}
+
+# Attach policy to IAM Role
+resource "aws_iam_role_policy" "main" {
+  name = "homelab-headscale-s3-append"
+  role = aws_iam_role.main.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:PutObjectAcl",
+        "s3:GetObjectAcl"
+      ],
+      "Resource": "${aws_s3_bucket.main.arn}/headscale/*"
+    }
+  ]
+}
+EOF
+}
+resource "aws_iam_instance_profile" "main" {
+  name = aws_iam_role.main.name
+  role = aws_iam_role.main.name
+}
+
+
+resource "aws_instance" "main" {
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  vpc_security_group_ids = [aws_security_group.main.id]
+  subnet_id              = aws_subnet.main.id
+  iam_instance_profile   = aws_iam_instance_profile.main.name
+  user_data              = <<-EOF
+    #!/bin/bash
+    mkdir -p /home/${var.ec2_user}/.ssh
+    echo "${var.ssh_pub_key}" >> /home/${var.ec2_user}/.ssh/authorized_keys
+    chown -R ${var.ec2_user}:${var.ec2_user} /home/${var.ec2_user}/.ssh
+    chmod 600 /home/${var.ec2_user}/.ssh/authorized_keys
+    sudo timedatectl set-ntp 1
+    sudo timedatectl set-timezone America/Chicago
+  EOF
+  tags = {
+    Name = "headscale"
+  }
 }

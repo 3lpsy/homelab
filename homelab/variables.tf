@@ -28,6 +28,9 @@ variable "headscale_subdomain" {
   type    = string
   default = "hs"
 }
+variable "homelab_bucket_name" {
+  type = string
+}
 variable "registration_email_address" {
   type = string
 }

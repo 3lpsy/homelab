@@ -17,10 +17,11 @@ provider "aws" {
 }
 
 module "headscale-infra" {
-  source      = "./modules/headscale-infra"
-  ami         = "ami-0557a15b87f6559cf"
-  ec2_user    = "ubuntu"
-  ssh_pub_key = trimspace(file(var.ssh_pub_key_path))
+  source             = "./modules/headscale-infra"
+  ami                = "ami-0557a15b87f6559cf"
+  ec2_user           = "ubuntu"
+  ssh_pub_key        = trimspace(file(var.ssh_pub_key_path))
+  backup_bucket_name = var.homelab_bucket_name
 }
 
 module "headscale-infra-dns" {
@@ -72,4 +73,5 @@ module "headscale-provision-headscale" {
   headscale_server_domain = module.headscale-infra-tls.certificate_domain
   headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
   depends_on              = [module.headscale-infra-tls, module.headscale-provision-dep]
+  backup_bucket_name      = module.headscale-infra.backup_bucket_name
 }

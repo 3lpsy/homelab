@@ -2,16 +2,10 @@
 
 # TODO:
 - No ansible, just terraform
-  - Make sure /etc/headscale exists (correct perms)
-  - Write headscale config
-  - Write headscale service file
-  - Need to re/start services
-  - Need to configure log rotation
-
-  - Need to restore from backup if exists (regular backups done by nomad)
-  - Need to enable auto update
-
-  - Next, move on to management of headscale via terraform.
+  - Install fedora on homebox
+  - Setup nomad on bare metal
+  - Migrate cal to nomad FC VM
+  - Management of VMs via terraform+headscale
 
 # Gather Tools
 

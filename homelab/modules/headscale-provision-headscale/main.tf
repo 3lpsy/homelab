@@ -1,12 +1,6 @@
 
 
-resource "null_resource" "main" {
-  # # Triggers to ensure the resource runs when the certificates change
-  # triggers = {
-  #   fullchain_pem = md5(var.tls_fullchain_pem)
-  #   privkey_pem   = md5(var.tls_privkey_pem)
-  # }
-
+resource "null_resource" "headscale_config" {
   connection {
     type        = "ssh"
     host        = var.server_ip
@@ -34,6 +28,16 @@ resource "null_resource" "main" {
       "sudo chmod 644 /etc/headscale/config.yaml"
     ]
   }
+}
+
+resource "null_resource" "headscale_service" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
 
   provisioner "file" {
     content     = templatefile("${path.root}/../data/headscale.service.tpl", {})
@@ -49,6 +53,18 @@ resource "null_resource" "main" {
       "sudo systemctl restart headscale"
     ]
   }
+  depends_on = [null_resource.headscale_config]
+}
+
+
+resource "null_resource" "journald" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
 
   provisioner "file" {
     content     = templatefile("${path.root}/../data/journald.conf.tpl", {})
@@ -63,4 +79,85 @@ resource "null_resource" "main" {
       "sudo systemctl restart systemd-journald"
     ]
   }
+}
+
+
+# ED25519 key
+resource "tls_private_key" "encryption_key" {
+  algorithm = "ED25519"
+}
+
+resource "null_resource" "encryption_key" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "file" {
+    content     = tls_private_key.encryption_key.public_key_openssh
+    destination = "/home/${var.ssh_user}/encryption_key.pub"
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo mv /home/${var.ssh_user}/encryption_key.pub /etc/headscale/encryption_key.pub",
+      "sudo chown root:headscale /etc/headscale/encryption_key.pub"
+    ]
+  }
+}
+
+resource "null_resource" "backup_script" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "file" {
+    content = templatefile("${path.root}/../data/backup-headscale.sh.tpl", {
+      ssh_pub_key_path   = "/etc/headscale/encryption_key.pub",
+      backup_bucket_name = var.backup_bucket_name
+    })
+    destination = "/home/${var.ssh_user}/backup-headscale.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo mv /home/${var.ssh_user}/backup-headscale.sh /usr/local/bin/backup-headscale.sh",
+      "sudo chown root:headscale /usr/local/bin/backup-headscale.sh",
+      "sudo chmod 644 /usr/local/bin/backup-headscale.sh",
+      "sudo chmod g+x /usr/local/bin/backup-headscale.sh"
+    ]
+  }
+  depends_on = [null_resource.encryption_key]
+}
+
+resource "null_resource" "backup_cron" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "file" {
+    content     = file("${path.root}/../data/backup-headscale-cron.tpl")
+    destination = "/home/${var.ssh_user}/backup-headscale-cron"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo mv /home/${var.ssh_user}/backup-headscale-cron /etc/cron.d/backup-headscale-cron",
+      "sudo chown root:root /etc/cron.d/backup-headscale-cron",
+      "sudo chmod 644 /etc/cron.d/backup-headscale-cron",
+      "sudo touch /var/log/backup-headscale.log",
+      "sudo chown headscale:headscale /var/log/backup-headscale.log"
+    ]
+  }
+  depends_on = [null_resource.backup_script]
 }

@@ -5,3 +5,7 @@ output "public_ip" {
 output "ssh_user" {
   value = var.ec2_user
 }
+
+output "backup_bucket_name" {
+  value = aws_s3_bucket.main.bucket
+}
