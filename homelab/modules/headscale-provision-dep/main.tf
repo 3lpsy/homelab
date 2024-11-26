@@ -9,7 +9,7 @@ resource "null_resource" "install_deps" {
     timeout     = "1m"
   }
   provisioner "file" {
-    content     = file("${path.root}/../data/50unattended-upgrades.tpl")
+    content     = file("${path.root}/../data/server/50unattended-upgrades.tpl")
     destination = "/home/${var.ssh_user}/50unattended-upgrades"
   }
   # Set permissions and optionally run a command

@@ -1,10 +1,12 @@
 *.pem
 *.pem.pub
-data/*
+apikey.txt
+*.key
 !data/.gitkeep
 !data/.env.example
 !data/backups/.gitkeep
 !data/*.tpl
+!data/**/*.tpl
 
 *.cert
 .env

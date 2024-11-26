@@ -6,7 +6,7 @@ variable "server_ip" {
 variable "ssh_user" {
   type = string
 }
-variable "ssh_priv_key" {
+variable "ssh_priv_key_path" {
   type = string
 }
 # pub key contents
@@ -22,7 +22,16 @@ variable "headscale_port" {
   default = "8443"
 }
 
-
 variable "backup_bucket_name" {
+  type = string
+}
+
+variable "personal_username" {
+  type = string
+}
+variable "mobile_username" {
+  type = string
+}
+variable "nomad_server_username" {
   type = string
 }
