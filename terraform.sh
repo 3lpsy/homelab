@@ -18,30 +18,26 @@ fi
 # Just a useful way to backup state in s3 and restore in on a second system later if need be
 
 function encrypt() {
-    openssl enc -aes-256-cbc -salt -in $ENV_DIR/$STATE_FILE -out data/$ENV_DIR/$ENCRYPTED_STATE_FILE -pass file:$KEY_FILE
+    echo "Encrypting $ENV_DIR/$STATE_FILE to $ENCRYPTED_STATE_FILE"
+    age -e -R "./ssh.pem.pub" -o "$ENCRYPTED_STATE_FILE" "$ENV_DIR/$STATE_FILE"
 }
 function decrypt() {
-    openssl enc -aes-256-cbc -d -in data/$ENV_DIR/$ENCRYPTED_STATE_FILE -out $ENV_DIR/$STATE_FILE -pass file:$KEY_FILE
+    echo "Decrypting $ENCRYPTED_STATE_FILE to restored.$STATE_FILE"
+    age -d -i "./ssh.pem" -o "restored.$STATE_FILE" "$ENCRYPTED_STATE_FILE"
 }
 
 function pull() {
-    if [[ ! -f data/$ENV_DIR ]]; then mkdir -p data/$ENV_DIR; fi
-    echo "Backing up $ENV_DIR/$ENCRYPTED_STATE_FILE to data/$ENV_DIR/$ENCRYPTED_STATE_FILE.backup..."
-    cp $ENV_DIR/$ENCRYPTED_STATE_FILE data/$ENV_DIR/$ENCRYPTED_STATE_FILE.backup
-
-    echo "Pulling encrypted state from s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE to data/$ENV_DIR/$ENCRYPTED_STATE_FILE..."
-    aws s3 cp s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE data/$ENV_DIR/$ENCRYPTED_STATE_FILE
-
-    echo "Backing up state $ENV_DIR/$STATE_FILE data/$ENV_DIR/$STATE_FILE.backup"
-    cp $ENV_DIR/$STATE_FILE data/$ENV_DIR/$STATE_FILE.backup
-
-    echo "Decrypting data/$ENV_DIR/$ENCRYPTED_STATE_FILE to $ENV_DIR/$STATE_FILE"
+    echo "Pulling encrypted state from s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE to $ENCRYPTED_STATE_FILE..."
+    aws s3 cp s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE $ENCRYPTED_STATE_FILE
+}
+function restore() {
+    pull
     decrypt
 }
-function push(){
+function backup(){
     encrypt
-    echo "Copying data/$ENV_DIR/$ENCRYPTED_STATE_FILE to s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE"
-    aws s3 cp data/$ENV_DIR/$ENCRYPTED_STATE_FILE s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE
+    echo "Copying $ENCRYPTED_STATE_FILE to s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE"
+    aws s3 cp $ENCRYPTED_STATE_FILE  s3://$S3_BUCKET/$ENV_DIR/$ENCRYPTED_STATE_FILE
 }
 
 
@@ -55,16 +51,19 @@ case $1 in
     decrypt
   ;;
   "pull")
-    echo "Downloading and decrypting state file..."
     export AWS_ACCESS_KEY_ID=$TF_VAR_aws_access_key
     export AWS_SECRET_ACCESS_KEY=$TF_VAR_aws_secret_key
     pull
     ;;
-  "push")
-    echo "Encrypting and uploading state file..."
+  "restore")
     export AWS_ACCESS_KEY_ID=$TF_VAR_aws_access_key
     export AWS_SECRET_ACCESS_KEY=$TF_VAR_aws_secret_key
-    push
+    restore
+    ;;
+  "backup")
+    export AWS_ACCESS_KEY_ID=$TF_VAR_aws_access_key
+    export AWS_SECRET_ACCESS_KEY=$TF_VAR_aws_secret_key
+    backup
     ;;
   *)
     terraform -chdir=$ENV_DIR $@

@@ -1,7 +1,11 @@
 *.pem
 *.pem.pub
 apikey.txt
+*.age
+*.enc
 *.key
+*.restored
+
 !data/.gitkeep
 !data/.env.example
 !data/backups/.gitkeep
