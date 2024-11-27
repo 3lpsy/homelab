@@ -14,26 +14,7 @@ resource "null_resource" "install_containerd" {
   }
   depends_on = [null_resource.install_deps]
 }
-resource "null_resource" "install_buildkit" {
-  connection {
-    type        = "ssh"
-    host        = var.host
-    user        = var.ssh_user
-    private_key = var.ssh_priv_key
-    timeout     = "1m"
-  }
-  provisioner "remote-exec" {
-    inline = [
-      "sudo dnf install -y golang-github-moby-buildkit",
-      "sudo ln -s /usr/bin/buildkitd  /usr/local/bin/buildkitd", # fix default service path
-      "sudo cp /usr/share/doc/golang-github-moby-buildkit/examples/systemd/system/buildkit.service /etc/systemd/system/",
-      "sudo cp /usr/share/doc/golang-github-moby-buildkit/examples/systemd/system/buildkit.socket /etc/systemd/system/",
-      "sudo systemctl daemon-reload"
 
-    ]
-  }
-  depends_on = [null_resource.install_containerd]
-}
 
 resource "null_resource" "install_nerdctl" {
   connection {
@@ -48,7 +29,6 @@ resource "null_resource" "install_nerdctl" {
       "sudo mkdir -p /opt/nerdctl-src",
       "sudo chown ${var.ssh_user}:${var.ssh_user} /opt/nerdctl-src",
       "cd /opt/nerdctl-src",
-      "sudo rm -rf /opt/nerdctl-src/*",
       "sudo wget https://github.com/containerd/nerdctl/releases/download/v2.0.0/nerdctl-full-2.0.0-linux-amd64.tar.gz -O /opt/nerdctl-src/nerdctl-full-2.0.0-linux-amd64.tar.gz",
       "sudo tar xzvf nerdctl-full-2.0.0-linux-amd64.tar.gz",
       "sudo chown -R root:root /opt/nerdctl-src",
@@ -57,7 +37,26 @@ resource "null_resource" "install_nerdctl" {
   }
   depends_on = [null_resource.install_buildkit]
 }
+resource "null_resource" "install_buildkit" {
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "cd /opt/nerdctl-src",
+      "sudo mv /opt/nerdctl-src/bin/buildkit* /usr/local/bin/",
+      "sudo mv /opt/nerdctl-src/bin/buildctl /usr/local/bin/",
+      "sudo cp /opt/nerdctl-src/lib/systemd/system/buildkit.service /etc/systemd/system/buildkit.service",
+      "sudo systemctl daemon-reload"
 
+    ]
+  }
+  depends_on = [null_resource.install_containerd]
+}
 
 resource "null_resource" "configure_containerd" {
   connection {
