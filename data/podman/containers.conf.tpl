@@ -3,9 +3,13 @@ default_sysctls = [
 "net.ipv4.ping_group_range=0 0",
 ]
 log_driver = "journald"
-
+[secrets]
+[secrets.opts]
+[network]
 [engine]
-runtime = "kata"
-
+runtime = "runc"
 [engine.runtimes]
-kata = ["/usr/bin/kata-runtime"]
+[engine.volume_plugins]
+[machine]
+[farms]
+[podmansh]

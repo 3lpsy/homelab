@@ -31,6 +31,7 @@ resource "null_resource" "main" {
   provisioner "remote-exec" {
     inline = [
       "sudo mkdir -p /etc/letsencrypt/live/${var.domain}",
+      "sudo mkdir -p /etc/letsencrypt/archive/${var.domain}",
       "sudo mv /home/${var.ssh_user}/privkey.pem /etc/letsencrypt/live/${var.domain}/privkey.pem",
       "sudo mv /home/${var.ssh_user}/fullchain.pem /etc/letsencrypt/live/${var.domain}/fullchain.pem",
       "sudo groupadd ssl-cert || echo true >/dev/null",

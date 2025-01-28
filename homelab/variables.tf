@@ -41,9 +41,21 @@ variable "tailnet_personal_username" {
 variable "tailnet_nomad_server_username" {
   type = string
 }
+variable "tailnet_vault_server_username" {
+  type    = string
+  default = "vault-server"
+}
 variable "tailnet_mobile_username" {
   type    = string
   default = "mobile"
+}
+variable "tailnet_tablet_username" {
+  type    = string
+  default = "tablet"
+}
+variable "tailnet_deck_username" {
+  type    = string
+  default = "deck"
 }
 variable "nomad_host_name" {
   type = string

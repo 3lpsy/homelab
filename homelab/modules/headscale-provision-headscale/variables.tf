@@ -21,7 +21,6 @@ variable "headscale_port" {
   type    = string
   default = "8443"
 }
-
 variable "backup_bucket_name" {
   type = string
 }
@@ -32,6 +31,15 @@ variable "personal_username" {
 variable "mobile_username" {
   type = string
 }
+variable "tablet_username" {
+  type = string
+}
+variable "deck_username" {
+  type = string
+}
 variable "nomad_server_username" {
+  type = string
+}
+variable "vault_server_user" {
   type = string
 }

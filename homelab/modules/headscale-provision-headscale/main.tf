@@ -18,6 +18,9 @@ resource "null_resource" "headscale_config" {
       personal_user     = var.personal_username
       nomad_server_user = var.nomad_server_username
       mobile_user       = var.mobile_username
+      tablet_user       = var.tablet_username
+      deck_user         = var.deck_username
+      vault_server_user = var.vault_server_user
     }))
   }
 
@@ -35,6 +38,10 @@ resource "null_resource" "headscale_config" {
       personal_user     = var.personal_username
       nomad_server_user = var.nomad_server_username
       mobile_user       = var.mobile_username
+      tablet_user       = var.tablet_username
+      deck_user         = var.deck_username
+      vault_server_user = var.vault_server_user
+
     })
     destination = "/home/${var.ssh_user}/acls.hjson"
   }
@@ -99,6 +106,9 @@ resource "null_resource" "headscale_restart" {
       personal_user     = var.personal_username
       nomad_server_user = var.nomad_server_username
       mobile_user       = var.mobile_username
+      tablet_user       = var.tablet_username
+      deck_user         = var.deck_username
+      vault_server_user = var.vault_server_user
     }))
   }
 

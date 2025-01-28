@@ -10,14 +10,12 @@ version = 2
 
 [cgroup]
   path = ""
-
 [debug]
   address = ""
   format = ""
   gid = 0
   level = ""
   uid = 0
-
 [grpc]
   address = "/run/containerd/containerd.sock"
   gid = 0
@@ -34,7 +32,6 @@ version = 2
   grpc_histogram = false
 
 [plugins]
-
   [plugins."io.containerd.gc.v1.scheduler"]
     deletion_threshold = 0
     mutation_threshold = 100
@@ -105,12 +102,12 @@ version = 2
         runtime_type = ""
         sandbox_mode = ""
         snapshotter = ""
-
         [plugins."io.containerd.grpc.v1.cri".containerd.default_runtime.options]
 
       [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
         [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata]
           runtime_type = "io.containerd.kata.v2"
+
         [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
           base_runtime_spec = ""
           cni_conf_dir = ""

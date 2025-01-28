@@ -59,8 +59,8 @@ database:
   # Removed postgres config as using sqlite
 # Removed TLS/Acme section as using Route53 Acme
 ## Use already defined certificates:
-tls_cert_path: "/etc/letsencrypt/live/hs.fgsci.net/fullchain.pem"
-tls_key_path: "/etc/letsencrypt/live/hs.fgsci.net/privkey.pem"
+tls_cert_path: "/etc/letsencrypt/live/${server_domain}/fullchain.pem"
+tls_key_path: "/etc/letsencrypt/live/${server_domain}/privkey.pem"
 log:
   format: text
   level: info

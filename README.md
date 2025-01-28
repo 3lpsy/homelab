@@ -1,14 +1,29 @@
 # Readme
 
 # TODO:
-- No ansible, just terraform
-  - Manually install kata, comes with ubuntu rootfs
-  - Won't work, podman not supported
-    - Potential setup: Nomad => Podman => Kata => Firecracker
-  - nerdctl could be useful
-    - Nerdctl => buildkit => containerd to get images
-    - Nomad => ctr/containerd to manage images
-
+- delete cal record manually added to r53 once migrated
+- No containerd, only podman and nomad
+- TODO: Let vault run and make sure it doesn't restart (tailnet key may expire)
+- Setup Nomad
+	- Build vault on Nomad (local/not in registry)
+	- Should be able to connect to TS
+	- Need to get bootstrapped and get keys for provider
+	- Start Vault
+- Get Vault provider setup in TF
+	- Seed vault with registry TLS
+	- Seed vault with registry Creds
+- Setup Registry
+	- Build registry locally on nomad (local/not in registry)
+	- Should be able to connect to TS
+	- Should be able to connect to Vault (HS ACLs will need updating)
+- Start Registry / Get Registry Setup
+- Build any necessary images
+- Deploy Images
+- TLS
+	- Only managed TLS is HS/Nomad/Vault
+		- HS/Nomad require file manip for updating (or TF apply)
+		- Vault can be rebuilt and replaced
+	- All others should pull from vault
 
 # Gather Tools
 

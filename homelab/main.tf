@@ -10,6 +10,11 @@ terraform {
       source  = "vancluever/acme"
       version = "~> 2.0"
     }
+
+    headscale = {
+      source  = "awlsring/headscale"
+      version = "=0.2.0"
+    }
   }
 }
 
@@ -102,20 +107,37 @@ module "headscale-provision-headscale" {
   personal_username       = var.tailnet_personal_username
   nomad_server_username   = var.tailnet_nomad_server_username
   mobile_username         = var.tailnet_mobile_username
+  tablet_username         = var.tailnet_tablet_username
+  deck_username           = var.tailnet_deck_username
+
+  vault_server_user = var.tailnet_vault_server_username
 }
 
 data "local_file" "api_key" {
   filename = "${path.root}/../headscale.key"
 }
-# Create the personal user (if you want), the nomad user, and a preauth key for nomad
+
+
+// using module.headscale-infra-tls.certificate_domain will fail to init provider on refresh
+provider "headscale" {
+  endpoint = "https://${module.headscale-infra-dns.dns_domain}"
+  api_key  = var.headscale_api_key
+}
+
 module "tailnet-infra" {
   source                  = "./modules/tailnet-infra"
   headscale_server_domain = module.headscale-infra-tls.certificate_domain
   api_key                 = var.headscale_api_key
   personal_username       = var.tailnet_personal_username
   nomad_server_username   = var.tailnet_nomad_server_username
-  mobile_user             = var.tailnet_mobile_username
-
+  mobile_username         = var.tailnet_mobile_username
+  tablet_username         = var.tailnet_tablet_username
+  deck_username           = var.tailnet_deck_username
+  vault_server_username   = var.tailnet_vault_server_username
+  providers = {
+     headscale = headscale
+   }
+  depends_on = [module.headscale-infra-tls]
 }
 
 # Nomad is now on tailscale, no more server_ip usage after this
@@ -183,17 +205,36 @@ module "nomad-provision-server" {
   ssh_user        = var.nomad_ssh_user
   ssh_priv_key    = trimspace(file(var.ssh_priv_key_path))
   nomad_host_name = var.nomad_host_name
+  host_volumes    = ["vault", "ts-vault"]
   depends_on      = [module.nomad-provision-nginx]
 }
 
-# module "nomad-provision-bootstrap" {
-#   source       = "./modules/nomad-provision-bootstrap"
-#   host         = module.nomad-infra-tls.certificate_domain
-#   ssh_user     = var.nomad_ssh_user
-#   ssh_priv_key = trimspace(file(var.ssh_priv_key_path))
-#   depends_on   = [module.nomad-provision-server]
-# }
-# provider "nomad" {
-#   address   = "https://${module.nomad-infra-tls.certificate_domain}"
-#   secret_id = module.nomad-provision-bootstrap.bootstrap_token
-# }
+module "nomad-provision-bootstrap" {
+  source       = "./modules/nomad-provision-bootstrap"
+  host         = module.nomad-infra-tls.certificate_domain
+  ssh_user     = var.nomad_ssh_user
+  ssh_priv_key = trimspace(file(var.ssh_priv_key_path))
+  depends_on   = [module.nomad-provision-server]
+}
+
+// using module.nomad-infra-tls.certificate_domain will fail to init provider on refresh
+provider "nomad" {
+  address   = "https://${var.nomad_host_name}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  secret_id = module.nomad-provision-bootstrap.bootstrap_token
+}
+
+module "service-vault" {
+  source                  = "./modules/service-vault"
+  host                    = module.nomad-infra-tls.certificate_domain
+  ssh_user                = var.nomad_ssh_user
+  ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
+  tailnet_auth_key        = module.tailnet-infra.vault_server_preauth_key
+  headscale_tag           = "vault-server"
+  headscale_server_domain = var.headscale_server_domain
+  headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  hostname                = "vault"
+  providers = {
+    nomad = nomad
+  }
+  depends_on = [module.nomad-provision-bootstrap]
+}
