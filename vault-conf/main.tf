@@ -13,7 +13,7 @@ terraform {
 }
 
 provider "vault" {
-  address = "https://vault.hs.fgsci.com:8201"
+  address = "https://vault.${var.headscale_magic_domain}:8201"
   token   = var.vault_root_token # Store this in a variable or use VAULT_TOKEN env var
 }
 
