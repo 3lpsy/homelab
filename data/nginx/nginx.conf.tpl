@@ -26,14 +26,17 @@ http {
         ''           close;
     }
     server {
-        listen 443      ssl http2;
-        listen [::]:443 ssl http2;
+        listen ${listen_prefix}443      ssl http2;
+        # listen [::]:443 ssl http2;
         server_name ${server_domain};
         ssl_certificate /etc/letsencrypt/live/${server_domain}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${server_domain}/privkey.pem;
         ssl_protocols TLSv1.2 TLSv1.3;
         location / {
             proxy_pass ${proxy_proto}://127.0.0.1:${proxy_port};
+            %{ if proxy_ssl_verify != "" ~}
+             proxy_ssl_verify ${proxy_ssl_verify};
+            %{ endif ~}
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;

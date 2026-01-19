@@ -94,7 +94,16 @@ dns:
   # Set custom DNS search domains. With MagicDNS enabled,
   # your tailnet base_domain is always the first search domain.
   search_domains: []
-  extra_records: []
+  extra_records:
+    - name: "ubereats.com"
+      type: "A"
+      value: "100.64.0.1"
+    - name: "doordash.com"
+      type: "A"
+      value: "100.64.0.1"
+    - name: "grubhub.com"
+      type: "A"
+      value: "100.64.0.1"
 
 # Unix socket used for the CLI to connect without authentication
 # Note: for production you will want to set this to something like:
