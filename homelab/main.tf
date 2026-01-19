@@ -51,7 +51,7 @@ module "headscale-infra-dns" {
 
 
 module "headscale-infra-tls" {
-  source                = "./templates/infra-tls"
+  source                = "./../templates/infra-tls"
   account_key_pem       = module.homelab-infra-tls.account_key_pem
   server_domain         = module.headscale-infra-dns.dns_domain
   aws_region            = var.aws_region
@@ -67,7 +67,7 @@ module "headscale-infra-tls" {
 
 
 module "headscale-provision-tls" {
-  source            = "./templates/provision-tls"
+  source            = "./../templates/provision-tls"
   server_ip         = module.headscale-infra.public_ip
   ssh_user          = module.headscale-infra.ssh_user
   ssh_priv_key      = trimspace(file(var.ssh_priv_key_path))
@@ -84,7 +84,7 @@ module "headscale-provision-dep" {
 }
 
 module "headscale-provision-nginx" {
-  source        = "./templates/provision-nginx"
+  source        = "./../templates/provision-nginx"
   server_ip     = module.headscale-infra.public_ip
   ssh_user      = module.headscale-infra.ssh_user
   ssh_priv_key  = trimspace(file(var.ssh_priv_key_path))
@@ -111,7 +111,9 @@ module "headscale-provision-headscale" {
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
 
-  vault_server_user = var.tailnet_vault_server_username
+  vault_server_username     = var.tailnet_vault_server_username
+  nextcloud_server_username = var.tailnet_nextcloud_server_username
+
 }
 
 data "local_file" "api_key" {
@@ -136,7 +138,9 @@ module "tailnet-infra" {
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
 
-  vault_server_username = var.tailnet_vault_server_username
+  vault_server_username     = var.tailnet_vault_server_username
+  nextcloud_server_username = var.tailnet_nextcloud_server_username
+
   providers = {
     headscale = headscale
   }
@@ -159,7 +163,7 @@ module "tailnet-provision-nomad" {
 }
 
 module "nomad-infra-tls" {
-  source                = "./templates/infra-tls"
+  source                = "./../templates/infra-tls"
   account_key_pem       = module.homelab-infra-tls.account_key_pem
   server_domain         = "${var.nomad_host_name}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
   aws_region            = var.aws_region
@@ -174,7 +178,7 @@ module "nomad-infra-tls" {
 }
 
 module "nomad-provision-tls" {
-  source            = "./templates/provision-tls"
+  source            = "./../templates/provision-tls"
   server_ip         = "${var.nomad_host_name}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
   ssh_user          = var.nomad_ssh_user
   ssh_priv_key      = trimspace(file(var.ssh_priv_key_path))
@@ -203,47 +207,3 @@ module "nomad-provision-server" {
   headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
   depends_on                = [module.nomad-provision-dep]
 }
-
-module "nomad-provision-nginx" {
-  source           = "./templates/provision-nginx"
-  server_ip        = module.nomad-infra-tls.certificate_domain
-  ssh_user         = var.nomad_ssh_user
-  ssh_priv_key     = trimspace(file(var.ssh_priv_key_path))
-  server_domain    = module.nomad-infra-tls.certificate_domain
-  proxy_port       = "6443"
-  proxy_proto      = "https"
-  nginx_user       = "nginx"
-  proxy_ssl_verify = "off"                                             # Set to "off" for K3s, "" to omit
-  listen_prefix    = "${module.tailnet-provision-nomad.tailscale_ip}:" # need colon
-  depends_on       = [module.nomad-provision-server]
-}
-
-# module "nomad-provision-bootstrap" {
-#   source       = "./modules/nomad-provision-bootstrap"
-#   host         = module.nomad-infra-tls.certificate_domain
-#   ssh_user     = var.nomad_ssh_user
-#   ssh_priv_key = trimspace(file(var.ssh_priv_key_path))
-#   depends_on   = [module.nomad-provision-server]
-# }
-
-// using module.nomad-infra-tls.certificate_domain will fail to init provider on refresh
-# provider "nomad" {
-#   address   = "https://${var.nomad_host_name}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-#   secret_id = module.nomad-provision-bootstrap.bootstrap_token
-# }
-
-# module "service-vault" {
-#   source                  = "./modules/service-vault"
-#   host                    = module.nomad-infra-tls.certificate_domain
-#   ssh_user                = var.nomad_ssh_user
-#   ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
-#   tailnet_auth_key        = module.tailnet-infra.vault_server_preauth_key
-#   headscale_tag           = "vault-server"
-#   headscale_server_domain = var.headscale_server_domain
-#   headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
-#   hostname                = "vault"
-#   providers = {
-#     nomad = nomad
-#   }
-#   depends_on = [module.nomad-provision-bootstrap]
-# }

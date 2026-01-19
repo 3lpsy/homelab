@@ -50,7 +50,7 @@ resource "null_resource" "k3s_install" {
     inline = [
       # Install K3s, change advertise addr if adding nodes over tailscale, maybe node-ip too
       "TAILSCALE_IP=$(tailscale ip -4)",
-      "curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 640 --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain}",
+      "curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 640 --node-ip $TAILSCALE_IP  --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain}",
       "sudo chown root:provisioner /etc/rancher/k3s/k3s.yaml"
     ]
   }

@@ -55,10 +55,10 @@ resource "headscale_user" "vault_server_user" {
 resource "headscale_pre_auth_key" "nomad_server" {
   user = headscale_user.nomad_server_user.id
 }
-resource "headscale_pre_auth_key" "vault_server" {
-  user = headscale_user.vault_server_user.id
-}
 
+resource "headscale_user" "nextcloud_server_user" {
+  name = var.nextcloud_server_username
+}
 
 # resource "headscale_user" "test_user" {
 #   name = "test_user"

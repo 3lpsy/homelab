@@ -61,9 +61,15 @@ variable "tailnet_devbox_username" {
   type    = string
   default = "devbox"
 }
+variable "tailnet_nextcloud_server_username" {
+  type    = string
+  default = "nextcloud"
+}
+
 variable "nomad_host_name" {
   type = string
 }
+
 variable "nomad_ssh_user" {
   type = string
 }

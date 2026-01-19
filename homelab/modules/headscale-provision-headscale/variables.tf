@@ -43,6 +43,10 @@ variable "devbox_username" {
 variable "nomad_server_username" {
   type = string
 }
-variable "vault_server_user" {
+variable "vault_server_username" {
+  type = string
+}
+
+variable "nextcloud_server_username" {
   type = string
 }

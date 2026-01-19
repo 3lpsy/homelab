@@ -15,13 +15,15 @@ resource "null_resource" "headscale_config" {
       magic_domain  = var.headscale_magic_domain
     }))
     acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", {
-      personal_user     = var.personal_username
-      nomad_server_user = var.nomad_server_username
-      mobile_user       = var.mobile_username
-      tablet_user       = var.tablet_username
-      deck_user         = var.deck_username
-      devbox_user       = var.devbox_username
-      vault_server_user = var.vault_server_user
+      personal_user         = var.personal_username
+      nomad_server_user     = var.nomad_server_username
+      mobile_user           = var.mobile_username
+      tablet_user           = var.tablet_username
+      deck_user             = var.deck_username
+      devbox_user           = var.devbox_username
+      vault_server_user     = var.vault_server_username
+      nextcloud_server_user = var.nextcloud_server_username
+
     }))
   }
 
@@ -36,13 +38,14 @@ resource "null_resource" "headscale_config" {
 
   provisioner "file" {
     content = templatefile("${path.root}/../data/headscale/acls.hjson.tpl", {
-      personal_user     = var.personal_username
-      nomad_server_user = var.nomad_server_username
-      mobile_user       = var.mobile_username
-      tablet_user       = var.tablet_username
-      deck_user         = var.deck_username
-      devbox_user       = var.devbox_username
-      vault_server_user = var.vault_server_user
+      personal_user         = var.personal_username
+      nomad_server_user     = var.nomad_server_username
+      mobile_user           = var.mobile_username
+      tablet_user           = var.tablet_username
+      deck_user             = var.deck_username
+      devbox_user           = var.devbox_username
+      vault_server_user     = var.vault_server_username
+      nextcloud_server_user = var.nextcloud_server_username
 
     })
     destination = "/home/${var.ssh_user}/acls.hjson"
@@ -105,13 +108,15 @@ resource "null_resource" "headscale_restart" {
       magic_domain  = var.headscale_magic_domain
     }))
     acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", {
-      personal_user     = var.personal_username
-      nomad_server_user = var.nomad_server_username
-      mobile_user       = var.mobile_username
-      tablet_user       = var.tablet_username
-      deck_user         = var.deck_username
-      devbox_user       = var.devbox_username
-      vault_server_user = var.vault_server_user
+      personal_user         = var.personal_username
+      nomad_server_user     = var.nomad_server_username
+      mobile_user           = var.mobile_username
+      tablet_user           = var.tablet_username
+      deck_user             = var.deck_username
+      devbox_user           = var.devbox_username
+      vault_server_user     = var.vault_server_username
+      nextcloud_server_user = var.nextcloud_server_username
+
     }))
   }
 
