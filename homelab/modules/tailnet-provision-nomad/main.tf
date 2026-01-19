@@ -1,3 +1,13 @@
+terraform {
+  required_providers {
+    headscale = {
+      source                = "awlsring/headscale"
+      version               = "~>0.4.0"
+      configuration_aliases = [headscale]
+    }
+  }
+}
+
 resource "null_resource" "set_hostname" {
   connection {
     type        = "ssh"
@@ -82,4 +92,10 @@ resource "null_resource" "firewall_exclude" {
     ]
   }
   depends_on = [null_resource.upload_auth_key]
+}
+
+# After the device is registered via tailscale up
+data "headscale_device" "nomad_server" {
+  name       = var.nomad_hostname # The hostname you set with --hostname flag
+  depends_on = [null_resource.tailnet_auth]
 }

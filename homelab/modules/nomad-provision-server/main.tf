@@ -16,8 +16,7 @@ resource "null_resource" "install_deps" {
   }
 }
 
-
-resource "null_resource" "install_nomad_podman" {
+resource "null_resource" "k3s_prep_firewalld" {
   connection {
     type        = "ssh"
     host        = var.host
@@ -25,21 +24,21 @@ resource "null_resource" "install_nomad_podman" {
     private_key = var.ssh_priv_key
     timeout     = "1m"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
-      "sudo dnf install -y dnf-plugins-core",
-      "sudo dnf config-manager addrepo --from-repofile=https://rpm.releases.hashicorp.com/fedora/hashicorp.repo",
-      "sudo dnf install -y nomad containernetworking-plugins dmidecode nomad-driver-podman",
-      "sudo dnf install -y podman podman-docker runc",
-      "sudo systemctl enable nomad"
+      # Configure firewalld for K3s
+      "sudo firewall-cmd --permanent --add-port=6443/tcp",
+      "sudo firewall-cmd --permanent --zone=trusted --add-source=10.42.0.0/16",
+      "sudo firewall-cmd --permanent --zone=trusted --add-source=10.43.0.0/16",
+      "sudo firewall-cmd --reload"
     ]
   }
   depends_on = [null_resource.install_deps]
 }
 
-resource "null_resource" "create_host_volume" {
-  count = length(var.host_volumes)
+
+
+resource "null_resource" "k3s_install" {
   connection {
     type        = "ssh"
     host        = var.host
@@ -49,72 +48,11 @@ resource "null_resource" "create_host_volume" {
   }
   provisioner "remote-exec" {
     inline = [
-      "sudo mkdir -p ${var.host_volumes_dir}/${var.host_volumes[count.index]}",
-      "sudo chown root:root ${var.host_volumes_dir}/${var.host_volumes[count.index]}",
-      "sudo chmod 770 ${var.host_volumes_dir}/${var.host_volumes[count.index]}"
+      # Install K3s, change advertise addr if adding nodes over tailscale, maybe node-ip too
+      "TAILSCALE_IP=$(tailscale ip -4)",
+      "curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 640 --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain}",
+      "sudo chown root:provisioner /etc/rancher/k3s/k3s.yaml"
     ]
   }
-}
-
-resource "null_resource" "configure_nomad" {
-  connection {
-    type        = "ssh"
-    host        = var.host
-    user        = var.ssh_user
-    private_key = var.ssh_priv_key
-    timeout     = "1m"
-  }
-  triggers = {
-    nomad_config    = md5(file("${path.root}/../data/nomad/nomad.hcl.tpl"))
-    nomad_host_name = md5(var.nomad_host_name)
-    host_volumes    = md5(join("-", var.host_volumes))
-  }
-  # Copy the fullchain.pem to the remote server
-  provisioner "file" {
-    content = templatefile("${path.root}/../data/nomad/nomad.hcl.tpl", {
-      nomad_host_name = var.nomad_host_name
-      host_volumes    = var.host_volumes
-      }
-    )
-    destination = "/home/${var.ssh_user}/nomad.hcl"
-  }
-  provisioner "remote-exec" {
-    inline = [
-      "sudo mv /home/${var.ssh_user}/nomad.hcl /etc/nomad.d/nomad.hcl",
-      "sudo chown -R nomad:nomad /etc/nomad.d/",
-      "sudo chmod -R 644 /etc/nomad.d/",
-      "sudo mkdir -p /opt/nomad/plugins",
-      "sudo ln -s /usr/bin/nomad-driver-podman /opt/nomad/plugins/",
-      "sudo systemctl restart nomad",
-    ]
-  }
-  depends_on = [null_resource.install_nomad_podman, null_resource.create_host_volume]
-}
-
-resource "null_resource" "configure_podman" {
-  connection {
-    type        = "ssh"
-    host        = var.host
-    user        = var.ssh_user
-    private_key = var.ssh_priv_key
-    timeout     = "1m"
-  }
-  triggers = {
-    config = md5(file("${path.root}/../data/podman/containers.conf.tpl"))
-  }
-
-
-  provisioner "file" {
-    content     = file("${path.root}/../data/podman/containers.conf.tpl")
-    destination = "/home/${var.ssh_user}/containers.conf"
-  }
-  provisioner "remote-exec" {
-    inline = [
-      "sudo mv /home/${var.ssh_user}/containers.conf /etc/containers/containers.conf",
-      "sudo chown root:root /etc/containers/containers.conf",
-      "sudo chmod 644 /etc/containers/containers.conf",
-      "sudo systemctl enable --now podman.socket podman.service"
-    ]
-  }
-  depends_on = [null_resource.install_deps]
+  depends_on = [null_resource.k3s_prep_firewalld]
 }

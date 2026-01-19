@@ -12,5 +12,5 @@ variable "ssh_priv_key" {
 # pub key contents
 variable "headscale_version" {
   type    = string
-  default = "0.23.0"
+  default = "0.25.1"
 }

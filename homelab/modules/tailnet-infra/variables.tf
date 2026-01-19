@@ -19,6 +19,9 @@ variable "tablet_username" {
 variable "deck_username" {
   type = string
 }
+variable "devbox_username" {
+  type = string
+}
 variable "nomad_server_username" {
   type = string
 }

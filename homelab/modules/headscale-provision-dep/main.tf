@@ -39,6 +39,18 @@ resource "null_resource" "install_deps" {
       "sudo chmod 644 /etc/profile"
     ]
   }
+}
+
+resource "null_resource" "install_headscale" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  depends_on = [null_resource.install_deps]
   provisioner "remote-exec" {
     inline = [
       "sudo DEBIAN_FRONTEND=noninteractive which headscale || (sudo wget -O /usr/local/bin/headscale 'https://github.com/juanfont/headscale/releases/download/v${var.headscale_version}/headscale_${var.headscale_version}_linux_amd64' && sudo chmod +x /usr/local/bin/headscale)",

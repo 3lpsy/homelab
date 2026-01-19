@@ -57,6 +57,10 @@ variable "tailnet_deck_username" {
   type    = string
   default = "deck"
 }
+variable "tailnet_devbox_username" {
+  type    = string
+  default = "devbox"
+}
 variable "nomad_host_name" {
   type = string
 }

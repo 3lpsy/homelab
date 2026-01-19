@@ -22,3 +22,15 @@ variable "proxy_proto" {
 variable "nginx_user" {
   type = string
 }
+
+variable "proxy_ssl_verify" {
+  description = "Set to 'off' to disable SSL verification for backend, empty string to omit"
+  type        = string
+  default     = ""
+}
+
+variable "listen_prefix" {
+  description = "Listen prefix, requires colon"
+  type        = string
+  default     = ""
+}

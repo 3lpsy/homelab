@@ -20,6 +20,7 @@ resource "null_resource" "headscale_config" {
       mobile_user       = var.mobile_username
       tablet_user       = var.tablet_username
       deck_user         = var.deck_username
+      devbox_user       = var.devbox_username
       vault_server_user = var.vault_server_user
     }))
   }
@@ -40,6 +41,7 @@ resource "null_resource" "headscale_config" {
       mobile_user       = var.mobile_username
       tablet_user       = var.tablet_username
       deck_user         = var.deck_username
+      devbox_user       = var.devbox_username
       vault_server_user = var.vault_server_user
 
     })
@@ -108,6 +110,7 @@ resource "null_resource" "headscale_restart" {
       mobile_user       = var.mobile_username
       tablet_user       = var.tablet_username
       deck_user         = var.deck_username
+      devbox_user       = var.devbox_username
       vault_server_user = var.vault_server_user
     }))
   }

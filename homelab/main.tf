@@ -13,7 +13,7 @@ terraform {
 
     headscale = {
       source  = "awlsring/headscale"
-      version = "=0.2.0"
+      version = "~> 0.4.0"
     }
   }
 }
@@ -109,6 +109,7 @@ module "headscale-provision-headscale" {
   mobile_username         = var.tailnet_mobile_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
+  devbox_username         = var.tailnet_devbox_username
 
   vault_server_user = var.tailnet_vault_server_username
 }
@@ -133,10 +134,12 @@ module "tailnet-infra" {
   mobile_username         = var.tailnet_mobile_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
-  vault_server_username   = var.tailnet_vault_server_username
+  devbox_username         = var.tailnet_devbox_username
+
+  vault_server_username = var.tailnet_vault_server_username
   providers = {
-     headscale = headscale
-   }
+    headscale = headscale
+  }
   depends_on = [module.headscale-infra-tls]
 }
 
@@ -150,6 +153,9 @@ module "tailnet-provision-nomad" {
   headscale_server_domain = module.headscale-provision-headscale.headscale_server_domain
   tailnet_auth_key        = module.tailnet-infra.nomad_server_preauth_key
   depends_on              = [module.tailnet-infra]
+  providers = {
+    headscale = headscale
+  }
 }
 
 module "nomad-infra-tls" {
@@ -187,54 +193,57 @@ module "nomad-provision-dep" {
   depends_on   = [module.tailnet-provision-nomad, module.nomad-infra-tls]
 }
 
-module "nomad-provision-nginx" {
-  source        = "./templates/provision-nginx"
-  server_ip     = module.nomad-infra-tls.certificate_domain
-  ssh_user      = var.nomad_ssh_user
-  ssh_priv_key  = trimspace(file(var.ssh_priv_key_path))
-  server_domain = module.nomad-infra-tls.certificate_domain
-  proxy_port    = "4646"
-  proxy_proto   = "http"
-  nginx_user    = "nginx"
-  depends_on    = [module.nomad-provision-dep, module.nomad-provision-tls]
-}
 
 module "nomad-provision-server" {
-  source          = "./modules/nomad-provision-server"
-  host            = module.nomad-infra-tls.certificate_domain
-  ssh_user        = var.nomad_ssh_user
-  ssh_priv_key    = trimspace(file(var.ssh_priv_key_path))
-  nomad_host_name = var.nomad_host_name
-  host_volumes    = ["vault", "ts-vault"]
-  depends_on      = [module.nomad-provision-nginx]
+  source                    = "./modules/nomad-provision-server"
+  host                      = module.nomad-infra-tls.certificate_domain
+  ssh_user                  = var.nomad_ssh_user
+  ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
+  nomad_host_name           = var.nomad_host_name
+  headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  depends_on                = [module.nomad-provision-dep]
 }
 
-module "nomad-provision-bootstrap" {
-  source       = "./modules/nomad-provision-bootstrap"
-  host         = module.nomad-infra-tls.certificate_domain
-  ssh_user     = var.nomad_ssh_user
-  ssh_priv_key = trimspace(file(var.ssh_priv_key_path))
-  depends_on   = [module.nomad-provision-server]
+module "nomad-provision-nginx" {
+  source           = "./templates/provision-nginx"
+  server_ip        = module.nomad-infra-tls.certificate_domain
+  ssh_user         = var.nomad_ssh_user
+  ssh_priv_key     = trimspace(file(var.ssh_priv_key_path))
+  server_domain    = module.nomad-infra-tls.certificate_domain
+  proxy_port       = "6443"
+  proxy_proto      = "https"
+  nginx_user       = "nginx"
+  proxy_ssl_verify = "off"                                             # Set to "off" for K3s, "" to omit
+  listen_prefix    = "${module.tailnet-provision-nomad.tailscale_ip}:" # need colon
+  depends_on       = [module.nomad-provision-server]
 }
+
+# module "nomad-provision-bootstrap" {
+#   source       = "./modules/nomad-provision-bootstrap"
+#   host         = module.nomad-infra-tls.certificate_domain
+#   ssh_user     = var.nomad_ssh_user
+#   ssh_priv_key = trimspace(file(var.ssh_priv_key_path))
+#   depends_on   = [module.nomad-provision-server]
+# }
 
 // using module.nomad-infra-tls.certificate_domain will fail to init provider on refresh
-provider "nomad" {
-  address   = "https://${var.nomad_host_name}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  secret_id = module.nomad-provision-bootstrap.bootstrap_token
-}
+# provider "nomad" {
+#   address   = "https://${var.nomad_host_name}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+#   secret_id = module.nomad-provision-bootstrap.bootstrap_token
+# }
 
-module "service-vault" {
-  source                  = "./modules/service-vault"
-  host                    = module.nomad-infra-tls.certificate_domain
-  ssh_user                = var.nomad_ssh_user
-  ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
-  tailnet_auth_key        = module.tailnet-infra.vault_server_preauth_key
-  headscale_tag           = "vault-server"
-  headscale_server_domain = var.headscale_server_domain
-  headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  hostname                = "vault"
-  providers = {
-    nomad = nomad
-  }
-  depends_on = [module.nomad-provision-bootstrap]
-}
+# module "service-vault" {
+#   source                  = "./modules/service-vault"
+#   host                    = module.nomad-infra-tls.certificate_domain
+#   ssh_user                = var.nomad_ssh_user
+#   ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
+#   tailnet_auth_key        = module.tailnet-infra.vault_server_preauth_key
+#   headscale_tag           = "vault-server"
+#   headscale_server_domain = var.headscale_server_domain
+#   headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
+#   hostname                = "vault"
+#   providers = {
+#     nomad = nomad
+#   }
+#   depends_on = [module.nomad-provision-bootstrap]
+# }

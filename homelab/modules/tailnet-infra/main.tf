@@ -1,9 +1,9 @@
 terraform {
   required_providers {
     headscale = {
-      source  = "awlsring/headscale"
-      version = "=0.2.0"
-            configuration_aliases = [ headscale ]
+      source                = "awlsring/headscale"
+      version               = "~>0.4.0"
+      configuration_aliases = [headscale]
     }
   }
 }
@@ -39,6 +39,12 @@ resource "headscale_user" "deck_user" {
     prevent_destroy = true
   }
 }
+resource "headscale_user" "devbox_user" {
+  name = var.devbox_username
+  lifecycle {
+    prevent_destroy = true
+  }
+}
 resource "headscale_user" "nomad_server_user" {
   name = var.nomad_server_username
 }
@@ -47,8 +53,16 @@ resource "headscale_user" "vault_server_user" {
 }
 
 resource "headscale_pre_auth_key" "nomad_server" {
-  user = var.nomad_server_username
+  user = headscale_user.nomad_server_user.id
 }
 resource "headscale_pre_auth_key" "vault_server" {
-  user = var.vault_server_username
+  user = headscale_user.vault_server_user.id
 }
+
+
+# resource "headscale_user" "test_user" {
+#   name = "test_user"
+# }
+# resource "headscale_pre_auth_key" "test_user" {
+#   user = "test_user"
+# }
