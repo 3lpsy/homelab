@@ -5,6 +5,7 @@ apikey.txt
 *.enc
 *.key
 *.restored
+*.lock.hcl
 
 !data/.gitkeep
 !data/.env.example
