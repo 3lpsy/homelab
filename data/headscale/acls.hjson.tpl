@@ -15,7 +15,9 @@
     "group:vault-server": ["${vault_server_user}@"],
     "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
     "group:nextcloud-clients": ["${personal_user}@"],
-    "group:nextcloud-server": ["${nextcloud_server_user}@"]
+    "group:nextcloud-server": ["${nextcloud_server_user}@"],
+    "group:collabora-server": ["${collabora_server_user}@"]
+
   },
   "tagOwners": {
     "tag:personal": ["group:personal"],
@@ -25,8 +27,8 @@
     "tag:nomad-server": ["group:nomad-server"],
     "tag:vault-server": ["group:vault-server"],
     "tag:vault-clients": ["group:vault-clients"],
-    "tag:nextcloud-clients": ["group:nextcloud-clients"],
-    "tag:nextcloud-server": ["group:nextcloud-server"]
+    "tag:nextcloud-clients": ["group:nextcloud-clients", "group:collabora-server"],
+    "tag:nextcloud-server": ["group:nextcloud-server", "group:collabora-server"]
   },
   "hosts": {},
   "acls": [
@@ -37,6 +39,7 @@
     { "action": "accept", "src": ["group:deck"], "dst": ["group:deck:*"] },
     { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:nomad-server:*"] },
     { "action": "accept", "src": ["group:vault-server"], "dst": ["group:vault-server:*"] },
+    { "action": "accept", "src": ["group:collabora-server"], "dst": ["group:collabora-server:*"] },
 
     // access ssh from personal
     { "action": "accept", "src": ["group:ssh-clients"], "dst": ["group:ssh-servers:22"] },
@@ -53,8 +56,8 @@
     // vault clients access to vault server
     { "action": "accept", "src": ["group:vault-clients"], "dst": ["group:vault-server:443,8201"] },
 
-    // nextcloud clients access to nextcloud server
-    { "action": "accept", "src": ["group:nextcloud-clients"], "dst": ["group:nextcloud-server:443"] },
+    // nextcloud clients access to nextcloud server and collabora server
+    { "action": "accept", "src": ["group:nextcloud-clients"], "dst": ["group:nextcloud-server:443", "group:collabora-server:443"] },
 
     // allow ios to access devbox on 1420,1421,3000,8888
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] }

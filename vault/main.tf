@@ -213,6 +213,9 @@ resource "kubernetes_persistent_volume_claim" "vault_data" {
     }
   }
   wait_until_bound = false
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "kubernetes_stateful_set" "vault" {
@@ -393,9 +396,10 @@ resource "kubernetes_stateful_set" "vault" {
               port   = 8200
               scheme = "HTTP"
             }
-            initial_delay_seconds = 30
-            period_seconds        = 10
+            initial_delay_seconds = 60
+            period_seconds        = 30
             timeout_seconds       = 5
+            failure_threshold     = 5
           }
 
           readiness_probe {
@@ -404,9 +408,10 @@ resource "kubernetes_stateful_set" "vault" {
               port   = 8200
               scheme = "HTTP"
             }
-            initial_delay_seconds = 10
-            period_seconds        = 5
+            initial_delay_seconds = 30
+            period_seconds        = 10
             timeout_seconds       = 3
+            failure_threshold     = 3
           }
         }
 
@@ -481,6 +486,8 @@ resource "kubernetes_service" "vault" {
     type = "ClusterIP"
   }
 }
+
+
 resource "kubernetes_network_policy" "vault" {
   depends_on = [kubernetes_stateful_set.vault]
 
@@ -498,17 +505,12 @@ resource "kubernetes_network_policy" "vault" {
 
     policy_types = ["Ingress", "Egress"]
 
+    # Allow from vault-csi namespace (where CSI provider runs)
     ingress {
-      # Allow from CSI driver pods (they run in kube-system)
       from {
         namespace_selector {
           match_labels = {
-            "kubernetes.io/metadata.name" = "kube-system"
-          }
-        }
-        pod_selector {
-          match_labels = {
-            "app.kubernetes.io/name" = "vault-csi-provider"
+            "kubernetes.io/metadata.name" = "vault-csi"
           }
         }
       }
@@ -518,29 +520,112 @@ resource "kubernetes_network_policy" "vault" {
       }
     }
 
-    # Egress for Tailscale and K8s API
-    egress {
+    # Allow internal vault namespace communication
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "vault"
+          }
+        }
+      }
       ports {
-        protocol = "UDP"
-        port     = "53" # DNS
+        protocol = "TCP"
+        port     = "8200"
       }
     }
 
-    egress {
-      ports {
-        protocol = "TCP"
-        port     = "443" # Tailscale/headscale
-      }
-    }
-
-    egress {
-      ports {
-        protocol = "TCP"
-        port     = "6443" # K8s API
-      }
-    }
+    # Allow all egress initially - you can restrict later if needed
+    egress {}
   }
 }
+# resource "kubernetes_network_policy" "vault" {
+#   depends_on = [kubernetes_stateful_set.vault]
+
+#   metadata {
+#     name      = "vault-network-policy"
+#     namespace = kubernetes_namespace.vault.metadata[0].name
+#   }
+
+#   spec {
+#     pod_selector {
+#       match_labels = {
+#         app = "vault"
+#       }
+#     }
+
+#     policy_types = ["Ingress", "Egress"]
+
+# ingress {
+#   # Allow from CSI driver pods (they run in kube-system)
+#   from {
+#     namespace_selector {
+#       match_labels = {
+#         "kubernetes.io/metadata.name" = "kube-system"
+#       }
+#     }
+#     pod_selector {
+#       match_labels = {
+#         "app.kubernetes.io/name" = "vault-csi-provider"
+#       }
+#     }
+#   }
+#   ports {
+#     protocol = "TCP"
+#     port     = "8200"
+#   }
+# }
+#     ingress {
+#       from {
+#         namespace_selector {
+#           match_labels = {
+#             "kubernetes.io/metadata.name" = "vault"
+#           }
+#         }
+#       }
+#       ports {
+#         protocol = "TCP"
+#         port     = "8200"
+#       }
+#     }
+#     ingress {
+#       # Allow from Vault CSI provider (it runs in vault-csi namespace)
+#       from {
+#         namespace_selector {
+#           match_labels = {
+#             "kubernetes.io/metadata.name" = "vault-csi"
+#           }
+#         }
+#       }
+#       ports {
+#         protocol = "TCP"
+#         port     = "8200"
+#       }
+#     }
+
+#     # Egress for Tailscale and K8s API
+#     egress {
+#       ports {
+#         protocol = "UDP"
+#         port     = "53" # DNS
+#       }
+#     }
+
+#     egress {
+#       ports {
+#         protocol = "TCP"
+#         port     = "443" # Tailscale/headscale
+#       }
+#     }
+
+#     egress {
+#       ports {
+#         protocol = "TCP"
+#         port     = "6443" # K8s API
+#       }
+#     }
+#   }
+# }
 
 # Install Secrets Store CSI Driver
 resource "helm_release" "secrets_store_csi_driver" {
@@ -579,8 +664,59 @@ resource "helm_release" "vault_csi_provider" {
     value = "true"
   }
 
+  set {
+    name  = "csi.daemonSet.providersDir"
+    value = "/etc/kubernetes/secrets-store-csi-providers"
+  }
+
   depends_on = [
     helm_release.secrets_store_csi_driver,
     kubernetes_namespace.vault
   ]
+}
+
+
+# These resources allow Vault to validate service account tokens from other pods
+#
+# When the CSI driver tries to authenticate:
+# 1. CSI reads the pod's service account token
+# 2. CSI sends token to Vault's /v1/auth/kubernetes/login endpoint
+# 3. Vault needs to validate this token by calling the Kubernetes TokenReview API
+# 4. The vault service account needs permission to create TokenReviews
+#
+# Without these permissions, authentication fails with "403 permission denied"
+resource "kubernetes_cluster_role" "vault_token_reviewer" {
+  metadata {
+    name = "vault-token-reviewer"
+  }
+
+  rule {
+    api_groups = ["authentication.k8s.io"]
+    resources  = ["tokenreviews"]
+    verbs      = ["create"]
+  }
+
+  rule {
+    api_groups = ["authorization.k8s.io"]
+    resources  = ["subjectaccessreviews"]
+    verbs      = ["create"]
+  }
+}
+
+resource "kubernetes_cluster_role_binding" "vault_token_reviewer" {
+  metadata {
+    name = "vault-token-reviewer-binding"
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role.vault_token_reviewer.metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.vault.metadata[0].name
+    namespace = kubernetes_namespace.vault.metadata[0].name
+  }
 }
