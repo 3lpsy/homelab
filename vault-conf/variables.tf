@@ -7,3 +7,7 @@ variable "vault_root_token" {
 variable "headscale_magic_domain" {
   type = string
 }
+variable "headscale_subdomain" {
+  type    = string
+  default = "hs"
+}

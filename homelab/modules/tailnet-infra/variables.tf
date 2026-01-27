@@ -32,3 +32,6 @@ variable "vault_server_username" {
 variable "nextcloud_server_username" {
   type = string
 }
+variable "collabora_server_username" {
+  type = string
+}

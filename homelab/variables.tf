@@ -65,6 +65,11 @@ variable "tailnet_nextcloud_server_username" {
   type    = string
   default = "nextcloud"
 }
+variable "tailnet_collabora_server_username" {
+  type    = string
+  default = "collabora"
+
+}
 
 variable "nomad_host_name" {
   type = string

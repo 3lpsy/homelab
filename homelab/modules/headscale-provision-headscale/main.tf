@@ -23,6 +23,7 @@ resource "null_resource" "headscale_config" {
       devbox_user           = var.devbox_username
       vault_server_user     = var.vault_server_username
       nextcloud_server_user = var.nextcloud_server_username
+      collabora_server_user = var.collabora_server_username
 
     }))
   }
@@ -46,6 +47,7 @@ resource "null_resource" "headscale_config" {
       devbox_user           = var.devbox_username
       vault_server_user     = var.vault_server_username
       nextcloud_server_user = var.nextcloud_server_username
+      collabora_server_user = var.collabora_server_username
 
     })
     destination = "/home/${var.ssh_user}/acls.hjson"
@@ -116,6 +118,7 @@ resource "null_resource" "headscale_restart" {
       devbox_user           = var.devbox_username
       vault_server_user     = var.vault_server_username
       nextcloud_server_user = var.nextcloud_server_username
+      collabora_server_user = var.collabora_server_username
 
     }))
   }

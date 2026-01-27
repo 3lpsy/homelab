@@ -113,6 +113,7 @@ module "headscale-provision-headscale" {
 
   vault_server_username     = var.tailnet_vault_server_username
   nextcloud_server_username = var.tailnet_nextcloud_server_username
+  collabora_server_username = var.tailnet_collabora_server_username
 
 }
 
@@ -140,6 +141,8 @@ module "tailnet-infra" {
 
   vault_server_username     = var.tailnet_vault_server_username
   nextcloud_server_username = var.tailnet_nextcloud_server_username
+  collabora_server_username = var.tailnet_collabora_server_username
+
 
   providers = {
     headscale = headscale

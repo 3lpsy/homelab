@@ -14,6 +14,6 @@ output "user_map" {
     nomad_server     = headscale_user.nomad_server_user.id
     vault_server     = headscale_user.vault_server_user.id
     nextcloud_server = headscale_user.nextcloud_server_user.id
-
+    collabora_server = headscale_user.collabora_server_user.id
   }
 }

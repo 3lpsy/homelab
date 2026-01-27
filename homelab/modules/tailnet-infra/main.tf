@@ -60,6 +60,10 @@ resource "headscale_user" "nextcloud_server_user" {
   name = var.nextcloud_server_username
 }
 
+resource "headscale_user" "collabora_server_user" {
+  name = var.collabora_server_username
+}
+
 # resource "headscale_user" "test_user" {
 #   name = "test_user"
 # }
