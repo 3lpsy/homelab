@@ -1,33 +1,6 @@
 # Readme
 
-# TODO:
-- delete cal record manually added to r53 once migrated
-- No containerd, only podman and nomad
-- TODO: Let vault run and make sure it doesn't restart (tailnet key may expire)
-- Setup Nomad
-	- Build vault on Nomad (local/not in registry)
-	- Should be able to connect to TS
-	- Need to get bootstrapped and get keys for provider
-	- Start Vault
-- Get Vault provider setup in TF
-	- Seed vault with registry TLS
-	- Seed vault with registry Creds
-- Setup Registry
-	- Build registry locally on nomad (local/not in registry)
-	- Should be able to connect to TS
-	- Should be able to connect to Vault (HS ACLs will need updating)
-- Start Registry / Get Registry Setup
-- Build any necessary images
-- Deploy Images
-- TLS
-	- Only managed TLS is HS/Nomad/Vault
-		- HS/Nomad require file manip for updating (or TF apply)
-		- Vault can be rebuilt and replaced
-	- All others should pull from vault
-
-# Gather Tools
-
-Install `terraform` and `age` (or `age` complaint implementation)
+A home network that utilizes headscale in AWS and a single K3s node. Continuous work in progress.
 
 # Register Domains
 Headscale requires two domains. The necessity of the second one depends on what services you want and whether you'll need TLS certs for nginx. Anyways, the first domain will be the headscale server domain. The second will be the magic DNS domains. The deployment will create the hosted zones so they probably shouldn't exist. If they do, just import them.
@@ -41,12 +14,26 @@ ssh-keygen -f data/ssh.pem
 ```
 
 ## Deploy
+
 ```
+# initial infrastructure
 ./terraform.sh homelab init
-./terraform.sh homelab deploy
+./terraform.sh homelab apply
+
+# create vault in k3s
+./terraform.sh vault init
+./terraform.sh vault apply
+
+# after unsealing vault
+./terraform.sh vault-conf init
+./terraform.sh vault-conf apply
+
+# deploy nextcloud + collabora
+./terraform.sh nextcloud init
+./terraform.sh nextcloud apply
 ```
 
 ## Notes
 - Need to use recursive name servers for ACME magic domains to avoid local DNS searching.
-- Initial nomad provisioning done over local IP instead of tailscale to onboard it and then done over tailscale
+- Initial k3s provisioning done over local IP instead of tailscale to onboard it and then done over tailscale
 - Double check nameservers in hosted zone created match that from "Registered Domains" (Registrar Nameservers)

@@ -23,7 +23,7 @@ resource "kubernetes_config_map" "nginx_config" {
         }
 
         server {
-          listen 443 ssl http2;
+          listen 443 ssl;
           server_name ${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain};
 
           # SSL configuration
@@ -252,7 +252,7 @@ resource "kubernetes_deployment" "nextcloud" {
             }
             limits = {
               cpu    = "1000m"
-              memory = "1Gi"  # Increased for large file handling
+              memory = "2Gi"  # Increased for large file handling
             }
           }
         }
@@ -374,7 +374,7 @@ resource "kubernetes_deployment" "nextcloud" {
             }
             limits = {
               cpu    = "2000m"
-              memory = "2Gi"
+              memory = "4Gi"
             }
           }
 

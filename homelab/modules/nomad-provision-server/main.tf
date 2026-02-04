@@ -50,9 +50,29 @@ resource "null_resource" "k3s_install" {
     inline = [
       # Install K3s, change advertise addr if adding nodes over tailscale, maybe node-ip too
       "TAILSCALE_IP=$(tailscale ip -4)",
-      "curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 640 --node-ip $TAILSCALE_IP  --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain}",
+      "curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 640 --node-ip $TAILSCALE_IP  --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain}  --flannel-backend=wireguard-native",
       "sudo chown root:provisioner /etc/rancher/k3s/k3s.yaml"
     ]
   }
   depends_on = [null_resource.k3s_prep_firewalld]
+}
+
+resource "null_resource" "post_k3s_install" {
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo systemctl disable --now avahi-daemon || echo 'No Avahi daemon to disable or it failed'",
+      "sudo systemctl disable --now avahi-daemon.socket || echo 'No avahi socket to disable or it failed'",
+      "sudo systemctl mask avahi-daemon.service avahi-daemon.socket || echo 'No avahi to mask or it failed'",
+      "sudo systemctl stop passim.service || echo 'No passim to stop or it failed'",
+      "sudo systemctl mask passim.service || echo 'No passim to mask or it failed'"
+    ]
+  }
+  depends_on = [null_resource.k3s_install]
 }

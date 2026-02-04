@@ -12,7 +12,8 @@ resource "null_resource" "install_deps" {
   provisioner "remote-exec" {
     inline = [
       "sudo dnf update -y",
-      "sudo dnf install -y nginx"
+      "sudo dnf install -y nginx",
+      "sudo dnf install -y wireguard-tools" # needed for flannel wg native backend
     ]
   }
 }

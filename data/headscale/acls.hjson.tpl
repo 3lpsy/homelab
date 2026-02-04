@@ -14,7 +14,7 @@
     "group:calendar-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@"],
     "group:vault-server": ["${vault_server_user}@"],
     "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
-    "group:nextcloud-clients": ["${personal_user}@"],
+    "group:nextcloud-clients": ["${personal_user}@", "${mobile_user}@"],
     "group:nextcloud-server": ["${nextcloud_server_user}@"],
     "group:collabora-server": ["${collabora_server_user}@"]
 
