@@ -168,9 +168,14 @@ resource "kubernetes_job" "configure_nextcloud_and_collabora" {
         service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
         restart_policy       = "OnFailure"
 
+        image_pull_secrets {
+          name = kubernetes_secret.registry_pull_secret.metadata[0].name
+        }
+
         container {
           name  = "configure"
-          image = "nextcloud:latest"
+          # image = "nextcloud:latest"
+          image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
 
           command = [
             "sh",
@@ -282,6 +287,126 @@ resource "kubernetes_job" "configure_nextcloud_and_collabora" {
     kubernetes_deployment.nextcloud,
     kubernetes_deployment.collabora,
     kubernetes_job.configure_appapi_harp
+  ]
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].name
+    ]
+  }
+}
+
+resource "kubernetes_job" "configure_previews" {
+  metadata {
+    name      = "configure-previews-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    backoff_limit = 5
+
+    template {
+      metadata {}
+
+      spec {
+        service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
+        restart_policy       = "OnFailure"
+
+        image_pull_secrets {
+          name = kubernetes_secret.registry_pull_secret.metadata[0].name
+        }
+
+        container {
+          name  = "configure"
+          image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
+
+          command = [
+            "sh",
+            "-c",
+            <<-EOT
+              until php occ status 2>/dev/null; do
+                echo "Waiting for Nextcloud to be ready..."
+                sleep 10
+              done
+
+              echo "Configuring preview providers..."
+
+              php occ config:system:set enabledPreviewProviders 0 --value="OC\Preview\PNG"
+              php occ config:system:set enabledPreviewProviders 1 --value="OC\Preview\JPEG"
+              php occ config:system:set enabledPreviewProviders 2 --value="OC\Preview\GIF"
+              php occ config:system:set enabledPreviewProviders 3 --value="OC\Preview\BMP"
+              php occ config:system:set enabledPreviewProviders 4 --value="OC\Preview\XBitmap"
+              php occ config:system:set enabledPreviewProviders 5 --value="OC\Preview\MarkDown"
+              php occ config:system:set enabledPreviewProviders 6 --value="OC\Preview\MP3"
+              php occ config:system:set enabledPreviewProviders 7 --value="OC\Preview\TXT"
+              php occ config:system:set enabledPreviewProviders 8 --value="OC\Preview\Movie"
+              php occ config:system:set enabledPreviewProviders 9 --value="OC\Preview\MP4"
+              php occ config:system:set enabledPreviewProviders 10 --value="OC\Preview\MOV"
+              php occ config:system:set enabledPreviewProviders 11 --value="OC\Preview\HEIC"
+
+              echo "Preview providers configured:"
+              php occ config:system:get enabledPreviewProviders
+            EOT
+          ]
+
+          env {
+            name  = "POSTGRES_HOST"
+            value = "postgres"
+          }
+
+          env {
+            name  = "POSTGRES_DB"
+            value = "nextcloud"
+          }
+
+          env {
+            name  = "POSTGRES_USER"
+            value = "nextcloud"
+          }
+
+          env {
+            name  = "REDIS_HOST"
+            value = "redis"
+          }
+
+          volume_mount {
+            name       = "nextcloud-data"
+            mount_path = "/var/www/html"
+          }
+
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+        }
+
+        volume {
+          name = "nextcloud-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.nextcloud_data.metadata[0].name
+          }
+        }
+
+        volume {
+          name = "secrets-store"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = kubernetes_manifest.nextcloud_secret_provider.manifest.metadata.name
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_deployment.nextcloud,
+    kubernetes_service.postgres,
+    kubernetes_service.redis,
+    kubernetes_manifest.nextcloud_secret_provider
   ]
 
   lifecycle {

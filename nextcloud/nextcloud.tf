@@ -164,6 +164,9 @@ resource "kubernetes_deployment" "nextcloud" {
 
       spec {
         service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
+        image_pull_secrets {
+          name = kubernetes_secret.registry_pull_secret.metadata[0].name
+        }
         host_aliases {
           ip = kubernetes_service.collabora_internal.spec[0].cluster_ip
           hostnames = [
@@ -264,8 +267,8 @@ resource "kubernetes_deployment" "nextcloud" {
         # Nextcloud container
         container {
           name  = "nextcloud"
-          image = "nextcloud:latest"
-
+          # image = "nextcloud:latest"
+          image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
           # Too muich memory?
           # lifecycle {
           #   post_start {
