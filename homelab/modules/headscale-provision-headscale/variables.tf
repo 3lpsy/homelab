@@ -31,6 +31,9 @@ variable "personal_username" {
 variable "mobile_username" {
   type = string
 }
+variable "registry_server_username" {
+  type = string
+}
 variable "calendar_server_username" {
   type = string
 }

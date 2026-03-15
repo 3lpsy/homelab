@@ -76,3 +76,30 @@ resource "null_resource" "post_k3s_install" {
   }
   depends_on = [null_resource.k3s_install]
 }
+
+resource "null_resource" "k3s_registry_config" {
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      <<-EOT
+        sudo tee /etc/rancher/k3s/registries.yaml > /dev/null <<'EOF'
+mirrors:
+  "${var.registry_domain}.${var.headscale_magic_subdomain}":
+    endpoint:
+      - "https://${var.registry_domain}.${var.headscale_magic_subdomain}"
+EOF
+      EOT
+      ,
+      "sudo systemctl restart k3s"
+    ]
+  }
+
+  depends_on = [null_resource.k3s_install]
+}

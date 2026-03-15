@@ -16,3 +16,7 @@ variable "nomad_host_name" {
 variable "headscale_magic_subdomain" {
   type = string
 }
+
+variable "registry_domain" {
+  type = string
+}

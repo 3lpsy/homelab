@@ -26,6 +26,13 @@ resource "headscale_user" "mobile_user" {
   }
 }
 
+resource "headscale_user" "registry_server_user" {
+  name = var.registry_server_username
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "headscale_user" "calendar_server_user" {
   name = var.calendar_server_username
   lifecycle {

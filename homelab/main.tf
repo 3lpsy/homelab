@@ -108,6 +108,7 @@ module "headscale-provision-headscale" {
   nomad_server_username   = var.tailnet_nomad_server_username
   mobile_username         = var.tailnet_mobile_username
   calendar_server_username         = var.tailnet_calendar_server_username
+  registry_server_username         = var.tailnet_registry_server_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
@@ -139,6 +140,7 @@ module "tailnet-infra" {
   personal_username       = var.tailnet_personal_username
   nomad_server_username   = var.tailnet_nomad_server_username
   mobile_username         = var.tailnet_mobile_username
+  registry_server_username         = var.tailnet_registry_server_username
   calendar_server_username         = var.tailnet_calendar_server_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
@@ -215,6 +217,7 @@ module "nomad-provision-server" {
   ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
   nomad_host_name           = var.nomad_host_name
   headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  registry_domain = "${var.tailnet_registry_server_username}"
   depends_on                = [module.nomad-provision-dep]
 }
 

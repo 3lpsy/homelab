@@ -49,6 +49,11 @@ variable "tailnet_mobile_username" {
   type    = string
   default = "mobile"
 }
+variable "tailnet_registry_server_username" {
+  type    = string
+  default = "registry"
+}
+
 variable "tailnet_calendar_server_username" {
   type    = string
   default = "cal"
