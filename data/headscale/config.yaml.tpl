@@ -85,10 +85,7 @@ dns:
   # List of DNS servers to expose to clients.
   nameservers:
     global:
-      - 9.9.9.9
-      - 149.112.112.112
-      - 2620:fe::fe
-      - 2620:fe::9
+      - 100.64.0.15
     split:
       {}
   # Set custom DNS search domains. With MagicDNS enabled,

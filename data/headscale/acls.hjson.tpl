@@ -21,6 +21,8 @@
     "group:nextcloud-server": ["${nextcloud_server_user}@"],
     "group:collabora-server": ["${collabora_server_user}@"],
     "group:pihole-clients": ["${personal_user}@", "${mobile_user}@", "${tv_user}@"],
+    "group:calendar-clients": ["${calendar_server_user}@", "${personal_user}@", "${mobile_user}@"],
+    "group:calendar-server": ["${calendar_server_user}@"],
 
     "group:pihole-server": ["${pihole_server_user}@"]
   },
@@ -61,7 +63,7 @@
     { "action": "accept", "src": ["group:syncthing-clients"], "dst": ["group:syncthing-clients:22000,21027"] },
 
     // calendar clients access to personal, tmp
-    { "action": "accept", "src": ["group:calendar-clients"], "dst": ["group:personal:443"] },
+    { "action": "accept", "src": ["group:calendar-clients"], "dst": ["group:calendar-server:443"] },
 
     // vault clients access to vault server
     { "action": "accept", "src": ["group:vault-clients"], "dst": ["group:vault-server:443,8201"] },
@@ -73,7 +75,7 @@
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] },
 
     // pihole clients to access pihole server
-    { "action": "accept", "src": ["group:pihole-clients"], "dst": ["group:pihole-server:53"] },
+    { "action": "accept", "src": ["*"], "dst": ["group:pihole-server:53"] },
 
     // pihole managers
     { "action": "accept", "src": ["group:personal", "group:mobile"], "dst": ["group:pihole-server:443"] },
