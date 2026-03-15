@@ -1,8 +1,9 @@
 # Readme
 
-A home network that utilizes headscale in AWS and a single K3s node. Continuous work in progress.
+A home network that utilizes headscale in AWS and a single K3s node. Continuous work in progress and intended for personal use.
 
 # Register Domains
+
 Headscale requires two domains. The necessity of the second one depends on what services you want and whether you'll need TLS certs for nginx. Anyways, the first domain will be the headscale server domain. The second will be the magic DNS domains. The deployment will create the hosted zones so they probably shouldn't exist. If they do, just import them.
 
 ## Create SSH Key
@@ -28,9 +29,13 @@ ssh-keygen -f data/ssh.pem
 ./terraform.sh vault-conf init
 ./terraform.sh vault-conf apply
 
-# deploy nextcloud + collabora
+# deploy all the services (nextcloud, collabora, registry, pihole, etc)
 ./terraform.sh nextcloud init
 ./terraform.sh nextcloud apply
+
+# deploy monitoring (gafana + prometheus)
+./terraform.sh monitoring init
+./terraform.sh monitoring apply
 ```
 
 ## Notes
