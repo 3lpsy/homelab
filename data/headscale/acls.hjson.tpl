@@ -22,6 +22,8 @@
     "group:calendar-clients": ["${calendar_server_user}@", "${personal_user}@", "${mobile_user}@"],
     "group:calendar-server": ["${calendar_server_user}@"],
     "group:registry-clients": ["${registry_server_user}@", "${nomad_server_user}@", "${personal_user}@"],
+    "group:grafana-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
+    "group:grafana-server": ["${grafana_server_user}@"],
     "group:registry-server": ["${registry_server_user}@"],
     "group:pihole-server": ["${pihole_server_user}@"]
   },
@@ -72,8 +74,12 @@
     // nextcloud clients access to nextcloud server and collabora server
     { "action": "accept", "src": ["group:nextcloud-clients"], "dst": ["group:nextcloud-server:443", "group:collabora-server:443"] },
 
-    // registry clients access to registry server and collabora server
+    // registry clients access to registry server
     { "action": "accept", "src": ["group:registry-clients"], "dst": ["group:registry-server:443"] },
+
+    // grafana clients access to registry server
+    { "action": "accept", "src": ["group:grafana-clients"], "dst": ["group:grafana-server:443"] },
+
 
     // allow ios to access devbox on 1420,1421,3000,8888
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] },

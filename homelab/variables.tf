@@ -54,6 +54,11 @@ variable "tailnet_registry_server_username" {
   default = "registry"
 }
 
+variable "tailnet_grafana_server_username" {
+  type    = string
+  default = "grafana"
+}
+
 variable "tailnet_calendar_server_username" {
   type    = string
   default = "cal"

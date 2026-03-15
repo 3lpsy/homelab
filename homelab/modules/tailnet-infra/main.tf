@@ -25,7 +25,12 @@ resource "headscale_user" "mobile_user" {
     prevent_destroy = true
   }
 }
-
+resource "headscale_user" "grafana_server_user" {
+  name = var.grafana_server_username
+  lifecycle {
+    prevent_destroy = true
+  }
+}
 resource "headscale_user" "registry_server_user" {
   name = var.registry_server_username
   lifecycle {
