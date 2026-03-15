@@ -23,7 +23,6 @@ resource "aws_subnet" "main" {
 #   subnet_id       = aws_subnet.main.id
 #   private_ips     = ["10.0.0.209"]
 #   security_groups = []
-
 # }
 
 # # Create NACL for Subnet
@@ -39,6 +38,14 @@ resource "aws_network_acl" "main" {
     to_port    = 65535
   }
   egress {
+    protocol   = "udp"
+    rule_no    = 101
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 65535
+  }
+  egress {
     protocol        = "tcp"
     rule_no         = 200
     action          = "allow"
@@ -46,6 +53,17 @@ resource "aws_network_acl" "main" {
     from_port       = 0
     to_port         = 65535
   }
+
+
+  egress {
+    protocol        = "udp"
+    rule_no         = 201
+    action          = "allow"
+    ipv6_cidr_block = "::/0"
+    from_port       = 0
+    to_port         = 65535
+  }
+
   ingress {
     protocol   = "tcp"
     rule_no    = 300
@@ -54,7 +72,14 @@ resource "aws_network_acl" "main" {
     from_port  = 0
     to_port    = 65535
   }
-
+  ingress {
+    protocol   = "udp"
+    rule_no    = 301
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 65535
+  }
   ingress {
     protocol        = "tcp"
     rule_no         = 400
@@ -63,7 +88,14 @@ resource "aws_network_acl" "main" {
     from_port       = 0
     to_port         = 65535
   }
-
+  ingress {
+    protocol        = "udp"
+    rule_no         = 401
+    action          = "allow"
+    ipv6_cidr_block = "::/0"
+    from_port       = 0
+    to_port         = 65535
+  }
   tags = {
     Name = "headscale"
   }
@@ -109,7 +141,7 @@ resource "aws_route_table_association" "main" {
   subnet_id      = aws_subnet.main.id
   route_table_id = aws_route_table.main.id
 }
-#
+
 # Create Security Group for EC2 Instance
 resource "aws_security_group" "main" {
   name        = "headscale"

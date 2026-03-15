@@ -3,6 +3,18 @@ output "nomad_server_preauth_key" {
   sensitive = true
 }
 
+output "tv_preauth_key" {
+  value     = headscale_pre_auth_key.tv.key
+  sensitive = true
+}
+
+
+output "exit_node_preauth_key" {
+  value     = headscale_pre_auth_key.exit_node.key
+  sensitive = true
+}
+
+
 output "user_map" {
   description = "Map of usernames to their created user IDs"
   value = {
@@ -15,5 +27,9 @@ output "user_map" {
     vault_server     = headscale_user.vault_server_user.id
     nextcloud_server = headscale_user.nextcloud_server_user.id
     collabora_server = headscale_user.collabora_server_user.id
+    pihole_server = headscale_user.pihole_server.id
+
+    tv = headscale_user.tv_user.id
+    exit_node = headscale_user.exit_node_user.id
   }
 }

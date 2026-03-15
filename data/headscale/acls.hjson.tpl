@@ -7,6 +7,9 @@
     "group:tablet": ["${tablet_user}@"],
     "group:deck": ["${deck_user}@"],
     "group:devbox": ["${devbox_user}@"],
+    "group:exitnodes": ["${exit_node_user}@"],
+    "group:tv": ["${tv_user}@"],
+
     // add calendar when migrated
     "group:ssh-clients": ["${personal_user}@"],
     "group:ssh-servers": ["${deck_user}@"],
@@ -16,8 +19,13 @@
     "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
     "group:nextcloud-clients": ["${personal_user}@", "${mobile_user}@"],
     "group:nextcloud-server": ["${nextcloud_server_user}@"],
-    "group:collabora-server": ["${collabora_server_user}@"]
+    "group:collabora-server": ["${collabora_server_user}@"],
+    "group:pihole-clients": ["${personal_user}@", "${mobile_user}@", "${tv_user}@"],
 
+    "group:pihole-server": ["${pihole_server_user}@"]
+  },
+  "autoApprovers": {
+    "exitNode": ["tag:exitnode"]
   },
   "tagOwners": {
     "tag:personal": ["group:personal"],
@@ -28,7 +36,9 @@
     "tag:vault-server": ["group:vault-server"],
     "tag:vault-clients": ["group:vault-clients"],
     "tag:nextcloud-clients": ["group:nextcloud-clients", "group:collabora-server"],
-    "tag:nextcloud-server": ["group:nextcloud-server", "group:collabora-server"]
+    "tag:nextcloud-server": ["group:nextcloud-server", "group:collabora-server"],
+    "tag:pihole-server": ["group:pihole-server"],
+    "tag:exitnode": ["group:exitnodes"]
   },
   "hosts": {},
   "acls": [
@@ -60,7 +70,21 @@
     { "action": "accept", "src": ["group:nextcloud-clients"], "dst": ["group:nextcloud-server:443", "group:collabora-server:443"] },
 
     // allow ios to access devbox on 1420,1421,3000,8888
-    { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] }
+    { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] },
+
+    // pihole clients to access pihole server
+    { "action": "accept", "src": ["group:pihole-clients"], "dst": ["group:pihole-server:53"] },
+
+    // pihole managers
+    { "action": "accept", "src": ["group:personal", "group:mobile"], "dst": ["group:pihole-server:443"] },
+
+    // users who can use any exit node
+    {
+      "action": "accept",
+      "src": ["group:personal", "group:mobile", "group:tv"],
+      "dst": ["autogroup:internet:*"]
+    },
+    { "action": "accept", "src": ["group:personal", "group:mobile", "group:tv"], "dst": ["group:exitnodes:*"] }
 
   ]
 }

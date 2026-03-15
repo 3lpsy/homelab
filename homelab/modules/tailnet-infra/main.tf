@@ -64,6 +64,30 @@ resource "headscale_user" "collabora_server_user" {
   name = var.collabora_server_username
 }
 
+resource "headscale_user" "pihole_server" {
+  name = var.pihole_server_username
+}
+
+resource "headscale_user" "tv_user" {
+  name = var.tv_user
+}
+
+resource "headscale_pre_auth_key" "tv" {
+  user           = headscale_user.tv_user.id
+  reusable       = true
+  time_to_expire = "3y"
+}
+
+resource "headscale_user" "exit_node_user" {
+  name = var.exit_node_username
+}
+
+resource "headscale_pre_auth_key" "exit_node" {
+  user           = headscale_user.exit_node_user.id
+  reusable       = true
+  time_to_expire = "3y"
+}
+
 # resource "headscale_user" "test_user" {
 #   name = "test_user"
 # }

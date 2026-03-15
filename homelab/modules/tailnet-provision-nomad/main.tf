@@ -70,7 +70,7 @@ resource "null_resource" "tailnet_auth" {
   provisioner "remote-exec" {
     inline = [
       "sudo tailscale up --login-server https://${var.headscale_server_domain} --auth-key file:///home/${var.ssh_user}/tailnet_auth_key --hostname ${var.nomad_hostname} --advertise-tags=tag:nomad-server --accept-routes",
-      "sudo rm file:///home/${var.ssh_user}/tailnet_auth_key"
+      "sudo rm /home/${var.ssh_user}/tailnet_auth_key"
     ]
   }
   depends_on = [null_resource.upload_auth_key]

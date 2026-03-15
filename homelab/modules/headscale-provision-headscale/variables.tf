@@ -40,10 +40,20 @@ variable "deck_username" {
 variable "devbox_username" {
   type = string
 }
+variable "exit_node_username" {
+  type = string
+}
 variable "nomad_server_username" {
   type = string
 }
 variable "vault_server_username" {
+  type = string
+}
+variable "pihole_server_username" {
+  type = string
+}
+
+variable "tv_username" {
   type = string
 }
 

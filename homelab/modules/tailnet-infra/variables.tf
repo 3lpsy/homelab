@@ -35,3 +35,17 @@ variable "nextcloud_server_username" {
 variable "collabora_server_username" {
   type = string
 }
+
+variable "pihole_server_username" {
+  type = string
+}
+
+variable "tv_user" {
+  type = string
+  default = "tv"
+}
+
+variable "exit_node_username" {
+  type = string
+  default = "exitnode"
+}

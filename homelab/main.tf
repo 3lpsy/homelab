@@ -110,6 +110,9 @@ module "headscale-provision-headscale" {
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
+  pihole_server_username         = var.tailnet_pihole_server_username
+  exit_node_username         = var.tailnet_exit_node_username
+  tv_username         = var.tailnet_tv_username
 
   vault_server_username     = var.tailnet_vault_server_username
   nextcloud_server_username = var.tailnet_nextcloud_server_username
@@ -138,10 +141,12 @@ module "tailnet-infra" {
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
+  exit_node_username         = var.tailnet_exit_node_username
 
   vault_server_username     = var.tailnet_vault_server_username
   nextcloud_server_username = var.tailnet_nextcloud_server_username
   collabora_server_username = var.tailnet_collabora_server_username
+  pihole_server_username         = var.tailnet_pihole_server_username
 
 
   providers = {
@@ -209,4 +214,23 @@ module "nomad-provision-server" {
   nomad_host_name           = var.nomad_host_name
   headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
   depends_on                = [module.nomad-provision-dep]
+}
+
+
+
+module "exit-node-0" {
+  source                    = "./modules/exit-node"
+  ami = "ami-0b6c6ebed2801a5cb" # 24.04
+  ec2_user = "ubuntu"
+  ssh_user                  = "ubuntu"
+  ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
+  vpc_id = module.headscale-infra.vpc_id
+  gateway_id = module.headscale-infra.gateway_id
+  ssh_pub_key        = trimspace(file(var.ssh_pub_key_path))
+  headscale_server_domain = module.headscale-infra-dns.dns_domain
+  tailnet_auth_key = module.tailnet-infra.exit_node_preauth_key
+  node_name = "0"
+
+  depends_on                = [module.tailnet-infra]
+
 }

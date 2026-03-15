@@ -61,14 +61,27 @@ variable "tailnet_devbox_username" {
   type    = string
   default = "devbox"
 }
+variable "tailnet_exit_node_username" {
+  type    = string
+  default = "exitnode"
+}
 variable "tailnet_nextcloud_server_username" {
   type    = string
   default = "nextcloud"
+}
+variable "tailnet_tv_username" {
+  type    = string
+  default = "tv"
 }
 variable "tailnet_collabora_server_username" {
   type    = string
   default = "collabora"
 
+}
+
+variable "tailnet_pihole_server_username" {
+  type    = string
+  default = "pihole"
 }
 
 variable "nomad_host_name" {
