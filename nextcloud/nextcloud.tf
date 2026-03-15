@@ -144,6 +144,10 @@ resource "kubernetes_deployment" "nextcloud" {
   spec {
     replicas = 1
 
+    strategy {
+      type = "Recreate"
+    }
+
     selector {
       match_labels = {
         app = "nextcloud"
@@ -261,6 +265,18 @@ resource "kubernetes_deployment" "nextcloud" {
         container {
           name  = "nextcloud"
           image = "nextcloud:latest"
+
+          # Too muich memory?
+          # lifecycle {
+          #   post_start {
+          #     exec {
+          #       command = ["/bin/sh", "-c", "apt-get update && apt-get install -y ffmpeg"]
+          #     }
+          #   }
+          # }
+          # kubectl exec -n nextcloud <nextcloud-pod> -c nextcloud -- php occ config:system:set enabledPreviewProviders 0 --value="OC\\Preview\\Movie"
+          # kubectl exec -n nextcloud <nextcloud-pod> -c nextcloud -- php occ config:system:set enabledPreviewProviders 1 --value="OC\\Preview\\MP4"
+          # kubectl exec -n nextcloud <nextcloud-pod> -c nextcloud -- php occ config:system:set enabledPreviewProviders 2 --value="OC\\Preview\\MOV"
 
           port {
             container_port = 80

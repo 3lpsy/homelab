@@ -21,6 +21,8 @@ output "user_map" {
     personal         = headscale_user.personal_user.id
     mobile           = headscale_user.mobile_user.id
     tablet           = headscale_user.tablet_user.id
+    calendar_server = headscale_user.calendar_server_user.id
+
     deck             = headscale_user.deck_user.id
     devbox           = headscale_user.devbox_user.id
     nomad_server     = headscale_user.nomad_server_user.id

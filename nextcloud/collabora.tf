@@ -101,7 +101,9 @@ resource "kubernetes_deployment" "collabora" {
 
   spec {
     replicas = 1
-
+    strategy {
+      type = "Recreate"
+    }
     selector {
       match_labels = {
         app = "collabora"

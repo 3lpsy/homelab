@@ -107,6 +107,7 @@ module "headscale-provision-headscale" {
   personal_username       = var.tailnet_personal_username
   nomad_server_username   = var.tailnet_nomad_server_username
   mobile_username         = var.tailnet_mobile_username
+  calendar_server_username         = var.tailnet_calendar_server_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
@@ -138,6 +139,7 @@ module "tailnet-infra" {
   personal_username       = var.tailnet_personal_username
   nomad_server_username   = var.tailnet_nomad_server_username
   mobile_username         = var.tailnet_mobile_username
+  calendar_server_username         = var.tailnet_calendar_server_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username

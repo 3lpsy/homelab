@@ -26,6 +26,13 @@ resource "headscale_user" "mobile_user" {
   }
 }
 
+resource "headscale_user" "calendar_server_user" {
+  name = var.calendar_server_username
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "headscale_user" "tablet_user" {
   name = var.tablet_username
   lifecycle {
@@ -48,6 +55,7 @@ resource "headscale_user" "devbox_user" {
 resource "headscale_user" "nomad_server_user" {
   name = var.nomad_server_username
 }
+
 resource "headscale_user" "vault_server_user" {
   name = var.vault_server_username
 }

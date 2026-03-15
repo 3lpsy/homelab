@@ -13,6 +13,11 @@ variable "collabora_domain" {
   default = "collabora"
 }
 
+variable "pihole_domain" {
+  type    = string
+  default = "pihole"
+}
+
 variable "vault_root_token" {
   type = string
 }
@@ -56,4 +61,9 @@ variable "recursive_nameservers" {
 variable "acme_server_url" {
   type    = string
   default = "https://acme-v02.api.letsencrypt.org/directory"
+}
+
+variable "radicale_domain" {
+  type    = string
+  default = "cal"
 }

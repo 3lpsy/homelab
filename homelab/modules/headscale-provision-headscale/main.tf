@@ -18,6 +18,7 @@ resource "null_resource" "headscale_config" {
       personal_user         = var.personal_username
       nomad_server_user     = var.nomad_server_username
       mobile_user           = var.mobile_username
+      calendar_server_user           = var.calendar_server_username
       tablet_user           = var.tablet_username
       deck_user             = var.deck_username
       devbox_user           = var.devbox_username
@@ -46,6 +47,7 @@ resource "null_resource" "headscale_config" {
       personal_user         = var.personal_username
       nomad_server_user     = var.nomad_server_username
       mobile_user           = var.mobile_username
+      calendar_server_user           = var.calendar_server_username
       tablet_user           = var.tablet_username
       deck_user             = var.deck_username
       devbox_user           = var.devbox_username
@@ -120,6 +122,7 @@ resource "null_resource" "headscale_restart" {
       personal_user         = var.personal_username
       nomad_server_user     = var.nomad_server_username
       mobile_user           = var.mobile_username
+      calendar_server_user           = var.calendar_server_username
       tablet_user           = var.tablet_username
       deck_user             = var.deck_username
       devbox_user           = var.devbox_username
