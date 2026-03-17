@@ -159,7 +159,7 @@ resource "kubernetes_deployment" "collabora" {
 
         # Tailscale sidecar
         container {
-          name  = "tailscale"
+          name  = "collabora-tailscale"
           image = "tailscale/tailscale:latest"
 
           env {
@@ -216,7 +216,7 @@ resource "kubernetes_deployment" "collabora" {
 
         # Nginx reverse proxy for TLS termination
         container {
-          name  = "nginx"
+          name  = "collabora-nginx"
           image = "nginx:alpine"
 
           port {
@@ -384,27 +384,4 @@ resource "kubernetes_deployment" "collabora" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider
   ]
-}
-
-# Collabora Service (internal only - accessed via Tailscale)
-# Internal service for Nextcloud -> Collabora communication
-resource "kubernetes_service" "collabora_internal" {
-  metadata {
-    name      = "collabora-internal"
-    namespace = kubernetes_namespace.nextcloud.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "collabora"
-    }
-
-    port {
-      name        = "https" # Changed from "http"
-      port        = 443     # Changed from 9980
-      target_port = 443     # Point to nginx's HTTPS port
-    }
-
-    type = "ClusterIP"
-  }
 }

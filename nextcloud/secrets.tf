@@ -1,4 +1,5 @@
-# Generate random passwords
+# Generated secrets the k3s secrets
+
 resource "random_password" "nextcloud_admin" {
   length  = 32
   special = true
@@ -19,13 +20,34 @@ resource "random_password" "collabora_password" {
   special = false
 }
 
-# Generate HaRP shared key
 resource "random_password" "harp_shared_key" {
   length  = 32
   special = false
 }
 
-# Pulled from registry.tf
+resource "random_password" "immich_db_password" {
+  length  = 32
+  special = false
+}
+
+
+resource "random_password" "pihole_password" {
+  length  = 32
+  special = false
+}
+
+resource "random_password" "registry_user_passwords" {
+  for_each = toset(var.registry_users)
+  length   = 32
+  special  = false
+}
+
+resource "random_password" "radicale_password" {
+  length  = 32
+  special = false
+}
+
+# Used to pull local repo
 resource "kubernetes_secret" "registry_pull_secret" {
   metadata {
     name      = "registry-pull-secret"

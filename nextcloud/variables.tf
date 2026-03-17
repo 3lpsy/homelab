@@ -78,3 +78,8 @@ variable "registry_domain" {
   type    = string
   default = "registry"
 }
+
+variable "immich_domain" {
+  type    = string
+  default = "immich"
+}

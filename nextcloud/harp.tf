@@ -112,7 +112,7 @@ resource "kubernetes_deployment" "harp" {
           }
         }
 
-        # HaRP container
+        # Harp container
         container {
           name  = "harp"
           image = "ghcr.io/nextcloud/nextcloud-appapi-harp:release"
@@ -150,7 +150,7 @@ resource "kubernetes_deployment" "harp" {
 
           env {
             name  = "HP_LOG_LEVEL"
-            value = "debug" # Changed from info
+            value = "info"
           }
 
           # ADD THIS
@@ -197,8 +197,6 @@ resource "kubernetes_deployment" "harp" {
             }
           }
 
-
-
           liveness_probe {
             tcp_socket {
               port = 8780
@@ -243,30 +241,4 @@ resource "kubernetes_deployment" "harp" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider
   ]
-}
-
-# HaRP Service
-resource "kubernetes_service" "harp" {
-  metadata {
-    name      = "appapi-harp"
-    namespace = kubernetes_namespace.nextcloud.metadata[0].name
-  }
-
-  spec {
-    selector = {
-      app = "appapi-harp"
-    }
-
-    port {
-      name        = "http"
-      port        = 8780
-      target_port = 8780
-    }
-
-    port {
-      name        = "frp"
-      port        = 8782
-      target_port = 8782
-    }
-  }
 }

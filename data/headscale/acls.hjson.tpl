@@ -14,6 +14,7 @@
     "group:syncthing-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@","${deck_user}@"],
     "group:calendar-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@"],
     "group:vault-server": ["${vault_server_user}@"],
+    // immich is also nextcloud TODO move collabora to nextcloud too
     "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
     "group:nextcloud-clients": ["${personal_user}@", "${mobile_user}@"],
     "group:nextcloud-server": ["${nextcloud_server_user}@"],

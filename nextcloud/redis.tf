@@ -1,5 +1,5 @@
 
-# Redis Deployment
+# Nextcloud Redis Deployment
 resource "kubernetes_deployment" "redis" {
   metadata {
     name      = "redis"
@@ -104,7 +104,7 @@ resource "kubernetes_deployment" "redis" {
   ]
 }
 
-# Redis Service
+# Redis Service for Nextcloud
 resource "kubernetes_service" "redis" {
   metadata {
     name      = "redis"
@@ -116,6 +116,86 @@ resource "kubernetes_service" "redis" {
       app = "redis"
     }
 
+    port {
+      port        = 6379
+      target_port = 6379
+    }
+  }
+}
+# Redis deployment for immich
+resource "kubernetes_deployment" "immich_redis" {
+  metadata {
+    name      = "immich-redis"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "immich-redis"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "immich-redis"
+        }
+      }
+
+      spec {
+        container {
+          name  = "valkey"
+          image = "docker.io/valkey/valkey:9"
+
+          port {
+            container_port = 6379
+          }
+
+          resources {
+            requests = {
+              cpu    = "50m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "256Mi"
+            }
+          }
+
+          liveness_probe {
+            exec {
+              command = ["redis-cli", "ping"]
+            }
+            initial_delay_seconds = 10
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            exec {
+              command = ["redis-cli", "ping"]
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 5
+          }
+        }
+      }
+    }
+  }
+}
+
+
+# Immich redis service
+resource "kubernetes_service" "immich_redis" {
+  metadata {
+    name      = "immich-redis"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+  spec {
+    selector = {
+      app = "immich-redis"
+    }
     port {
       port        = 6379
       target_port = 6379

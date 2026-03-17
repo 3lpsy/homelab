@@ -42,7 +42,7 @@ resource "kubernetes_config_map" "nginx_config" {
 
           # File upload limits
           client_max_body_size 20G;
-          client_body_buffer_size 400M;
+          client_body_buffer_size 16M;
 
           # Timeouts for large file operations
           proxy_connect_timeout 3600;
@@ -108,32 +108,6 @@ resource "kubernetes_config_map" "nginx_config" {
   }
 }
 
-
-# PVC for Nextcloud data
-resource "kubernetes_persistent_volume_claim" "nextcloud_data" {
-  lifecycle {
-    prevent_destroy = true
-  }
-  metadata {
-    name      = "nextcloud-data"
-    namespace = kubernetes_namespace.nextcloud.metadata[0].name
-  }
-
-  spec {
-    access_modes       = ["ReadWriteOnce"]
-    storage_class_name = "local-path"
-
-    resources {
-      requests = {
-        storage = "50Gi"
-      }
-    }
-  }
-  wait_until_bound = false
-}
-
-
-
 # Nextcloud Deployment
 resource "kubernetes_deployment" "nextcloud" {
   metadata {
@@ -173,9 +147,15 @@ resource "kubernetes_deployment" "nextcloud" {
             "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
           ]
         }
+        host_aliases {
+          ip = kubernetes_service.immich_internal.spec[0].cluster_ip
+          hostnames = [
+            "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+          ]
+        }
         # Tailscale sidecar
         container {
-          name  = "tailscale"
+          name  = "nextcloud-tailscale"
           image = "tailscale/tailscale:latest"
 
           env {
@@ -232,7 +212,7 @@ resource "kubernetes_deployment" "nextcloud" {
 
         # Nginx reverse proxy for TLS termination
         container {
-          name  = "nginx"
+          name  = "nextcloud-nginx"
           image = "nginx:alpine"
 
           port {

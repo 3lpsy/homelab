@@ -1,10 +1,24 @@
 # Readme
 
-A home network that utilizes headscale in AWS and a single K3s node. Continuous work in progress and intended for personal use.
+A home network that utilizes headscale in AWS and a single K3s node. Continuous work in progress and intended for personal use so you probably don't want to use this.
 
 # Register Domains
 
 Headscale requires two domains. The necessity of the second one depends on what services you want and whether you'll need TLS certs for nginx. Anyways, the first domain will be the headscale server domain. The second will be the magic DNS domains. The deployment will create the hosted zones so they probably shouldn't exist. If they do, just import them.
+
+# Servers
+- Headscale EC2
+- K3s Server on LAN
+- Exit Node EC2
+
+# Service Overview
+- Headscale / Tailnet
+- Nextcloud + Collabora + Harp
+- Immich with shared RO PVC from Nextcloud
+- PiHole (Configured as advertised Headscale DNS server)
+- Radicale (CalDAV/CardDav)
+- Registry (Docker Registry v2)
+- Grafana / Prometheus / Node Exporter
 
 ## Create SSH Key
 
@@ -41,4 +55,3 @@ ssh-keygen -f data/ssh.pem
 ## Notes
 - Need to use recursive name servers for ACME magic domains to avoid local DNS searching.
 - Initial k3s provisioning done over local IP instead of tailscale to onboard it and then done over tailscale
-- Double check nameservers in hosted zone created match that from "Registered Domains" (Registrar Nameservers)
