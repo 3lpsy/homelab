@@ -25,6 +25,8 @@
     "group:registry-clients": ["${registry_server_user}@", "${nomad_server_user}@", "${personal_user}@"],
     "group:grafana-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
     "group:grafana-server": ["${grafana_server_user}@"],
+    "group:openwrt": ["${openwrt_user}@"],
+    "group:prometheus": ["${prometheus_user}@"],
     "group:registry-server": ["${registry_server_user}@"],
     "group:pihole-server": ["${pihole_server_user}@"]
   },
@@ -63,6 +65,9 @@
     // personal access to nomad (k3s), for management
     { "action": "accept", "src": ["group:personal"], "dst": ["group:nomad-server:22,80,443,6443"] },
 
+    // let nomad / k3s resolve dns:
+    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:openwrt:65535"] },
+
     // syncthing access to syncthing, tcp port and casting port
     { "action": "accept", "src": ["group:syncthing-clients"], "dst": ["group:syncthing-clients:22000,21027"] },
 
@@ -81,6 +86,11 @@
     // grafana clients access to registry server
     { "action": "accept", "src": ["group:grafana-clients"], "dst": ["group:grafana-server:443"] },
 
+    // prometheus scrapes openwrt
+    { "action": "accept", "src": ["group:prometheus"], "dst": ["group:openwrt:9100"] },
+
+    // personal management of openwrt
+    { "action": "accept", "src": ["group:personal"], "dst": ["group:openwrt:22,80,443,9100"] },
 
     // allow ios to access devbox on 1420,1421,3000,8888
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] },

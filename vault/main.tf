@@ -52,7 +52,7 @@ data "terraform_remote_state" "homelab" {
 
 
 resource "headscale_pre_auth_key" "vault_server" {
-  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.vault_server
+  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.vault_server_user
   reusable       = true
   time_to_expire = "1y"
 }

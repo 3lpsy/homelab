@@ -12,116 +12,29 @@ data "local_file" "api_key" {
   filename = "${path.root}/../headscale.key"
 }
 
-
-resource "headscale_user" "personal_user" {
-  name = var.personal_username
+resource "headscale_user" "users" {
+  for_each = var.tailnet_users
+  name     = each.value
   lifecycle {
     prevent_destroy = true
   }
-}
-resource "headscale_user" "mobile_user" {
-  name = var.mobile_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-resource "headscale_user" "grafana_server_user" {
-  name = var.grafana_server_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-resource "headscale_user" "prometheus_user" {
-  name = var.prometheus_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "headscale_user" "openwrt_user" {
-  name = var.openwrt_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "headscale_user" "registry_server_user" {
-  name = var.registry_server_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "headscale_user" "calendar_server_user" {
-  name = var.calendar_server_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "headscale_user" "tablet_user" {
-  name = var.tablet_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "headscale_user" "deck_user" {
-  name = var.deck_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-resource "headscale_user" "devbox_user" {
-  name = var.devbox_username
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-resource "headscale_user" "nomad_server_user" {
-  name = var.nomad_server_username
-}
-
-resource "headscale_user" "vault_server_user" {
-  name = var.vault_server_username
 }
 
 resource "headscale_pre_auth_key" "nomad_server" {
-  user = headscale_user.nomad_server_user.id
-}
-
-resource "headscale_user" "nextcloud_server_user" {
-  name = var.nextcloud_server_username
-}
-
-resource "headscale_user" "collabora_server_user" {
-  name = var.collabora_server_username
-}
-
-resource "headscale_user" "pihole_server" {
-  name = var.pihole_server_username
-}
-
-resource "headscale_user" "tv_user" {
-  name = var.tv_user
+  user = headscale_user.users["nomad_server_user"].id
 }
 
 resource "headscale_pre_auth_key" "tv" {
-  user           = headscale_user.tv_user.id
+  user           = headscale_user.users["tv_user"].id
   reusable       = true
   time_to_expire = "3y"
-}
-
-resource "headscale_user" "exit_node_user" {
-  name = var.exit_node_username
 }
 
 resource "headscale_pre_auth_key" "exit_node" {
-  user           = headscale_user.exit_node_user.id
+  user           = headscale_user.users["exit_node_user"].id
   reusable       = true
   time_to_expire = "3y"
 }
-
 # resource "headscale_user" "test_user" {
 #   name = "test_user"
 # }

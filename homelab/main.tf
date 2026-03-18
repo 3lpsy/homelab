@@ -104,25 +104,7 @@ module "headscale-provision-headscale" {
   headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
   depends_on              = [module.headscale-infra-tls, module.headscale-provision-dep]
   backup_bucket_name      = module.headscale-infra.backup_bucket_name
-  personal_username       = var.tailnet_personal_username
-  nomad_server_username   = var.tailnet_nomad_server_username
-  mobile_username         = var.tailnet_mobile_username
-  calendar_server_username         = var.tailnet_calendar_server_username
-  registry_server_username         = var.tailnet_registry_server_username
-  grafana_server_username         = var.tailnet_grafana_server_username
-  prometheus_username = var.tailnet_prometheus_username
-  openwrt_username = var.tailnet_openwrt_username
-
-  tablet_username         = var.tailnet_tablet_username
-  deck_username           = var.tailnet_deck_username
-  devbox_username         = var.tailnet_devbox_username
-  pihole_server_username         = var.tailnet_pihole_server_username
-  exit_node_username         = var.tailnet_exit_node_username
-  tv_username         = var.tailnet_tv_username
-
-  vault_server_username     = var.tailnet_vault_server_username
-  nextcloud_server_username = var.tailnet_nextcloud_server_username
-  collabora_server_username = var.tailnet_collabora_server_username
+  tailnet_users = var.tailnet_users
 
 }
 
@@ -141,25 +123,7 @@ module "tailnet-infra" {
   source                  = "./modules/tailnet-infra"
   headscale_server_domain = module.headscale-infra-tls.certificate_domain
   api_key                 = var.headscale_api_key
-  personal_username       = var.tailnet_personal_username
-  nomad_server_username   = var.tailnet_nomad_server_username
-  mobile_username         = var.tailnet_mobile_username
-  registry_server_username         = var.tailnet_registry_server_username
-  grafana_server_username         = var.tailnet_grafana_server_username
-  prometheus_username = var.tailnet_prometheus_username
-  openwrt_username = var.tailnet_openwrt_username
-  calendar_server_username         = var.tailnet_calendar_server_username
-  tablet_username         = var.tailnet_tablet_username
-  deck_username           = var.tailnet_deck_username
-  devbox_username         = var.tailnet_devbox_username
-  exit_node_username         = var.tailnet_exit_node_username
-
-  vault_server_username     = var.tailnet_vault_server_username
-  nextcloud_server_username = var.tailnet_nextcloud_server_username
-  collabora_server_username = var.tailnet_collabora_server_username
-  pihole_server_username         = var.tailnet_pihole_server_username
-
-
+  tailnet_users = var.tailnet_users
   providers = {
     headscale = headscale
   }
@@ -224,7 +188,7 @@ module "nomad-provision-server" {
   ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
   nomad_host_name           = var.nomad_host_name
   headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  registry_domain = "${var.tailnet_registry_server_username}"
+  registry_domain = var.tailnet_users["registry_server_user"]
   depends_on                = [module.nomad-provision-dep]
 }
 

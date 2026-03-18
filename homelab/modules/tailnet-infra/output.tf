@@ -16,27 +16,6 @@ output "exit_node_preauth_key" {
 
 
 output "user_map" {
-  description = "Map of usernames to their created user IDs"
-  value = {
-    personal         = headscale_user.personal_user.id
-    mobile           = headscale_user.mobile_user.id
-    tablet           = headscale_user.tablet_user.id
-    registry = headscale_user.registry_server_user.id
-    grafana = headscale_user.grafana_server_user.id
-    prometheus = headscale_user.prometheus_user.id
-    openwrt = headscale_user.openwrt_user.id
-
-    calendar_server = headscale_user.calendar_server_user.id
-
-    deck             = headscale_user.deck_user.id
-    devbox           = headscale_user.devbox_user.id
-    nomad_server     = headscale_user.nomad_server_user.id
-    vault_server     = headscale_user.vault_server_user.id
-    nextcloud_server = headscale_user.nextcloud_server_user.id
-    collabora_server = headscale_user.collabora_server_user.id
-    pihole_server = headscale_user.pihole_server.id
-
-    tv = headscale_user.tv_user.id
-    exit_node = headscale_user.exit_node_user.id
-  }
+  description = "Map of role keys to their created user IDs"
+  value       = { for k, u in headscale_user.users : k => u.id }
 }

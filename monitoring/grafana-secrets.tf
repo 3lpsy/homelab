@@ -54,7 +54,7 @@ resource "kubernetes_role_binding" "grafana_tailscale" {
 # --- Headscale Pre-auth Key -------------------------------------------------
 
 resource "headscale_pre_auth_key" "grafana_server" {
-  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.grafana
+  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.grafana_server_user
   reusable       = true
   time_to_expire = "3y"
 }

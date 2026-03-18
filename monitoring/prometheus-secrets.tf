@@ -42,7 +42,7 @@ resource "kubernetes_role_binding" "prometheus_tailscale" {
 # Headscale pre-auth key + K8s secret
 
 resource "headscale_pre_auth_key" "prometheus_server" {
-  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.prometheus
+  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.prometheus_user
   reusable       = true
   time_to_expire = "3y"
 }

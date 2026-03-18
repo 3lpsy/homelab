@@ -35,76 +35,28 @@ variable "ssh_pub_key_path" {
   type    = string
   default = "../ssh.pem.pub"
 }
-variable "tailnet_personal_username" {
-  type = string
-}
-variable "tailnet_nomad_server_username" {
-  type = string
-}
-variable "tailnet_vault_server_username" {
-  type    = string
-  default = "vault-server"
-}
-variable "tailnet_mobile_username" {
-  type    = string
-  default = "mobile"
-}
-variable "tailnet_registry_server_username" {
-  type    = string
-  default = "registry"
-}
-
-variable "tailnet_grafana_server_username" {
-  type    = string
-  default = "grafana"
-}
-
-variable "tailnet_prometheus_username" {
-  type    = string
-  default = "prometheus"
-}
-variable "tailnet_openwrt_username" {
-  type    = string
-  default = "openwrt"
-}
-
-variable "tailnet_calendar_server_username" {
-  type    = string
-  default = "cal"
-}
-variable "tailnet_tablet_username" {
-  type    = string
-  default = "tablet"
-}
-variable "tailnet_deck_username" {
-  type    = string
-  default = "deck"
-}
-variable "tailnet_devbox_username" {
-  type    = string
-  default = "devbox"
-}
-variable "tailnet_exit_node_username" {
-  type    = string
-  default = "exitnode"
-}
-variable "tailnet_nextcloud_server_username" {
-  type    = string
-  default = "nextcloud"
-}
-variable "tailnet_tv_username" {
-  type    = string
-  default = "tv"
-}
-variable "tailnet_collabora_server_username" {
-  type    = string
-  default = "collabora"
-
-}
-
-variable "tailnet_pihole_server_username" {
-  type    = string
-  default = "pihole"
+variable "tailnet_users" {
+  description = "Map of role keys to headscale usernames"
+  type        = map(string)
+  default = {
+    personal_user         = "stargate"
+    nomad_server_user     = "orchard"
+    mobile_user           = "mobile"
+    registry_server_user  = "registry"
+    grafana_server_user   = "grafana"
+    prometheus_user       = "prometheus"
+    openwrt_user          = "openwrt"
+    calendar_server_user  = "cal"
+    tablet_user           = "tablet"
+    deck_user             = "deck"
+    devbox_user           = "devbox"
+    exit_node_user        = "exitnode"
+    tv_user               = "tv"
+    vault_server_user     = "vault-server"
+    nextcloud_server_user = "nextcloud"
+    collabora_server_user = "collabora"
+    pihole_server_user    = "pihole"
+  }
 }
 
 variable "nomad_host_name" {

@@ -14,27 +14,7 @@ resource "null_resource" "headscale_config" {
       server_port   = var.headscale_port
       magic_domain  = var.headscale_magic_domain
     }))
-    acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", {
-      personal_user         = var.personal_username
-      nomad_server_user     = var.nomad_server_username
-      mobile_user           = var.mobile_username
-      registry_server_user           = var.registry_server_username
-      grafana_server_user           = var.grafana_server_username
-      prometheus_user   = var.prometheus_username
-      openwrt_user = var.openwrt_username
-      calendar_server_user           = var.calendar_server_username
-      tablet_user           = var.tablet_username
-      deck_user             = var.deck_username
-      devbox_user           = var.devbox_username
-      exit_node_user           = var.exit_node_username
-      tv_user           = var.tv_username
-
-      vault_server_user     = var.vault_server_username
-      nextcloud_server_user = var.nextcloud_server_username
-      collabora_server_user = var.collabora_server_username
-      pihole_server_user = var.pihole_server_username
-
-    }))
+    acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", var.tailnet_users))
   }
 
   provisioner "file" {
@@ -47,26 +27,7 @@ resource "null_resource" "headscale_config" {
   }
 
   provisioner "file" {
-    content = templatefile("${path.root}/../data/headscale/acls.hjson.tpl", {
-      personal_user         = var.personal_username
-      nomad_server_user     = var.nomad_server_username
-      mobile_user           = var.mobile_username
-      registry_server_user           = var.registry_server_username
-      grafana_server_user           = var.grafana_server_username
-      prometheus_user   = var.prometheus_username
-      openwrt_user = var.openwrt_username
-      calendar_server_user           = var.calendar_server_username
-      tablet_user           = var.tablet_username
-      deck_user             = var.deck_username
-      devbox_user           = var.devbox_username
-      exit_node_user      = var.exit_node_username
-      vault_server_user     = var.vault_server_username
-      nextcloud_server_user = var.nextcloud_server_username
-      collabora_server_user = var.collabora_server_username
-      tv_user           = var.tv_username
-      pihole_server_user = var.pihole_server_username
-
-    })
+    content     = templatefile("${path.root}/../data/headscale/acls.hjson.tpl", var.tailnet_users)
     destination = "/home/${var.ssh_user}/acls.hjson"
   }
 
@@ -126,27 +87,7 @@ resource "null_resource" "headscale_restart" {
       server_port   = var.headscale_port
       magic_domain  = var.headscale_magic_domain
     }))
-    acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", {
-      personal_user         = var.personal_username
-      nomad_server_user     = var.nomad_server_username
-      mobile_user           = var.mobile_username
-      registry_server_user           = var.registry_server_username
-      grafana_server_user           = var.grafana_server_username
-      prometheus_user   = var.prometheus_username
-      openwrt_user = var.openwrt_username
-      calendar_server_user           = var.calendar_server_username
-      tablet_user           = var.tablet_username
-      deck_user             = var.deck_username
-      devbox_user           = var.devbox_username
-      exit_node_user           = var.exit_node_username
-      tv_user           = var.tv_username
-
-      vault_server_user     = var.vault_server_username
-      nextcloud_server_user = var.nextcloud_server_username
-      collabora_server_user = var.collabora_server_username
-      pihole_server_user = var.pihole_server_username
-
-    }))
+    acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", var.tailnet_users))
   }
 
   provisioner "remote-exec" {

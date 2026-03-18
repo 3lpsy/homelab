@@ -24,58 +24,7 @@ variable "headscale_port" {
 variable "backup_bucket_name" {
   type = string
 }
-
-variable "personal_username" {
-  type = string
-}
-variable "mobile_username" {
-  type = string
-}
-variable "grafana_server_username" {
-  type = string
-}
-variable "prometheus_username" {
-  type = string
-}
-variable "openwrt_username" {
-  type = string
-}
-
-variable "registry_server_username" {
-  type = string
-}
-variable "calendar_server_username" {
-  type = string
-}
-variable "tablet_username" {
-  type = string
-}
-variable "deck_username" {
-  type = string
-}
-variable "devbox_username" {
-  type = string
-}
-variable "exit_node_username" {
-  type = string
-}
-variable "nomad_server_username" {
-  type = string
-}
-variable "vault_server_username" {
-  type = string
-}
-variable "pihole_server_username" {
-  type = string
-}
-
-variable "tv_username" {
-  type = string
-}
-
-variable "nextcloud_server_username" {
-  type = string
-}
-variable "collabora_server_username" {
-  type = string
+variable "tailnet_users" {
+  description = "Map of role keys to headscale usernames"
+  type        = map(string)
 }
