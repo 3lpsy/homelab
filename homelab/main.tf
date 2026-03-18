@@ -110,6 +110,9 @@ module "headscale-provision-headscale" {
   calendar_server_username         = var.tailnet_calendar_server_username
   registry_server_username         = var.tailnet_registry_server_username
   grafana_server_username         = var.tailnet_grafana_server_username
+  prometheus_username = var.tailnet_prometheus_username
+  openwrt_username = var.tailnet_openwrt_username
+
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username
   devbox_username         = var.tailnet_devbox_username
@@ -143,6 +146,8 @@ module "tailnet-infra" {
   mobile_username         = var.tailnet_mobile_username
   registry_server_username         = var.tailnet_registry_server_username
   grafana_server_username         = var.tailnet_grafana_server_username
+  prometheus_username = var.tailnet_prometheus_username
+  openwrt_username = var.tailnet_openwrt_username
   calendar_server_username         = var.tailnet_calendar_server_username
   tablet_username         = var.tailnet_tablet_username
   deck_username           = var.tailnet_deck_username

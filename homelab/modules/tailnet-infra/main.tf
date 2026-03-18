@@ -31,6 +31,20 @@ resource "headscale_user" "grafana_server_user" {
     prevent_destroy = true
   }
 }
+resource "headscale_user" "prometheus_user" {
+  name = var.prometheus_username
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "headscale_user" "openwrt_user" {
+  name = var.openwrt_username
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "headscale_user" "registry_server_user" {
   name = var.registry_server_username
   lifecycle {

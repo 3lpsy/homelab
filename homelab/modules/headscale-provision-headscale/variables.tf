@@ -34,6 +34,13 @@ variable "mobile_username" {
 variable "grafana_server_username" {
   type = string
 }
+variable "prometheus_username" {
+  type = string
+}
+variable "openwrt_username" {
+  type = string
+}
+
 variable "registry_server_username" {
   type = string
 }

@@ -59,6 +59,15 @@ variable "tailnet_grafana_server_username" {
   default = "grafana"
 }
 
+variable "tailnet_prometheus_username" {
+  type    = string
+  default = "prometheus"
+}
+variable "tailnet_openwrt_username" {
+  type    = string
+  default = "openwrt"
+}
+
 variable "tailnet_calendar_server_username" {
   type    = string
   default = "cal"

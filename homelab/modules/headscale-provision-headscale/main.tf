@@ -20,6 +20,8 @@ resource "null_resource" "headscale_config" {
       mobile_user           = var.mobile_username
       registry_server_user           = var.registry_server_username
       grafana_server_user           = var.grafana_server_username
+      prometheus_user   = var.prometheus_username
+      openwrt_user = var.openwrt_username
       calendar_server_user           = var.calendar_server_username
       tablet_user           = var.tablet_username
       deck_user             = var.deck_username
@@ -51,6 +53,8 @@ resource "null_resource" "headscale_config" {
       mobile_user           = var.mobile_username
       registry_server_user           = var.registry_server_username
       grafana_server_user           = var.grafana_server_username
+      prometheus_user   = var.prometheus_username
+      openwrt_user = var.openwrt_username
       calendar_server_user           = var.calendar_server_username
       tablet_user           = var.tablet_username
       deck_user             = var.deck_username
@@ -128,6 +132,8 @@ resource "null_resource" "headscale_restart" {
       mobile_user           = var.mobile_username
       registry_server_user           = var.registry_server_username
       grafana_server_user           = var.grafana_server_username
+      prometheus_user   = var.prometheus_username
+      openwrt_user = var.openwrt_username
       calendar_server_user           = var.calendar_server_username
       tablet_user           = var.tablet_username
       deck_user             = var.deck_username

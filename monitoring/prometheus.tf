@@ -64,12 +64,10 @@ resource "kubernetes_config_map" "prometheus_config" {
         evaluation_interval: 30s
 
       scrape_configs:
-        # Prometheus itself
         - job_name: 'prometheus'
           static_configs:
             - targets: ['localhost:9090']
 
-        # Node Exporter (host network — scrape via node IP:9100)
         - job_name: 'node-exporter'
           kubernetes_sd_configs:
             - role: node
@@ -81,12 +79,10 @@ resource "kubernetes_config_map" "prometheus_config" {
             - source_labels: [__meta_kubernetes_node_name]
               target_label: node
 
-        # kube-state-metrics
         - job_name: 'kube-state-metrics'
           static_configs:
             - targets: ['kube-state-metrics:8080']
 
-        # Kubelet metrics
         - job_name: 'kubelet'
           scheme: https
           tls_config:
@@ -98,7 +94,6 @@ resource "kubernetes_config_map" "prometheus_config" {
             - source_labels: [__meta_kubernetes_node_name]
               target_label: node
 
-        # cAdvisor (built into kubelet)
         - job_name: 'cadvisor'
           scheme: https
           tls_config:
@@ -112,7 +107,6 @@ resource "kubernetes_config_map" "prometheus_config" {
             - source_labels: [__meta_kubernetes_node_name]
               target_label: node
 
-        # Scrape all pods that have prometheus.io/scrape annotation
         - job_name: 'kubernetes-pods'
           kubernetes_sd_configs:
             - role: pod
@@ -133,6 +127,12 @@ resource "kubernetes_config_map" "prometheus_config" {
               target_label: namespace
             - source_labels: [__meta_kubernetes_pod_name]
               target_label: pod
+
+        # OpenWrt node exporter over Tailscale
+        - job_name: 'openwrt'
+          scrape_interval: 60s
+          static_configs:
+            - targets: ['${var.openwrt_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}:9100']
     EOT
   }
 }
@@ -187,7 +187,6 @@ resource "kubernetes_deployment" "prometheus" {
         service_account_name            = kubernetes_service_account.prometheus.metadata[0].name
         automount_service_account_token = true
 
-        # Prometheus image runs as nobody (65534) — fix PVC ownership
         init_container {
           name  = "fix-permissions"
           image = "busybox:latest"
@@ -198,6 +197,57 @@ resource "kubernetes_deployment" "prometheus" {
           volume_mount {
             name       = "prometheus-data"
             mount_path = "/prometheus"
+          }
+        }
+
+        # Tailscale sidecar — joins tailnet as "prometheus" user
+        container {
+          name  = "tailscale"
+          image = "tailscale/tailscale:latest"
+
+          env {
+            name  = "TS_STATE_DIR"
+            value = "/var/lib/tailscale"
+          }
+          env {
+            name  = "TS_KUBE_SECRET"
+            value = "prometheus-tailscale-state"
+          }
+          env {
+            name  = "TS_USERSPACE"
+            value = "false"
+          }
+          env {
+            name = "TS_AUTHKEY"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.prometheus_tailscale_auth.metadata[0].name
+                key  = "TS_AUTHKEY"
+              }
+            }
+          }
+          env {
+            name  = "TS_HOSTNAME"
+            value = "prometheus"
+          }
+          env {
+            name  = "TS_EXTRA_ARGS"
+            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+          }
+
+          security_context {
+            capabilities {
+              add = ["NET_ADMIN"]
+            }
+          }
+
+          volume_mount {
+            name       = "dev-net-tun"
+            mount_path = "/dev/net/tun"
+          }
+          volume_mount {
+            name       = "tailscale-state"
+            mount_path = "/var/lib/tailscale"
           }
         }
 
@@ -261,6 +311,17 @@ resource "kubernetes_deployment" "prometheus" {
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim.prometheus_data.metadata[0].name
           }
+        }
+        volume {
+          name = "dev-net-tun"
+          host_path {
+            path = "/dev/net/tun"
+            type = "CharDevice"
+          }
+        }
+        volume {
+          name = "tailscale-state"
+          empty_dir {}
         }
       }
     }

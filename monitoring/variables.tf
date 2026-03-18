@@ -54,6 +54,12 @@ variable "grafana_admin_user" {
   default = "admin"
 }
 
+variable "openwrt_domain" {
+  type        = string
+  default = "openwrt"
+}
+
+
 # --- Prometheus --------------------------------------------------------------
 
 variable "prometheus_retention" {
