@@ -28,7 +28,9 @@
     "group:openwrt": ["${openwrt_user}@"],
     "group:prometheus": ["${prometheus_user}@"],
     "group:registry-server": ["${registry_server_user}@"],
-    "group:pihole-server": ["${pihole_server_user}@"]
+    "group:pihole-server": ["${pihole_server_user}@"],
+    "group:ntfy-server": ["${ntfy_server_user}@"],
+    "group:ntfy-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"]
   },
   "autoApprovers": {
     "exitNode": ["tag:exitnode"]
@@ -67,6 +69,9 @@
 
     // let nomad / k3s resolve dns:
     { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:openwrt:65535"] },
+    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:ntfy-server:65535"] },
+    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:registry-server:65535"] },
+    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:pihole-server:65535"] },
 
     // syncthing access to syncthing, tcp port and casting port
     { "action": "accept", "src": ["group:syncthing-clients"], "dst": ["group:syncthing-clients:22000,21027"] },
@@ -88,7 +93,8 @@
 
     // prometheus scrapes openwrt
     { "action": "accept", "src": ["group:prometheus"], "dst": ["group:openwrt:9100"] },
-
+    // prometheus to scrape delphi (k3s)
+    { "action": "accept", "src": ["group:prometheus"], "dst": ["group:nomad-server:9100,10250"] },
     // personal management of openwrt
     { "action": "accept", "src": ["group:personal"], "dst": ["group:openwrt:22,80,443,9100"] },
 
@@ -100,6 +106,9 @@
 
     // pihole managers
     { "action": "accept", "src": ["group:personal", "group:mobile"], "dst": ["group:pihole-server:443"] },
+
+    // ntfy
+    { "action": "accept", "src": ["group:ntfy-clients"], "dst": ["group:ntfy-server:443"] },
 
     // users who can use any exit node
     {
