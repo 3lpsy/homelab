@@ -55,7 +55,7 @@ variable "grafana_admin_user" {
 }
 
 variable "openwrt_domain" {
-  type        = string
+  type    = string
   default = "openwrt"
 }
 
@@ -75,4 +75,21 @@ variable "prometheus_storage_size" {
 variable "grafana_storage_size" {
   type    = string
   default = "5Gi"
+}
+
+variable "ntfy_domain" {
+  type    = string
+  default = "ntfy"
+}
+
+variable "ntfy_users" {
+  type = map(string)
+  default = {
+    grafana = "admin"
+    mobile  = "user"
+  }
+}
+variable "ntfy_storage_size" {
+  type    = string
+  default = "2Gi"
 }
