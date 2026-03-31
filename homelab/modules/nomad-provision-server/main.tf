@@ -103,3 +103,54 @@ EOF
 
   depends_on = [null_resource.k3s_install]
 }
+
+
+resource "null_resource" "dns_override" {
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      # resolved.conf.d override — public DNS as default
+      "sudo mkdir -p /etc/systemd/resolved.conf.d",
+      <<-EOT
+        sudo tee /etc/systemd/resolved.conf.d/override.conf > /dev/null <<'EOF'
+[Resolve]
+DNS=9.9.9.9 1.1.1.1
+Domains=~.
+EOF
+      EOT
+      ,
+      "sudo systemctl restart systemd-resolved",
+
+      # Systemd service to scope tailscale0 to magic domain only
+      <<-EOT
+        sudo tee /etc/systemd/system/fix-tailscale-dns.service > /dev/null <<'EOF'
+[Unit]
+Description=Scope tailscale DNS to magic domain only
+After=tailscaled.service
+Requires=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/resolvectl domain tailscale0 ${var.headscale_magic_subdomain}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+      EOT
+      ,
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable --now fix-tailscale-dns.service"
+    ]
+  }
+
+  depends_on = [null_resource.k3s_install]
+}

@@ -15,9 +15,9 @@ data "local_file" "api_key" {
 resource "headscale_user" "users" {
   for_each = var.tailnet_users
   name     = each.value
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "headscale_pre_auth_key" "nomad_server" {

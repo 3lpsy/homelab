@@ -56,6 +56,8 @@ variable "tailnet_users" {
     nextcloud_server_user = "nextcloud"
     collabora_server_user = "collabora"
     pihole_server_user    = "pihole"
+    ntfy_server_user      = "ntfy"
+
   }
 }
 
