@@ -1,4 +1,3 @@
-# Create Subnet
 resource "aws_subnet" "exit_node" {
   vpc_id            = var.vpc_id
   cidr_block        = var.subnet_cidr
@@ -86,7 +85,6 @@ resource "aws_network_acl_association" "exit_node" {
   subnet_id      = aws_subnet.exit_node.id
 }
 
-# Create Route Table for Subnet
 resource "aws_route_table" "exit_node" {
   vpc_id = var.vpc_id
   route {
@@ -98,7 +96,6 @@ resource "aws_route_table" "exit_node" {
   }
 }
 
-# Associate Route Table with Subnet
 resource "aws_route_table_association" "exit_node" {
   subnet_id      = aws_subnet.exit_node.id
   route_table_id = aws_route_table.exit_node.id

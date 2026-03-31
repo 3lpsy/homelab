@@ -12,7 +12,6 @@ resource "null_resource" "install_deps" {
     content     = file("${path.root}/../data/server/50unattended-upgrades.tpl")
     destination = "/home/${var.ssh_user}/50unattended-upgrades"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo DEBIAN_FRONTEND=noninteractive apt update",

@@ -64,7 +64,6 @@ resource "null_resource" "set_hostname" {
     private_key = var.ssh_priv_key
     timeout     = "1m"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo hostnamectl set-hostname exitnode-${var.node_name}"
@@ -81,7 +80,6 @@ resource "null_resource" "install_tailscale" {
     private_key = var.ssh_priv_key
     timeout     = "1m"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null",
@@ -116,7 +114,6 @@ resource "null_resource" "enable_forwarding" {
     private_key = var.ssh_priv_key
     timeout     = "1m"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf",
@@ -134,7 +131,6 @@ resource "null_resource" "tailnet_auth" {
     private_key = var.ssh_priv_key
     timeout     = "1m"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo tailscale up --login-server https://${var.headscale_server_domain} --auth-key file:///home/${var.ssh_user}/tailnet_auth_key --hostname exitnode-${var.node_name} --advertise-tags=tag:exitnode --accept-routes --advertise-exit-node --reset --force-reauth && sudo rm /home/${var.ssh_user}/tailnet_auth_key"

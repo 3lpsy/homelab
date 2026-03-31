@@ -1,10 +1,3 @@
-# =============================================================================
-# Prometheus — Scrapes node-exporter, kube-state-metrics, kubelet/cAdvisor
-# Cluster-internal only; Grafana connects via ClusterIP service.
-# =============================================================================
-
-# --- RBAC --------------------------------------------------------------------
-
 resource "kubernetes_service_account" "prometheus" {
   metadata {
     name      = "prometheus"
@@ -48,8 +41,6 @@ resource "kubernetes_cluster_role_binding" "prometheus" {
     namespace = kubernetes_namespace.monitoring.metadata[0].name
   }
 }
-
-# --- Config ------------------------------------------------------------------
 
 resource "kubernetes_config_map" "prometheus_config" {
   metadata {
@@ -137,8 +128,6 @@ resource "kubernetes_config_map" "prometheus_config" {
   }
 }
 
-# --- Storage -----------------------------------------------------------------
-
 resource "kubernetes_persistent_volume_claim" "prometheus_data" {
   lifecycle {
     prevent_destroy = true
@@ -158,8 +147,6 @@ resource "kubernetes_persistent_volume_claim" "prometheus_data" {
   }
   wait_until_bound = false
 }
-
-# --- Deployment --------------------------------------------------------------
 
 resource "kubernetes_deployment" "prometheus" {
   metadata {
@@ -200,7 +187,6 @@ resource "kubernetes_deployment" "prometheus" {
           }
         }
 
-        # Tailscale sidecar — joins tailnet as "prometheus" user
         container {
           name  = "tailscale"
           image = "tailscale/tailscale:latest"
@@ -327,8 +313,6 @@ resource "kubernetes_deployment" "prometheus" {
     }
   }
 }
-
-# --- Service -----------------------------------------------------------------
 
 resource "kubernetes_service" "prometheus" {
   metadata {

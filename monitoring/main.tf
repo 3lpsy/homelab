@@ -1,12 +1,5 @@
-# =============================================================================
-# Monitoring Stack — Prometheus, Node Exporter, kube-state-metrics, Grafana
-# =============================================================================
-# Grafana gets the full sidecar treatment (Tailscale + Nginx TLS + Vault CSI).
-# Everything else is cluster-internal only.
-#
 # PREREQUISITE: Add a "grafana" headscale user to your homelab project's
 # tailnet-infra module and expose it in the user_map output before applying.
-# =============================================================================
 
 terraform {
   required_providers {
@@ -50,8 +43,6 @@ provider "headscale" {
 provider "acme" {
   server_url = var.acme_server_url
 }
-
-# --- Namespace ---------------------------------------------------------------
 
 resource "kubernetes_namespace" "monitoring" {
   metadata {

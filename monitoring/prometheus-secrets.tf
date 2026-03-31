@@ -1,5 +1,3 @@
-# RBAC for Prometheus Tailscale state secret
-
 resource "kubernetes_role" "prometheus_tailscale" {
   metadata {
     name      = "prometheus-tailscale"
@@ -39,8 +37,6 @@ resource "kubernetes_role_binding" "prometheus_tailscale" {
   }
 }
 
-# Headscale pre-auth key + K8s secret
-
 resource "headscale_pre_auth_key" "prometheus_server" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.prometheus_user
   reusable       = true
@@ -57,5 +53,3 @@ resource "kubernetes_secret" "prometheus_tailscale_auth" {
     TS_AUTHKEY = headscale_pre_auth_key.prometheus_server.key
   }
 }
-
-# Variable for OpenWrt target

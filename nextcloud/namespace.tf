@@ -1,13 +1,9 @@
-# Namespaces, Service Accounts, Roles, Role Bindings
-
-# Create namespace for Nextcloud, harp, collabora, and immich
 resource "kubernetes_namespace" "nextcloud" {
   metadata {
     name = "nextcloud"
   }
 }
 
-# Service Account for Nextcloud
 resource "kubernetes_service_account" "nextcloud" {
   metadata {
     name      = "nextcloud"
@@ -16,7 +12,6 @@ resource "kubernetes_service_account" "nextcloud" {
   automount_service_account_token = false
 }
 
-# Role for Tailscale
 resource "kubernetes_role" "tailscale" {
   metadata {
     name      = "tailscale"
@@ -56,7 +51,7 @@ resource "kubernetes_role_binding" "tailscale" {
   }
 }
 
-# Pihole Namespace
+# Pihole
 resource "kubernetes_namespace" "pihole" {
   metadata {
     name = "pihole"

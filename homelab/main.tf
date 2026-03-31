@@ -5,7 +5,6 @@ terraform {
       version = "~> 5.0"
     }
 
-    # The provider is declared here just like any provider...
     acme = {
       source  = "vancluever/acme"
       version = "~> 2.0"
@@ -21,7 +20,6 @@ terraform {
 provider "acme" {
   server_url = var.acme_server_url
 }
-# Configure the AWS Provider
 provider "aws" {
   region     = var.aws_region
   access_key = var.aws_access_key

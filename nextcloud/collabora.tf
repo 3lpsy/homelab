@@ -1,5 +1,3 @@
-
-# Nginx config for Collabora
 resource "kubernetes_config_map" "collabora_nginx_config" {
   metadata {
     name      = "collabora-nginx-config"
@@ -25,39 +23,32 @@ resource "kubernetes_config_map" "collabora_nginx_config" {
           listen 443 ssl;
           server_name ${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain};
 
-          # SSL configuration
           ssl_certificate /etc/nginx/certs/tls.crt;
           ssl_certificate_key /etc/nginx/certs/tls.key;
           ssl_protocols TLSv1.2 TLSv1.3;
           ssl_ciphers HIGH:!aNULL:!MD5;
           ssl_prefer_server_ciphers on;
 
-          # Security headers
           add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-          # Collabora-specific settings
           client_max_body_size 0;
           proxy_read_timeout 36000s;
 
-          # static files
           location ^~ /browser {
             proxy_pass http://collabora;
             proxy_set_header Host $http_host;
           }
 
-          # WOPI discovery URL
           location ^~ /hosting/discovery {
             proxy_pass http://collabora;
             proxy_set_header Host $http_host;
           }
 
-          # Capabilities
           location ^~ /hosting/capabilities {
             proxy_pass http://collabora;
             proxy_set_header Host $http_host;
           }
 
-          # Admin Console websocket (most specific first)
              location ^~ /cool/adminws {
                proxy_pass http://collabora;
                proxy_set_header Upgrade $http_upgrade;
@@ -92,7 +83,6 @@ resource "kubernetes_config_map" "collabora_nginx_config" {
   }
 }
 
-# Collabora Deployment
 resource "kubernetes_deployment" "collabora" {
   metadata {
     name      = "collabora"
@@ -157,7 +147,6 @@ resource "kubernetes_deployment" "collabora" {
           }
         }
 
-        # Tailscale sidecar
         container {
           name  = "collabora-tailscale"
           image = "tailscale/tailscale:latest"
@@ -214,7 +203,6 @@ resource "kubernetes_deployment" "collabora" {
           }
         }
 
-        # Nginx reverse proxy for TLS termination
         container {
           name  = "collabora-nginx"
           image = "nginx:alpine"
@@ -248,7 +236,6 @@ resource "kubernetes_deployment" "collabora" {
           }
         }
 
-        # Collabora container
         container {
           name  = "collabora"
           image = "collabora/code:latest"

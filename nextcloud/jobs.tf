@@ -1,5 +1,3 @@
-
-# Job to configure AppAPI with HaRP daemon
 resource "kubernetes_job" "configure_appapi_harp" {
   metadata {
     name      = "configure-appapi-harp-${formatdate("YYYYMMDDhhmmss", timestamp())}"
@@ -151,7 +149,6 @@ resource "kubernetes_job" "configure_appapi_harp" {
 
 
 
-# Job to configure Collabora Office
 resource "kubernetes_job" "configure_nextcloud_and_collabora" {
   metadata {
     name      = "configure-collabora-${formatdate("YYYYMMDDhhmmss", timestamp())}"

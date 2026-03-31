@@ -1,7 +1,3 @@
-# Secrets, Policies and Auth Backends
-
-# Secrets
-
 resource "vault_kv_secret_v2" "nextcloud_tls" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "nextcloud/tls"
@@ -90,7 +86,6 @@ resource "vault_kv_secret_v2" "registry_config" {
   })
 }
 
-# Registry htpasswd
 resource "vault_kv_secret_v2" "registry_htpasswd" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "registry/htpasswd"
@@ -135,8 +130,6 @@ resource "vault_kv_secret_v2" "radicale_tls" {
 }
 
 
-# Policies
-
 resource "vault_policy" "nextcloud" {
   name = "nextcloud-policy"
 
@@ -178,8 +171,6 @@ EOT
 }
 
 
-
-# Auth Backend
 resource "vault_kubernetes_auth_backend_role" "nextcloud" {
   backend                          = "kubernetes"
   role_name                        = "nextcloud"

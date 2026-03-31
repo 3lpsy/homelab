@@ -1,5 +1,3 @@
-# Generated secrets the k3s secrets
-
 resource "random_password" "nextcloud_admin" {
   length  = 32
   special = true

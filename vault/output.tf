@@ -1,4 +1,3 @@
-# In vault/main.tf - add these outputs
 output "vault_service_account_name" {
   value = kubernetes_service_account.vault.metadata[0].name
 }

@@ -1,6 +1,3 @@
-# Headscape PAKs and K3s Secret
-
-# Generate Headscale pre-auth key
 resource "headscale_pre_auth_key" "nextcloud_server" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.nextcloud_server_user
   reusable       = true
@@ -8,7 +5,6 @@ resource "headscale_pre_auth_key" "nextcloud_server" {
 }
 
 
-# Tailscale auth secret
 resource "kubernetes_secret" "tailscale_auth" {
   metadata {
     name      = "tailscale-auth"
@@ -22,14 +18,12 @@ resource "kubernetes_secret" "tailscale_auth" {
   }
 }
 
-# Generate Headscale pre-auth key for Collabora
 resource "headscale_pre_auth_key" "collabora_server" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.collabora_server_user
   reusable       = true
   time_to_expire = "1y"
 }
 
-# Tailscale auth secret for Collabora
 resource "kubernetes_secret" "collabora_tailscale_auth" {
   metadata {
     name      = "collabora-tailscale-auth"

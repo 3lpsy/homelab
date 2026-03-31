@@ -1,8 +1,3 @@
-# =============================================================================
-# Node Exporter — DaemonSet (host network, no sidecars)
-# Exposes host-level metrics: CPU, memory, disk, network
-# =============================================================================
-
 resource "kubernetes_daemonset" "node_exporter" {
   metadata {
     name      = "node-exporter"

@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "host" {
   type = string
 }

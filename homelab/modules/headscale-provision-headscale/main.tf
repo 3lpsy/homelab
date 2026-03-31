@@ -31,7 +31,6 @@ resource "null_resource" "headscale_config" {
     destination = "/home/${var.ssh_user}/acls.hjson"
   }
 
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo mv /home/${var.ssh_user}/acls.hjson /etc/headscale/acls.hjson",

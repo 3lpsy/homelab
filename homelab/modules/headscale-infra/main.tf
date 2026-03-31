@@ -1,6 +1,5 @@
 
 
-# Create VPC
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
   tags = {
@@ -8,7 +7,6 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Create Subnet
 resource "aws_subnet" "main" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.0.0/24"
@@ -108,7 +106,6 @@ resource "aws_network_acl_association" "main" {
 
 
 
-# Create Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -123,7 +120,6 @@ resource "aws_internet_gateway" "main" {
 #   internet_gateway_id = aws_internet_gateway.main.id
 # }
 
-# Create Route Table for Subnet
 resource "aws_route_table" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -136,13 +132,11 @@ resource "aws_route_table" "main" {
   }
 }
 
-# Associate Route Table with Subnet
 resource "aws_route_table_association" "main" {
   subnet_id      = aws_subnet.main.id
   route_table_id = aws_route_table.main.id
 }
 
-# Create Security Group for EC2 Instance
 resource "aws_security_group" "main" {
   name        = "headscale"
   description = "Allow inbound traffic on ssh and https"
@@ -181,7 +175,6 @@ resource "aws_eip" "main" {
 }
 
 
-# Backup
 resource "aws_s3_bucket" "main" {
   bucket = var.backup_bucket_name # Replace with a unique bucket name
   tags = {
@@ -201,7 +194,6 @@ resource "aws_s3_bucket_acl" "main" {
   acl    = "private"
 }
 
-# IAM Role for EC2 instance
 resource "aws_iam_role" "main" {
   name               = "homelab-headscale-s3-append"
   assume_role_policy = <<EOF
@@ -220,7 +212,6 @@ resource "aws_iam_role" "main" {
 EOF
 }
 
-# Attach policy to IAM Role
 resource "aws_iam_role_policy" "main" {
   name = "homelab-headscale-s3-append"
   role = aws_iam_role.main.id

@@ -1,9 +1,3 @@
-# =============================================================================
-# Grafana — Secrets & TLS (Headscale, ACME, Vault, Vault CSI)
-# =============================================================================
-
-# --- Service Account & RBAC -------------------------------------------------
-
 resource "kubernetes_service_account" "grafana" {
   metadata {
     name      = "grafana"
@@ -51,8 +45,6 @@ resource "kubernetes_role_binding" "grafana_tailscale" {
   }
 }
 
-# --- Headscale Pre-auth Key -------------------------------------------------
-
 resource "headscale_pre_auth_key" "grafana_server" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.grafana_server_user
   reusable       = true
@@ -70,8 +62,6 @@ resource "kubernetes_secret" "grafana_tailscale_auth" {
   }
 }
 
-# --- TLS Certificate (ACME) -------------------------------------------------
-
 module "grafana-tls" {
   source                = "./../templates/infra-tls"
   account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
@@ -84,14 +74,10 @@ module "grafana-tls" {
   providers = { acme = acme }
 }
 
-# --- Generated Secrets -------------------------------------------------------
-
 resource "random_password" "grafana_admin" {
   length  = 32
   special = false
 }
-
-# --- Vault -------------------------------------------------------------------
 
 resource "vault_kv_secret_v2" "grafana_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
@@ -128,8 +114,6 @@ resource "vault_kubernetes_auth_backend_role" "grafana" {
   token_policies                   = [vault_policy.grafana.name]
   token_ttl                        = 86400
 }
-
-# --- SecretProviderClass (Vault CSI) ----------------------------------------
 
 resource "kubernetes_manifest" "grafana_secret_provider" {
   manifest = {

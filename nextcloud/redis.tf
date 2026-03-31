@@ -1,5 +1,3 @@
-
-# Nextcloud Redis Deployment
 resource "kubernetes_deployment" "redis" {
   metadata {
     name      = "redis"
@@ -49,7 +47,6 @@ resource "kubernetes_deployment" "redis" {
             container_port = 6379
           }
 
-          # Mount the CSI volume to trigger secret sync
           volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
@@ -104,7 +101,6 @@ resource "kubernetes_deployment" "redis" {
   ]
 }
 
-# Redis Service for Nextcloud
 resource "kubernetes_service" "redis" {
   metadata {
     name      = "redis"
@@ -122,7 +118,6 @@ resource "kubernetes_service" "redis" {
     }
   }
 }
-# Redis deployment for immich
 resource "kubernetes_deployment" "immich_redis" {
   metadata {
     name      = "immich-redis"
@@ -186,7 +181,6 @@ resource "kubernetes_deployment" "immich_redis" {
 }
 
 
-# Immich redis service
 resource "kubernetes_service" "immich_redis" {
   metadata {
     name      = "immich-redis"

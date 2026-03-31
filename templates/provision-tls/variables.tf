@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "server_ip" {
   type = string
 }
@@ -15,7 +15,7 @@ variable "tls_fullchain_pem" {
 variable "tls_privkey_pem" {
   type = string
 }
-# pub key contents
+
 variable "domain" {
   type = string
 }

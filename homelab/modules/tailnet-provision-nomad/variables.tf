@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "server_ip" {
   type = string
 }
@@ -15,7 +15,7 @@ variable "nomad_hostname" {
 variable "tailnet_auth_key" {
   type = string
 }
-# pub key contents
+
 variable "headscale_server_domain" {
   type = string
 }

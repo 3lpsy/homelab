@@ -1,6 +1,3 @@
-
-
-# PostgreSQL Deployment
 resource "kubernetes_deployment" "postgres" {
   metadata {
     name      = "postgres"
@@ -119,7 +116,6 @@ resource "kubernetes_deployment" "postgres" {
   ]
 }
 
-# PostgreSQL Service
 resource "kubernetes_service" "postgres" {
   metadata {
     name      = "postgres"
@@ -140,7 +136,6 @@ resource "kubernetes_service" "postgres" {
 
 
 
-# Immich postgres
 resource "kubernetes_deployment" "immich_postgres" {
   metadata {
     name      = "immich-postgres"
@@ -289,7 +284,6 @@ resource "kubernetes_deployment" "immich_postgres" {
   ]
 }
 
-# Postgres service for immich
 resource "kubernetes_service" "immich_postgres" {
   metadata {
     name      = "immich-postgres"

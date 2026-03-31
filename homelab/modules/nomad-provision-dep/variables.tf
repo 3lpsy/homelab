@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "server_ip" {
   type = string
 }

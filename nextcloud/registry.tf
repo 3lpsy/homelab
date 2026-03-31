@@ -53,8 +53,6 @@ resource "kubernetes_config_map" "registry_nginx_config" {
 }
 
 
-# Deployment
-
 resource "kubernetes_deployment" "registry" {
   metadata {
     name      = "registry"
@@ -78,7 +76,6 @@ resource "kubernetes_deployment" "registry" {
       spec {
         service_account_name = kubernetes_service_account.registry.metadata[0].name
 
-        # Wait for Vault CSI secrets to sync
         init_container {
           name  = "wait-for-secrets"
           image = "busybox:latest"
@@ -157,7 +154,6 @@ resource "kubernetes_deployment" "registry" {
           }
         }
 
-        # Nginx TLS + Auth
         container {
           name  = "registry-nginx"
           image = "nginx:alpine"
@@ -190,7 +186,6 @@ resource "kubernetes_deployment" "registry" {
           }
         }
 
-        # Registry
         container {
           name  = "registry"
           image = "registry:2"
@@ -247,7 +242,6 @@ resource "kubernetes_deployment" "registry" {
           }
         }
 
-        # Volumes
         volume {
           name = "registry-tls"
           secret { secret_name = "registry-tls" }
@@ -298,4 +292,3 @@ resource "kubernetes_deployment" "registry" {
   ]
 }
 
-# Internal Service

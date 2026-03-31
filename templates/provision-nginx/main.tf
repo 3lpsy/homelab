@@ -31,7 +31,6 @@ resource "null_resource" "main" {
     destination = "/home/${var.ssh_user}/nginx.conf"
   }
 
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo mv /home/${var.ssh_user}/nginx.conf /etc/nginx/nginx.conf",

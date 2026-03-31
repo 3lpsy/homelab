@@ -1,5 +1,3 @@
-
-# SecretProviderClass for Nextcloud secrets from Vault
 resource "kubernetes_manifest" "nextcloud_secret_provider" {
   manifest = {
     apiVersion = "secrets-store.csi.x-k8s.io/v1"
@@ -131,7 +129,6 @@ resource "kubernetes_manifest" "nextcloud_secret_provider" {
 }
 
 
-# Immich provider
 resource "kubernetes_manifest" "immich_secret_provider" {
   manifest = {
     apiVersion = "secrets-store.csi.x-k8s.io/v1"

@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "server_ip" {
   type = string
 }
@@ -9,7 +9,7 @@ variable "ssh_user" {
 variable "ssh_priv_key" {
   type = string
 }
-# pub key contents
+
 variable "server_domain" {
   type = string
 }

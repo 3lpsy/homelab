@@ -1,9 +1,3 @@
-# =============================================================================
-# Grafana — Deployment (Tailscale + Nginx TLS + Grafana container)
-# =============================================================================
-
-# --- Datasource Provisioning ------------------------------------------------
-
 resource "kubernetes_config_map" "grafana_datasources" {
   metadata {
     name      = "grafana-datasources"
@@ -22,8 +16,6 @@ resource "kubernetes_config_map" "grafana_datasources" {
     })
   }
 }
-
-# --- Dashboard Provisioning --------------------------------------------------
 
 resource "kubernetes_config_map" "grafana_dashboard_provisioning" {
   metadata {
@@ -47,8 +39,6 @@ resource "kubernetes_config_map" "grafana_dashboard_provisioning" {
     })
   }
 }
-
-# --- Nginx Config ------------------------------------------------------------
 
 resource "kubernetes_config_map" "grafana_nginx_config" {
   metadata {
@@ -104,8 +94,6 @@ resource "kubernetes_config_map" "grafana_nginx_config" {
   }
 }
 
-# --- PVC ---------------------------------------------------------------------
-
 resource "kubernetes_persistent_volume_claim" "grafana_data" {
   lifecycle {
     prevent_destroy = true
@@ -125,8 +113,6 @@ resource "kubernetes_persistent_volume_claim" "grafana_data" {
   }
   wait_until_bound = false
 }
-
-# --- Deployment --------------------------------------------------------------
 
 resource "kubernetes_deployment" "grafana" {
   metadata {
@@ -194,7 +180,6 @@ resource "kubernetes_deployment" "grafana" {
           }
         }
 
-        # --- Tailscale sidecar ---
         container {
           name  = "tailscale"
           image = "tailscale/tailscale:latest"
@@ -245,7 +230,6 @@ resource "kubernetes_deployment" "grafana" {
           }
         }
 
-        # --- Nginx TLS termination ---
         container {
           name  = "nginx"
           image = "nginx:alpine"
@@ -272,7 +256,6 @@ resource "kubernetes_deployment" "grafana" {
           }
         }
 
-        # --- Grafana ---
         container {
           name  = "grafana"
           image = "grafana/grafana:latest"
@@ -303,7 +286,6 @@ resource "kubernetes_deployment" "grafana" {
               }
             }
           }
-          # Disable public sign-up
           env {
             name  = "GF_USERS_ALLOW_SIGN_UP"
             value = "false"
@@ -351,7 +333,6 @@ resource "kubernetes_deployment" "grafana" {
           }
         }
 
-        # --- Volumes ---
         volume {
           name = "grafana-tls"
           secret { secret_name = "grafana-tls" }
@@ -410,8 +391,6 @@ resource "kubernetes_deployment" "grafana" {
     kubernetes_deployment.prometheus
   ]
 }
-
-# --- Service (internal — accessed via Tailscale) -----------------------------
 
 resource "kubernetes_service" "grafana_internal" {
   metadata {

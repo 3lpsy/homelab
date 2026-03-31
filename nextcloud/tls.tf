@@ -1,4 +1,3 @@
-# Generate TLS certificate
 module "nextcloud-tls" {
   source                = "./../templates/infra-tls"
   account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
@@ -14,7 +13,6 @@ module "nextcloud-tls" {
 }
 
 
-# Generate TLS certificate for Collabora
 module "collabora-tls" {
   source                = "./../templates/infra-tls"
   account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
@@ -29,7 +27,6 @@ module "collabora-tls" {
   }
 }
 
-# Immich Certs
 module "immich-tls" {
   source                = "./../templates/infra-tls"
   account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem

@@ -1,5 +1,3 @@
-
-# Nginx config
 resource "kubernetes_config_map" "nginx_config" {
   metadata {
     name      = "nginx-config"
@@ -26,21 +24,18 @@ resource "kubernetes_config_map" "nginx_config" {
           listen 443 ssl;
           server_name ${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain};
 
-          # SSL configuration
           ssl_certificate /etc/nginx/certs/tls.crt;
           ssl_certificate_key /etc/nginx/certs/tls.key;
           ssl_protocols TLSv1.2 TLSv1.3;
           ssl_ciphers HIGH:!aNULL:!MD5;
           ssl_prefer_server_ciphers on;
 
-          # Proxy
           set_real_ip_from 127.0.0.1;
           set_real_ip_from ::1;
           real_ip_header X-Forwarded-For;
           real_ip_recursive on;
 
 
-          # File upload limits
           client_max_body_size 20G;
           client_body_buffer_size 16M;
 
@@ -50,7 +45,6 @@ resource "kubernetes_config_map" "nginx_config" {
           proxy_read_timeout 3600;
           send_timeout 3600;
 
-          # Add headers for security
           add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
           add_header X-Content-Type-Options "nosniff" always;
           add_header X-Frame-Options "SAMEORIGIN" always;
@@ -108,7 +102,6 @@ resource "kubernetes_config_map" "nginx_config" {
   }
 }
 
-# Nextcloud Deployment
 resource "kubernetes_deployment" "nextcloud" {
   metadata {
     name      = "nextcloud"
@@ -153,7 +146,6 @@ resource "kubernetes_deployment" "nextcloud" {
             "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
           ]
         }
-        # Tailscale sidecar
         container {
           name  = "nextcloud-tailscale"
           image = "tailscale/tailscale:latest"
@@ -210,7 +202,6 @@ resource "kubernetes_deployment" "nextcloud" {
           }
         }
 
-        # Nginx reverse proxy for TLS termination
         container {
           name  = "nextcloud-nginx"
           image = "nginx:alpine"
@@ -244,7 +235,6 @@ resource "kubernetes_deployment" "nextcloud" {
           }
         }
 
-        # Nextcloud container
         container {
           name  = "nextcloud"
           # image = "nextcloud:latest"
@@ -359,7 +349,6 @@ resource "kubernetes_deployment" "nextcloud" {
             mount_path = "/var/www/html"
           }
 
-          # Mount the CSI volume to trigger secret sync
           volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
@@ -442,7 +431,6 @@ resource "kubernetes_deployment" "nextcloud" {
           empty_dir {}
         }
 
-        # Mount the CSI volume for secret sync
         volume {
           name = "secrets-store"
           csi {

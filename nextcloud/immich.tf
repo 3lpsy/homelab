@@ -335,7 +335,6 @@ resource "kubernetes_deployment" "immich" {
             value = "immich"
           }
 
-          # Redis configuration
           env {
             name  = "REDIS_HOSTNAME"
             value = "immich-redis"
@@ -345,19 +344,16 @@ resource "kubernetes_deployment" "immich" {
             value = "6379"
           }
 
-          # Machine learning
           env {
             name  = "IMMICH_MACHINE_LEARNING_URL"
             value = "http://immich-machine-learning:3003"
           }
 
-          # Timezone
           env {
             name  = "TZ"
             value = "America/Chicago"
           }
 
-          # Immich data is mounted at /data (default IMMICH_MEDIA_LOCATION)
           volume_mount {
             name       = "immich-upload"
             mount_path = "/data"

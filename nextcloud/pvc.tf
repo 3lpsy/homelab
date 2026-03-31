@@ -1,4 +1,3 @@
-# PVC for Nextcloud data
 resource "kubernetes_persistent_volume_claim" "nextcloud_data" {
   lifecycle {
     prevent_destroy = true
@@ -21,7 +20,6 @@ resource "kubernetes_persistent_volume_claim" "nextcloud_data" {
   wait_until_bound = false
 }
 
-# PVC for Postgresql for Nextcloud
 resource "kubernetes_persistent_volume_claim" "postgres_data" {
   lifecycle {
     prevent_destroy = true
@@ -68,7 +66,6 @@ resource "kubernetes_persistent_volume_claim" "immich_upload" {
   wait_until_bound = false
 }
 
-# PVC for postgres and immich
 resource "kubernetes_persistent_volume_claim" "immich_postgres_data" {
   lifecycle {
     prevent_destroy = true
@@ -89,7 +86,6 @@ resource "kubernetes_persistent_volume_claim" "immich_postgres_data" {
   wait_until_bound = false
 }
 
-# Storage for images in registry
 resource "kubernetes_persistent_volume_claim" "registry_data" {
   lifecycle {
     prevent_destroy = true
@@ -131,7 +127,6 @@ resource "kubernetes_persistent_volume_claim" "pihole_data" {
   wait_until_bound = false
 }
 
-# PVC for Radicale
 resource "kubernetes_persistent_volume_claim" "radicale_data" {
   lifecycle {
     prevent_destroy = true

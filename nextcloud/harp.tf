@@ -1,5 +1,3 @@
-
-# HaRP Deployment with Docker-in-Docker
 resource "kubernetes_deployment" "harp" {
   metadata {
     name      = "appapi-harp"
@@ -56,7 +54,6 @@ resource "kubernetes_deployment" "harp" {
           }
         }
 
-        # Docker-in-Docker sidecar
         container {
           name  = "dind"
           image = "docker:dind"
@@ -112,7 +109,6 @@ resource "kubernetes_deployment" "harp" {
           }
         }
 
-        # Harp container
         container {
           name  = "harp"
           image = "ghcr.io/nextcloud/nextcloud-appapi-harp:release"

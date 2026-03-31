@@ -5,7 +5,6 @@ terraform {
       version = "~> 2.0"
     }
 
-    # The provider is declared here just like any provider...
     acme = {
       source  = "vancluever/acme"
       version = "~> 2.0"
@@ -310,7 +309,6 @@ resource "kubernetes_stateful_set" "vault" {
       spec {
         service_account_name = kubernetes_service_account.vault.metadata[0].name
 
-        # Init container for permissions
         init_container {
           name  = "init-permissions"
           image = "busybox:latest"
@@ -329,7 +327,6 @@ resource "kubernetes_stateful_set" "vault" {
             run_as_user = 0
           }
         }
-        # Auto-unseal sidecar
         container {
           name    = "auto-unseal"
           image   = "busybox:latest"
@@ -362,7 +359,6 @@ resource "kubernetes_stateful_set" "vault" {
           }
         }
 
-        # Tailscale sidecar container
         container {
           name  = "tailscale"
           image = "tailscale/tailscale:latest"
@@ -379,7 +375,6 @@ resource "kubernetes_stateful_set" "vault" {
             value = "/var/lib/tailscale"
           }
 
-          # And add this volume mount:
           volume_mount {
             name       = "tailscale-state"
             mount_path = "/var/lib/tailscale"
@@ -427,7 +422,6 @@ resource "kubernetes_stateful_set" "vault" {
           }
         }
 
-        # Vault container
         container {
           name  = "vault"
           image = "hashicorp/vault:1.18" # or :latest
@@ -463,8 +457,6 @@ resource "kubernetes_stateful_set" "vault" {
             name  = "VAULT_CONFIG_DIR"
             value = "/vault/config"
           }
-
-          # Non failing error
 
           command = ["vault"]
           args = [
@@ -523,7 +515,6 @@ resource "kubernetes_stateful_set" "vault" {
           empty_dir {}
         }
 
-        # Volumes
         volume {
           name = "vault-config"
           config_map {
@@ -616,7 +607,6 @@ resource "kubernetes_network_policy" "vault" {
 
     policy_types = ["Ingress", "Egress"]
 
-    # Allow from vault-csi namespace (where CSI provider runs)
     ingress {
       from {
         namespace_selector {
@@ -631,7 +621,6 @@ resource "kubernetes_network_policy" "vault" {
       }
     }
 
-    # Allow internal vault namespace communication
     ingress {
       from {
         namespace_selector {
@@ -646,7 +635,6 @@ resource "kubernetes_network_policy" "vault" {
       }
     }
 
-    # Allow all egress initially - you can restrict later if needed
     egress {}
   }
 }
@@ -738,7 +726,6 @@ resource "kubernetes_network_policy" "vault" {
 #   }
 # }
 
-# Install Secrets Store CSI Driver
 resource "helm_release" "secrets_store_csi_driver" {
   name       = "csi-secrets-store"
   repository = "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts"
@@ -752,7 +739,6 @@ resource "helm_release" "secrets_store_csi_driver" {
 }
 
 
-# Install Vault CSI Provider (from Vault helm chart)
 resource "helm_release" "vault_csi_provider" {
   name             = "vault-csi"
   repository       = "https://helm.releases.hashicorp.com"
@@ -832,8 +818,7 @@ resource "kubernetes_cluster_role_binding" "vault_token_reviewer" {
   }
 }
 
-# Core DNS override
-# This overrides tailscale to resolve on host
+# Overrides tailscale DNS to resolve on host
 resource "kubernetes_config_map" "coredns_tailscale_node_override" {
   metadata {
     name      = "coredns-custom" # DO not rename

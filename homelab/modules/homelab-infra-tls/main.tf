@@ -2,7 +2,6 @@
 
 terraform {
   required_providers {
-    # The provider is declared here just like any provider...
     acme = {
       source  = "vancluever/acme"
       version = "~> 2.0"
@@ -12,7 +11,6 @@ terraform {
 provider "acme" {
   server_url = var.acme_server_url
 }
-# Generate a Private Key for the ACME Account
 resource "tls_private_key" "main" {
   algorithm = "RSA"
   rsa_bits  = 4096

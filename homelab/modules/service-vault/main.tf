@@ -1,7 +1,6 @@
 
 terraform {
   required_providers {
-    # The provider is declared here just like any provider...
     nomad = {
       source  = "hashicorp/nomad"
       version = "~> 2.0"

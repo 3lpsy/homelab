@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "headscale_server_domain" {
   type = string
 }

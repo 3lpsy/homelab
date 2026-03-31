@@ -80,8 +80,6 @@ module "ntfy-tls" {
   providers = { acme = acme }
 }
 
-# --- Vault Secrets -----------------------------------------------------------
-
 resource "vault_kv_secret_v2" "ntfy_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "ntfy/config"
@@ -119,8 +117,6 @@ resource "vault_kubernetes_auth_backend_role" "ntfy" {
   token_ttl                        = 86400
 }
 
-# --- ntfy Server Config (pre-generated with bcrypt hashes) -------------------
-
 resource "kubernetes_config_map" "ntfy_server_config" {
   metadata {
     name      = "ntfy-server-config"
@@ -155,8 +151,6 @@ resource "kubernetes_config_map" "ntfy_server_config" {
     ignore_changes = [data]
   }
 }
-
-# --- Vault CSI (TLS only) ----------------------------------------------------
 
 resource "kubernetes_manifest" "ntfy_secret_provider" {
   manifest = {
@@ -210,8 +204,6 @@ resource "kubernetes_manifest" "ntfy_secret_provider" {
     vault_policy.ntfy
   ]
 }
-
-# --- Nginx Config ------------------------------------------------------------
 
 resource "kubernetes_config_map" "ntfy_nginx_config" {
   metadata {
@@ -267,8 +259,6 @@ resource "kubernetes_config_map" "ntfy_nginx_config" {
   }
 }
 
-# --- PVC ---------------------------------------------------------------------
-
 resource "kubernetes_persistent_volume_claim" "ntfy_data" {
   lifecycle {
     prevent_destroy = true
@@ -288,8 +278,6 @@ resource "kubernetes_persistent_volume_claim" "ntfy_data" {
   }
   wait_until_bound = false
 }
-
-# --- Deployment --------------------------------------------------------------
 
 resource "kubernetes_deployment" "ntfy" {
   metadata {
@@ -314,7 +302,6 @@ resource "kubernetes_deployment" "ntfy" {
       spec {
         service_account_name = kubernetes_service_account.ntfy.metadata[0].name
 
-        # Fix permissions on data dir
         init_container {
           name  = "fix-permissions"
           image = "busybox:latest"
@@ -332,7 +319,6 @@ resource "kubernetes_deployment" "ntfy" {
           }
         }
 
-        # --- Tailscale sidecar ---
         container {
           name  = "tailscale"
           image = "tailscale/tailscale:latest"
@@ -383,7 +369,6 @@ resource "kubernetes_deployment" "ntfy" {
           }
         }
 
-        # --- Nginx TLS termination ---
         container {
           name  = "nginx"
           image = "nginx:alpine"
@@ -416,7 +401,6 @@ resource "kubernetes_deployment" "ntfy" {
           }
         }
 
-        # --- ntfy server ---
         container {
           name  = "ntfy"
           image = "binwiederhier/ntfy:latest"
@@ -466,7 +450,6 @@ resource "kubernetes_deployment" "ntfy" {
           }
         }
 
-        # --- Volumes ---
         volume {
           name = "ntfy-tls"
           secret { secret_name = "ntfy-tls" }

@@ -1,6 +1,5 @@
 
 resource "null_resource" "main" {
-  # Triggers to ensure the resource runs when the certificates change
   triggers = {
     fullchain_pem = md5(var.tls_fullchain_pem)
     privkey_pem   = md5(var.tls_privkey_pem)
@@ -15,19 +14,16 @@ resource "null_resource" "main" {
     timeout     = "1m"
   }
 
-  # Copy the fullchain.pem to the remote server
   provisioner "file" {
     content     = var.tls_fullchain_pem
     destination = "/home/${var.ssh_user}/fullchain.pem"
   }
 
-  # Copy the privkey.pem to the remote server
   provisioner "file" {
     content     = var.tls_privkey_pem
     destination = "/home/${var.ssh_user}/privkey.pem"
   }
 
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo mkdir -p /etc/letsencrypt/live/${var.domain}",

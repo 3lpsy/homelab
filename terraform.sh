@@ -9,7 +9,7 @@ source .env
 DEPLOYMENT_DIR=$1
 shift
 
-if [[ ! -d $DEPLOYMENT_DIR ]]; then
+if [[ "$DEPLOYMENT_DIR" != "changes" && ! -d $DEPLOYMENT_DIR ]]; then
     echo "Could not find environment folder: $DEPLOYMENT_DIR"
     exit 1
 fi
@@ -40,6 +40,26 @@ fi
 #     aws s3 cp $ENCRYPTED_STATE_FILE  s3://$S3_BUCKET/$DEPLOYMENT_DIR/$ENCRYPTED_STATE_FILE
 # }
 
+
+DEPLOYMENTS="homelab vault vault-conf nextcloud monitoring monitoring-conf"
+
+if [[ "$DEPLOYMENT_DIR" == "changes" ]]; then
+  for dep in $DEPLOYMENTS; do
+    echo "Checking $dep for changes...."
+    output=$(terraform -chdir=$dep plan -detailed-exitcode 2>&1)
+    exit_code=$?
+    if [ $exit_code -eq 2 ]; then
+      echo "=== $dep ==="
+      echo "$output" | grep -A 2 '# \|Plan:'
+      echo ""
+    elif [ $exit_code -ne 0 ]; then
+      echo "=== $dep === ERROR"
+      echo "$output"
+      echo ""
+    fi
+  done
+  exit 0
+fi
 
 case $1 in
   "encrypt")

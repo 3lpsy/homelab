@@ -1,5 +1,3 @@
-# Collabora Service (internal only - accessed via Tailscale)
-# Internal service for Nextcloud -> Collabora communication
 resource "kubernetes_service" "collabora_internal" {
   metadata {
     name      = "collabora-internal"
@@ -21,7 +19,6 @@ resource "kubernetes_service" "collabora_internal" {
   }
 }
 
-# Harp service
 resource "kubernetes_service" "harp" {
   metadata {
     name      = "appapi-harp"

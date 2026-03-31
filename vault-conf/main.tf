@@ -21,12 +21,10 @@ provider "kubernetes" {
 }
 
 
-# Enable Kubernetes auth
 resource "vault_auth_backend" "kubernetes" {
   type = "kubernetes"
 }
 
-# Get the service account
 data "kubernetes_service_account" "vault" {
   metadata {
     name      = data.terraform_remote_state.vault.outputs.vault_service_account_name
@@ -34,7 +32,6 @@ data "kubernetes_service_account" "vault" {
   }
 }
 
-# Create a long-lived token secret for the Vault service account
 resource "kubernetes_secret" "vault_token" {
   metadata {
     name      = "vault-token"
@@ -49,7 +46,6 @@ resource "kubernetes_secret" "vault_token" {
   wait_for_service_account_token = true
 }
 
-# Configure Kubernetes auth with proper credentials
 resource "vault_kubernetes_auth_backend_config" "k8s" {
   backend              = vault_auth_backend.kubernetes.path
   kubernetes_host      = "https://kubernetes.default.svc:443"
@@ -58,7 +54,6 @@ resource "vault_kubernetes_auth_backend_config" "k8s" {
   disable_local_ca_jwt = false
 }
 
-# Enable KV secrets engine
 resource "vault_mount" "kv" {
   path = "secret"
   type = "kv-v2"

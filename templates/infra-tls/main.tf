@@ -2,7 +2,6 @@
 
 terraform {
   required_providers {
-    # The provider is declared here just like any provider...
     acme = {
       source  = "vancluever/acme"
       version = "~> 2.0"

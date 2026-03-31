@@ -47,8 +47,6 @@ variable "acme_server_url" {
   default = "https://acme-v02.api.letsencrypt.org/directory"
 }
 
-# --- Grafana -----------------------------------------------------------------
-
 variable "grafana_domain" {
   type    = string
   default = "grafana"
@@ -63,9 +61,6 @@ variable "openwrt_domain" {
   type    = string
   default = "openwrt"
 }
-
-
-# --- Prometheus --------------------------------------------------------------
 
 variable "prometheus_retention" {
   type    = string

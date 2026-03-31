@@ -1,4 +1,3 @@
-# Shared
 variable "state_dirs" {
   type = string
 }

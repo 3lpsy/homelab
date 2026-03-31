@@ -1,5 +1,5 @@
 
-# pub key contents
+
 variable "server_ip" {
   type = string
 }
@@ -9,14 +9,14 @@ variable "ssh_user" {
 variable "ssh_priv_key_path" {
   type = string
 }
-# pub key contents
+
 variable "headscale_server_domain" {
   type = string
 }
 variable "headscale_key_path" {
   type = string
 }
-# pub key contents
+
 variable "headscale_magic_domain" {
   type = string
 }

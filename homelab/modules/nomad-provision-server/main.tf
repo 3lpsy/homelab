@@ -8,7 +8,6 @@ resource "null_resource" "install_deps" {
     private_key = var.ssh_priv_key
     timeout     = "1m"
   }
-  # Set permissions and optionally run a command
   provisioner "remote-exec" {
     inline = [
       "sudo dnf install -y git nginx neovim wget yq"
