@@ -11,3 +11,7 @@ variable "headscale_subdomain" {
   type    = string
   default = "hs"
 }
+variable "vault_unseal_key" {
+  type      = string
+  sensitive = true
+}
