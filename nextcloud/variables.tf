@@ -1,3 +1,8 @@
+variable "state_dirs" {
+  type = string
+}
+
+
 variable "nextcloud_admin_user" {
   type    = string
   default = "admin"

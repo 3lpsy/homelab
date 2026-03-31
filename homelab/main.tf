@@ -102,14 +102,15 @@ module "headscale-provision-headscale" {
   ssh_priv_key_path       = var.ssh_priv_key_path
   headscale_server_domain = module.headscale-infra-tls.certificate_domain
   headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  headscale_key_path      = var.headscale_key_path
   depends_on              = [module.headscale-infra-tls, module.headscale-provision-dep]
   backup_bucket_name      = module.headscale-infra.backup_bucket_name
-  tailnet_users = var.tailnet_users
+  tailnet_users           = var.tailnet_users
 
 }
 
 data "local_file" "api_key" {
-  filename = "${path.root}/../headscale.key"
+  filename = var.headscale_key_path
 }
 
 
@@ -122,7 +123,9 @@ provider "headscale" {
 module "tailnet-infra" {
   source                  = "./modules/tailnet-infra"
   headscale_server_domain = module.headscale-infra-tls.certificate_domain
-  api_key                 = var.headscale_api_key
+  headscale_key_path      = var.headscale_key_path
+
+  api_key       = var.headscale_api_key
   tailnet_users = var.tailnet_users
   providers = {
     headscale = headscale
@@ -188,25 +191,25 @@ module "nomad-provision-server" {
   ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
   nomad_host_name           = var.nomad_host_name
   headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  registry_domain = var.tailnet_users["registry_server_user"]
+  registry_domain           = var.tailnet_users["registry_server_user"]
   depends_on                = [module.nomad-provision-dep]
 }
 
 
 
 module "exit-node-0" {
-  source                    = "./modules/exit-node"
-  ami = "ami-0b6c6ebed2801a5cb" # 24.04
-  ec2_user = "ubuntu"
-  ssh_user                  = "ubuntu"
-  ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
-  vpc_id = module.headscale-infra.vpc_id
-  gateway_id = module.headscale-infra.gateway_id
-  ssh_pub_key        = trimspace(file(var.ssh_pub_key_path))
+  source                  = "./modules/exit-node"
+  ami                     = "ami-0b6c6ebed2801a5cb" # 24.04
+  ec2_user                = "ubuntu"
+  ssh_user                = "ubuntu"
+  ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
+  vpc_id                  = module.headscale-infra.vpc_id
+  gateway_id              = module.headscale-infra.gateway_id
+  ssh_pub_key             = trimspace(file(var.ssh_pub_key_path))
   headscale_server_domain = module.headscale-infra-dns.dns_domain
-  tailnet_auth_key = module.tailnet-infra.exit_node_preauth_key
-  node_name = "0"
+  tailnet_auth_key        = module.tailnet-infra.exit_node_preauth_key
+  node_name               = "0"
 
-  depends_on                = [module.tailnet-infra]
+  depends_on = [module.tailnet-infra]
 
 }

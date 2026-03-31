@@ -42,13 +42,6 @@ provider "helm" {
   }
 }
 
-data "terraform_remote_state" "homelab" {
-  backend = "local"
-
-  config = {
-    path = "../homelab/terraform.tfstate"
-  }
-}
 
 
 resource "headscale_pre_auth_key" "vault_server" {

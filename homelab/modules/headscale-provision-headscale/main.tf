@@ -225,7 +225,7 @@ resource "null_resource" "create_api_key" {
 resource "null_resource" "download_api_key" {
   provisioner "local-exec" {
     command     = <<-EOT
-      scp -i "${var.ssh_priv_key_path}" -o StrictHostKeyChecking=no "${var.ssh_user}@${var.server_ip}:/tmp/headscale.key" "${path.root}/../headscale.key"
+      scp -i "${var.ssh_priv_key_path}" -o StrictHostKeyChecking=no "${var.ssh_user}@${var.server_ip}:/tmp/headscale.key" "${var.headscale_key_path}"
     EOT
     interpreter = ["/bin/bash", "-c"]
   }
@@ -233,7 +233,7 @@ resource "null_resource" "download_api_key" {
 }
 
 data "local_file" "api_key" {
-  filename   = "${path.root}/../headscale.key"
+  filename   = var.headscale_key_path
   depends_on = [null_resource.create_api_key, null_resource.download_api_key]
 }
 

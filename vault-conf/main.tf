@@ -20,12 +20,6 @@ provider "kubernetes" {
   config_path = pathexpand("~/.config/kube/config")
 }
 
-data "terraform_remote_state" "vault" {
-  backend = "local"
-  config = {
-    path = "../vault/terraform.tfstate"
-  }
-}
 
 # Enable Kubernetes auth
 resource "vault_auth_backend" "kubernetes" {

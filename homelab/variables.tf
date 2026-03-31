@@ -11,6 +11,9 @@ variable "aws_secret_key" {
   type      = string
   sensitive = true
 }
+variable "headscale_key_path" {
+  type = string
+}
 variable "headscale_server_domain" {
   type = string
 }
@@ -28,12 +31,10 @@ variable "registration_email_address" {
   type = string
 }
 variable "ssh_priv_key_path" {
-  type    = string
-  default = "../ssh.pem"
+  type = string
 }
 variable "ssh_pub_key_path" {
-  type    = string
-  default = "../ssh.pem.pub"
+  type = string
 }
 variable "tailnet_users" {
   description = "Map of role keys to headscale usernames"

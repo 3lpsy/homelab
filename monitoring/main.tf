@@ -33,24 +33,6 @@ terraform {
   }
 }
 
-# --- Remote State ------------------------------------------------------------
-
-data "terraform_remote_state" "homelab" {
-  backend = "local"
-  config = {
-    path = "./../homelab/terraform.tfstate"
-  }
-}
-
-data "terraform_remote_state" "vault_conf" {
-  backend = "local"
-  config = {
-    path = "./../vault-conf/terraform.tfstate"
-  }
-}
-
-# --- Providers ---------------------------------------------------------------
-
 provider "kubernetes" {
   config_path = pathexpand("/home/vanguard/.config/kube/config")
 }

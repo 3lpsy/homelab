@@ -12,7 +12,7 @@ Headscale requires two domains. The necessity of the second one depends on what 
 - Exit Node EC2
 
 # Service Overview
-- Headscale / Tailnet
+- Headscale / Tailnet (with Encrypted backup of State to S3)
 - Nextcloud + Collabora + Harp
 - Immich with shared RO PVC from Nextcloud
 - PiHole (Configured as advertised Headscale DNS server)
@@ -39,7 +39,9 @@ ssh-keygen -f data/ssh.pem
 ./terraform.sh vault init
 ./terraform.sh vault apply
 
-# after unsealing vault
+# after unsealing vault, importing dummy key
+$ ./terraform.sh vault-conf import kubernetes_secret.vault_unseal_keys vault/vault-unseal-keys
+
 ./terraform.sh vault-conf init
 ./terraform.sh vault-conf apply
 

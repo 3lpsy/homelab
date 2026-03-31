@@ -9,7 +9,7 @@ terraform {
 }
 
 data "local_file" "api_key" {
-  filename = "${path.root}/../headscale.key"
+  filename = var.headscale_key_path
 }
 
 resource "headscale_user" "users" {
