@@ -218,6 +218,71 @@ resource "kubernetes_persistent_volume_claim" "vault_data" {
   }
 }
 
+# Placeholder unseal key secret. vault-conf overwrites with real key
+resource "kubernetes_secret" "vault_unseal_keys" {
+  metadata {
+    name      = "vault-unseal-keys"
+    namespace = kubernetes_namespace.vault.metadata[0].name
+  }
+  type = "Opaque"
+  data = {
+    key1 = "${var.vault_unseal_key}"
+  }
+  # Should be imported in vault conf so just don't ever update
+  lifecycle {
+    ignore_changes = [data]
+  }
+}
+resource "kubernetes_config_map" "vault_unseal_script" {
+  metadata {
+    name      = "vault-unseal-script"
+    namespace = kubernetes_namespace.vault.metadata[0].name
+  }
+  data = {
+    "unseal.sh" = <<-SCRIPT
+#!/bin/sh
+VAULT_ADDR="http://127.0.0.1:8200"
+CHECK_INTERVAL=$${CHECK_INTERVAL:-10}
+
+log () {
+  echo "`date '+%Y-%m-%dT%H:%M:%S'` [auto-unseal] $${1}"
+}
+
+unseal () {
+  RESP=`wget -q -O - --header="Content-Type: application/json" \
+    --post-data="{\"key\":\"$${UNSEAL_KEY_1}\"}" \
+    "$${VAULT_ADDR}/v1/sys/unseal" 2>&1` || true
+  SEALED=`echo "$${RESP}" | grep -o '"sealed":[a-z]*' | cut -d: -f2`
+  if [ "$${SEALED}" = "false" ]; then
+    log "Unsealed successfully"
+    return 0
+  fi
+  log "Unseal attempted, sealed=$${SEALED}"
+  return 1
+}
+
+log "Watching seal status (interval=$${CHECK_INTERVAL}s)"
+
+while true; do
+  BODY=`wget -q -O - "$${VAULT_ADDR}/v1/sys/health?standbyok=true&uninitcode=200&sealedcode=200" 2>/dev/null` || true
+  if echo "$${BODY}" | grep -q '"sealed":false'; then
+    :
+  elif echo "$${BODY}" | grep -q '"sealed":true'; then
+    log "Sealed — unsealing..."
+    unseal || log "Retry next cycle"
+  elif echo "$${BODY}" | grep -q '"initialized":false'; then
+    log "Not initialized, waiting..."
+  else
+    log "Unreachable, waiting..."
+  fi
+
+
+  sleep "$${CHECK_INTERVAL}"
+done
+    SCRIPT
+  }
+}
+
 resource "kubernetes_stateful_set" "vault" {
   metadata {
     name      = "vault"
@@ -227,8 +292,8 @@ resource "kubernetes_stateful_set" "vault" {
     }
   }
   timeouts {
-    create = "1m"
-    update = "1m"
+    create = "2m"
+    update = "2m"
     delete = "5m"
   }
 
@@ -271,11 +336,50 @@ resource "kubernetes_stateful_set" "vault" {
             run_as_user = 0
           }
         }
+        # Auto-unseal sidecar
+        container {
+          name    = "auto-unseal"
+          image   = "busybox:latest"
+          command = ["/bin/sh", "/scripts/unseal.sh"]
+
+          env {
+            name  = "CHECK_INTERVAL"
+            value = "10"
+          }
+
+          env {
+            name = "UNSEAL_KEY_1"
+            value_from {
+              secret_key_ref {
+                name = "vault-unseal-keys"
+                key  = "key1"
+              }
+            }
+          }
+
+          volume_mount {
+            name       = "unseal-script"
+            mount_path = "/scripts"
+            read_only  = true
+          }
+
+          resources {
+            requests = { cpu = "10m", memory = "16Mi" }
+            limits   = { cpu = "50m", memory = "32Mi" }
+          }
+        }
 
         # Tailscale sidecar container
         container {
           name  = "tailscale"
           image = "tailscale/tailscale:latest"
+
+
+
+          resources {
+            requests = { cpu = "10m", memory = "32Mi" }
+            limits   = { cpu = "100m", memory = "64Mi" }
+          }
 
           env {
             name  = "TS_STATE_DIR"
@@ -334,6 +438,12 @@ resource "kubernetes_stateful_set" "vault" {
         container {
           name  = "vault"
           image = "hashicorp/vault:1.18" # or :latest
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "500m", memory = "256Mi" }
+          }
+
           port {
             container_port = 8200
             name           = "vault"
@@ -439,6 +549,14 @@ resource "kubernetes_stateful_set" "vault" {
           name = "vault-tls"
           secret {
             secret_name = kubernetes_secret.vault_tls.metadata[0].name
+          }
+        }
+
+        volume {
+          name = "unseal-script"
+          config_map {
+            name         = kubernetes_config_map.vault_unseal_script.metadata[0].name
+            default_mode = "0755"
           }
         }
 
@@ -718,5 +836,23 @@ resource "kubernetes_cluster_role_binding" "vault_token_reviewer" {
     kind      = "ServiceAccount"
     name      = kubernetes_service_account.vault.metadata[0].name
     namespace = kubernetes_namespace.vault.metadata[0].name
+  }
+}
+
+# Core DNS override
+# This overrides tailscale to resolve on host
+resource "kubernetes_config_map" "coredns_tailscale_node_override" {
+  metadata {
+    name      = "coredns-custom" # DO not rename
+    namespace = "kube-system"
+  }
+  data = {
+    "${var.headscale_subdomain}-${replace(var.headscale_magic_domain, ".", "-")}.server" = <<-EOT
+      ${var.headscale_subdomain}.${var.headscale_magic_domain}:53 {
+        errors
+        cache 30
+        forward . 100.100.100.100
+      }
+    EOT
   }
 }

@@ -42,3 +42,9 @@ variable "recursive_nameservers" {
 variable "vault_server_host_name" {
   type = string
 }
+
+variable "vault_unseal_key" {
+  type      = string
+  sensitive = true
+  default   = "placeholder" # Needs to be updated in vault-conf post apply
+}
