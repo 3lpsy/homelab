@@ -4,7 +4,7 @@ groups:
     rules:
       - alert: PodNotReady
         expr: kube_pod_status_ready{condition="true"} == 0 unless on(pod, namespace) kube_pod_status_phase{phase=~"Succeeded|Failed"} == 1
-        for: 3m
+        for: 1m
         labels:
           severity: warning
         annotations:

@@ -8,12 +8,12 @@ rule_files:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ['localhost:9093']
+        - targets: ['${alertmanager_target}']
 
 scrape_configs:
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['${prometheus_target}']
 
   - job_name: 'node-exporter'
     kubernetes_sd_configs:
@@ -28,7 +28,7 @@ scrape_configs:
 
   - job_name: 'kube-state-metrics'
     static_configs:
-      - targets: ['kube-state-metrics:8080']
+      - targets: ['${kube_state_metrics_target}']
 
   - job_name: 'kubelet'
     scheme: https

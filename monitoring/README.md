@@ -5,9 +5,10 @@ Deploys the monitoring stack into the `monitoring` namespace on K3s.
 ## Services
 
 - **Prometheus** -- scrapes node-exporter, kube-state-metrics, kubelet/cAdvisor, and an OpenWrt target over Tailscale. Evaluates alert rules and forwards to Alertmanager. Cluster-internal only (ClusterIP).
-- **Alertmanager** -- runs as sidecar in the Prometheus pod. Routes alerts to Ntfy over Tailscale. Config template in `data/alertmanager/`.
+- **Alertmanager** -- runs as sidecar in the Prometheus pod. Routes alerts to the ntfy-bridge sidecar. Config template in `data/prometheus/alertmanager.yml.tpl`.
+- **ntfy-bridge** -- runs as sidecar in the Prometheus pod. Receives Alertmanager webhooks, reformats them into human-readable notifications with emoji and priority, and forwards to Ntfy over Tailscale. Script at `data/scripts/ntfy-bridge.py`.
 - **Grafana** -- exposed via Tailscale with Nginx TLS termination. Secrets (admin password, TLS certs) pulled from Vault via CSI driver.
-- **Ntfy** -- push notification server. Alertmanager sends alerts here over Tailscale. Also exposed via Tailscale + Nginx TLS.
+- **Ntfy** -- push notification server. Receives formatted alerts from ntfy-bridge over Tailscale. Also exposed via Tailscale + Nginx TLS.
 - **Node Exporter** -- DaemonSet on host network, no sidecar.
 - **kube-state-metrics** -- cluster-internal, scraped by Prometheus.
 
@@ -33,7 +34,7 @@ Grafana and ntfy follow the same pod structure:
 3. Nginx sidecar for TLS termination
 4. Tailscale sidecar for mesh networking
 
-Prometheus skips nginx (cluster-internal only) but has the same tailscale sidecar. Alertmanager runs as an additional sidecar in the Prometheus pod, sharing its Tailscale interface.
+Prometheus skips nginx (cluster-internal only) but has the same tailscale sidecar. Alertmanager and ntfy-bridge run as additional sidecars in the Prometheus pod, sharing its Tailscale interface. Alert flow: Prometheus -> Alertmanager -> ntfy-bridge -> Ntfy (over Tailscale).
 
 ## Gotchas
 

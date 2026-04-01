@@ -149,6 +149,59 @@ resource "kubernetes_deployment" "prometheus" {
         }
 
         container {
+          name  = "ntfy-bridge"
+          image = var.image_python
+
+          command = [
+            "python3", "/app/ntfy-bridge.py",
+            "--ntfy-url", "https://${var.ntfy_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}",
+            "--ntfy-topic", var.ntfy_alert_topic,
+            "--port", "8085",
+          ]
+
+          port {
+            container_port = 8085
+            name           = "ntfy-bridge"
+          }
+
+          volume_mount {
+            name       = "ntfy-bridge-script"
+            mount_path = "/app"
+            read_only  = true
+          }
+
+          resources {
+            requests = { cpu = "10m", memory = "32Mi" }
+            limits   = { cpu = "100m", memory = "64Mi" }
+          }
+
+          liveness_probe {
+            http_get {
+              path = "/health"
+              port = 8085
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 30
+          }
+
+          readiness_probe {
+            http_get {
+              path = "/health"
+              port = 8085
+            }
+            initial_delay_seconds = 2
+            period_seconds        = 10
+          }
+        }
+
+        volume {
+          name = "ntfy-bridge-script"
+          config_map {
+            name = kubernetes_config_map.ntfy_bridge_script.metadata[0].name
+          }
+        }
+
+        container {
           name  = "tailscale"
           image = var.image_tailscale
 

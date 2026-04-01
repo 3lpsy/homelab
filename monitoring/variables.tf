@@ -147,3 +147,8 @@ variable "image_alertmanager" {
   type    = string
   default = "prom/alertmanager:latest"
 }
+
+variable "image_python" {
+  type    = string
+  default = "python:3-alpine"
+}

@@ -6,6 +6,7 @@ apikey.txt
 *.key
 *.restored
 *.lock.hcl
+test.sh
 
 !data/.gitkeep
 !data/.env.example
