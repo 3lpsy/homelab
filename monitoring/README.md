@@ -4,9 +4,10 @@ Deploys the monitoring stack into the `monitoring` namespace on K3s.
 
 ## Services
 
-- **Prometheus** -- scrapes node-exporter, kube-state-metrics, kubelet/cAdvisor, and an OpenWrt target over Tailscale. Cluster-internal only (ClusterIP).
+- **Prometheus** -- scrapes node-exporter, kube-state-metrics, kubelet/cAdvisor, and an OpenWrt target over Tailscale. Evaluates alert rules and forwards to Alertmanager. Cluster-internal only (ClusterIP).
+- **Alertmanager** -- runs as sidecar in the Prometheus pod. Routes alerts to Ntfy over Tailscale. Config template in `data/alertmanager/`.
 - **Grafana** -- exposed via Tailscale with Nginx TLS termination. Secrets (admin password, TLS certs) pulled from Vault via CSI driver.
-- **Ntfy** -- push notification server. Grafana sends alerts here via webhook. Also exposed via Tailscale + Nginx TLS.
+- **Ntfy** -- push notification server. Alertmanager sends alerts here over Tailscale. Also exposed via Tailscale + Nginx TLS.
 - **Node Exporter** -- DaemonSet on host network, no sidecar.
 - **kube-state-metrics** -- cluster-internal, scraped by Prometheus.
 
@@ -32,7 +33,7 @@ Grafana and ntfy follow the same pod structure:
 3. Nginx sidecar for TLS termination
 4. Tailscale sidecar for mesh networking
 
-Prometheus skips nginx (cluster-internal only) but has the same tailscale sidecar.
+Prometheus skips nginx (cluster-internal only) but has the same tailscale sidecar. Alertmanager runs as an additional sidecar in the Prometheus pod, sharing its Tailscale interface.
 
 ## Gotchas
 

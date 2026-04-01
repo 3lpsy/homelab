@@ -88,9 +88,15 @@ variable "ntfy_domain" {
 variable "ntfy_users" {
   type = map(string)
   default = {
-    grafana = "admin"
-    mobile  = "user"
+    grafana    = "admin"
+    mobile     = "user"
+    prometheus = "user"
   }
+}
+
+variable "ntfy_alert_topic" {
+  type    = string
+  default = "homelab"
 }
 variable "ntfy_storage_size" {
   type    = string
@@ -135,4 +141,9 @@ variable "image_grafana" {
 variable "image_ntfy" {
   type    = string
   default = "binwiederhier/ntfy:latest"
+}
+
+variable "image_alertmanager" {
+  type    = string
+  default = "prom/alertmanager:latest"
 }

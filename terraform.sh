@@ -112,7 +112,14 @@ case $1 in
     ;;
   *)
     ENVS="$HOME/Playground/private/envs/homelab"
-    if [[ "$1" == "init" ]]; then
+    if [[ "$DEPLOYMENT_DIR" == "all" ]]; then
+        for dep in $DEPLOYMENTS; do
+            echo "=== $dep ==="
+            echo terraform -chdir=$dep $@
+            terraform -chdir=$dep $@
+            echo ""
+        done
+    elif [[ "$1" == "init" ]]; then
         echo terraform -chdir=$DEPLOYMENT_DIR init -backend-config="path=$ENVS/$DEPLOYMENT_DIR/terraform.tfstate" "${@:2}"
         terraform -chdir=$DEPLOYMENT_DIR init -backend-config="path=$ENVS/$DEPLOYMENT_DIR/terraform.tfstate" "${@:2}"
     else

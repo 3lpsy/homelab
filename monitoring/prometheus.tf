@@ -99,6 +99,56 @@ resource "kubernetes_deployment" "prometheus" {
         }
 
         container {
+          name  = "alertmanager"
+          image = var.image_alertmanager
+
+          args = [
+            "--config.file=/etc/alertmanager/alertmanager.yml",
+            "--storage.path=/alertmanager",
+          ]
+
+          port {
+            container_port = 9093
+            name           = "alertmanager"
+          }
+
+          volume_mount {
+            name       = "alertmanager-config"
+            mount_path = "/etc/alertmanager"
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "250m", memory = "256Mi" }
+          }
+
+          liveness_probe {
+            http_get {
+              path = "/-/healthy"
+              port = 9093
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 30
+          }
+
+          readiness_probe {
+            http_get {
+              path = "/-/ready"
+              port = 9093
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 10
+          }
+        }
+
+        volume {
+          name = "alertmanager-config"
+          config_map {
+            name = kubernetes_config_map.alertmanager_config.metadata[0].name
+          }
+        }
+
+        container {
           name  = "tailscale"
           image = var.image_tailscale
 

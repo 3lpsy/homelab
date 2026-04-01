@@ -13,12 +13,12 @@ Headscale requires two domains. The necessity of the second one depends on what 
 
 # Service Overview
 - Headscale / Tailnet (with Encrypted backup of State to S3)
-- Nextcloud + Collabora + Harp
-- Immich with shared RO PVC from Nextcloud
+- Nextcloud + Collabora
+- Immich
 - PiHole (Configured as advertised Headscale DNS server)
 - Radicale (CalDAV/CardDav)
 - Registry (Docker Registry v2)
-- Grafana / Prometheus / Node Exporter
+- Grafana / Prometheus / Node Exporter / kube-state-metrics / Ntfy
 
 ## Create SSH Key
 
@@ -35,6 +35,10 @@ ssh-keygen -f data/ssh.pem
 ./terraform.sh homelab init
 ./terraform.sh homelab apply
 
+# provision k3s node
+./terraform.sh cluster init
+./terraform.sh cluster apply
+
 # create vault in k3s
 ./terraform.sh vault init
 ./terraform.sh vault apply
@@ -49,9 +53,13 @@ $ ./terraform.sh vault-conf import kubernetes_secret.vault_unseal_keys vault/vau
 ./terraform.sh nextcloud init
 ./terraform.sh nextcloud apply
 
-# deploy monitoring (gafana + prometheus)
+# deploy monitoring (grafana + prometheus + ntfy)
 ./terraform.sh monitoring init
 ./terraform.sh monitoring apply
+
+# configure grafana dashboards and alerts
+./terraform.sh monitoring-conf init
+./terraform.sh monitoring-conf apply
 ```
 
 ## Notes

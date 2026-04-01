@@ -24,12 +24,3 @@ variable "headscale_magic_domain" {
   type = string
 }
 
-variable "ntfy_domain" {
-  type    = string
-  default = "ntfy"
-}
-
-variable "ntfy_alert_topic" {
-  type    = string
-  default = "homelab"
-}
