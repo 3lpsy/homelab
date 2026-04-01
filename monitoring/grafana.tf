@@ -1,119 +1,3 @@
-resource "kubernetes_config_map" "grafana_datasources" {
-  metadata {
-    name      = "grafana-datasources"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  data = {
-    "datasources.yaml" = yamlencode({
-      apiVersion = 1
-      datasources = [{
-        name      = "Prometheus"
-        type      = "prometheus"
-        url       = "http://prometheus:9090"
-        access    = "proxy"
-        isDefault = true
-      }]
-    })
-  }
-}
-
-resource "kubernetes_config_map" "grafana_dashboard_provisioning" {
-  metadata {
-    name      = "grafana-dashboard-provisioning"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  data = {
-    "dashboards.yaml" = yamlencode({
-      apiVersion = 1
-      providers = [{
-        name            = "default"
-        orgId           = 1
-        folder          = ""
-        type            = "file"
-        disableDeletion = false
-        editable        = true
-        options = {
-          path = "/var/lib/grafana/dashboards"
-        }
-      }]
-    })
-  }
-}
-
-resource "kubernetes_config_map" "grafana_nginx_config" {
-  metadata {
-    name      = "grafana-nginx-config"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  data = {
-    "nginx.conf" = <<-EOT
-      events {
-        worker_connections 1024;
-      }
-      http {
-        upstream grafana {
-          server localhost:3000;
-        }
-
-        map $http_upgrade $connection_upgrade {
-          default upgrade;
-          '' close;
-        }
-
-        server {
-          listen 443 ssl;
-          server_name ${var.grafana_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain};
-
-          ssl_certificate     /etc/nginx/certs/tls.crt;
-          ssl_certificate_key /etc/nginx/certs/tls.key;
-          ssl_protocols       TLSv1.2 TLSv1.3;
-          ssl_ciphers         HIGH:!aNULL:!MD5;
-          ssl_prefer_server_ciphers on;
-
-          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-          location / {
-            proxy_pass http://grafana;
-            proxy_set_header Host $http_host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-          }
-
-          # Grafana Live WebSocket support
-          location /api/live/ {
-            proxy_pass http://grafana;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_set_header Host $http_host;
-          }
-        }
-      }
-    EOT
-  }
-}
-
-resource "kubernetes_persistent_volume_claim" "grafana_data" {
-  lifecycle {
-    prevent_destroy = true
-  }
-  metadata {
-    name      = "grafana-data"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  spec {
-    access_modes       = ["ReadWriteOnce"]
-    storage_class_name = "local-path"
-    resources {
-      requests = {
-        storage = var.grafana_storage_size
-      }
-    }
-  }
-  wait_until_bound = false
-}
-
 resource "kubernetes_deployment" "grafana" {
   metadata {
     name      = "grafana"
@@ -140,24 +24,12 @@ resource "kubernetes_deployment" "grafana" {
         # Wait for Vault CSI secrets
         init_container {
           name  = "wait-for-secrets"
-          image = "busybox:latest"
+          image = var.image_busybox
           command = [
             "sh", "-c",
-            <<-EOT
-              echo 'Waiting for Grafana secrets to sync from Vault...'
-              TIMEOUT=300
-              ELAPSED=0
-              until [ -f /mnt/secrets/admin_password ]; do
-                if [ $ELAPSED -ge $TIMEOUT ]; then
-                  echo "Timeout waiting for secrets after $${TIMEOUT}s"
-                  exit 1
-                fi
-                echo "Still waiting... ($${ELAPSED}s)"
-                sleep 5
-                ELAPSED=$((ELAPSED + 5))
-              done
-              echo 'Grafana secrets synced successfully!'
-            EOT
+            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
+              secret_file = "admin_password"
+            })
           ]
           volume_mount {
             name       = "secrets-store"
@@ -169,7 +41,7 @@ resource "kubernetes_deployment" "grafana" {
         # Fix Grafana data dir ownership (grafana runs as UID 472)
         init_container {
           name  = "fix-permissions"
-          image = "busybox:latest"
+          image = var.image_busybox
           command = [
             "sh", "-c",
             "chown -R 472:472 /var/lib/grafana"
@@ -180,85 +52,10 @@ resource "kubernetes_deployment" "grafana" {
           }
         }
 
-        container {
-          name  = "tailscale"
-          image = "tailscale/tailscale:latest"
-
-          env {
-            name  = "TS_STATE_DIR"
-            value = "/var/lib/tailscale"
-          }
-          env {
-            name  = "TS_KUBE_SECRET"
-            value = "grafana-tailscale-state"
-          }
-          env {
-            name  = "TS_USERSPACE"
-            value = "false"
-          }
-          env {
-            name = "TS_AUTHKEY"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.grafana_tailscale_auth.metadata[0].name
-                key  = "TS_AUTHKEY"
-              }
-            }
-          }
-          env {
-            name  = "TS_HOSTNAME"
-            value = var.grafana_domain
-          }
-          env {
-            name  = "TS_EXTRA_ARGS"
-            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
-          }
-
-          security_context {
-            capabilities {
-              add = ["NET_ADMIN"]
-            }
-          }
-
-          volume_mount {
-            name       = "dev-net-tun"
-            mount_path = "/dev/net/tun"
-          }
-          volume_mount {
-            name       = "tailscale-state"
-            mount_path = "/var/lib/tailscale"
-          }
-        }
-
-        container {
-          name  = "nginx"
-          image = "nginx:alpine"
-
-          port {
-            container_port = 443
-            name           = "https"
-          }
-
-          volume_mount {
-            name       = "grafana-tls"
-            mount_path = "/etc/nginx/certs"
-            read_only  = true
-          }
-          volume_mount {
-            name       = "nginx-config"
-            mount_path = "/etc/nginx/nginx.conf"
-            sub_path   = "nginx.conf"
-          }
-
-          resources {
-            requests = { cpu = "50m", memory = "64Mi" }
-            limits   = { cpu = "200m", memory = "128Mi" }
-          }
-        }
-
+        # Grafana
         container {
           name  = "grafana"
-          image = "grafana/grafana:latest"
+          image = var.image_grafana
 
           port {
             container_port = 3000
@@ -332,17 +129,7 @@ resource "kubernetes_deployment" "grafana" {
             period_seconds        = 10
           }
         }
-
-        volume {
-          name = "grafana-tls"
-          secret { secret_name = "grafana-tls" }
-        }
-        volume {
-          name = "nginx-config"
-          config_map {
-            name = kubernetes_config_map.grafana_nginx_config.metadata[0].name
-          }
-        }
+        # Grafana Volumes
         volume {
           name = "grafana-datasources"
           config_map {
@@ -362,6 +149,112 @@ resource "kubernetes_deployment" "grafana" {
           }
         }
         volume {
+          name = "secrets-store"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = kubernetes_manifest.grafana_secret_provider.manifest.metadata.name
+            }
+          }
+        }
+
+        # Nginx
+        container {
+          name  = "nginx"
+          image = var.image_nginx
+
+          port {
+            container_port = 443
+            name           = "https"
+          }
+
+          volume_mount {
+            name       = "grafana-tls"
+            mount_path = "/etc/nginx/certs"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "nginx-config"
+            mount_path = "/etc/nginx/nginx.conf"
+            sub_path   = "nginx.conf"
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "200m", memory = "128Mi" }
+          }
+        }
+        # Nginx Volumes
+        volume {
+          name = "grafana-tls"
+          secret { secret_name = "grafana-tls" }
+        }
+        volume {
+          name = "nginx-config"
+          config_map {
+            name = kubernetes_config_map.grafana_nginx_config.metadata[0].name
+          }
+        }
+
+        # Tailscale
+        container {
+          name  = "tailscale"
+          image = var.image_tailscale
+
+          env {
+            name  = "TS_STATE_DIR"
+            value = "/var/lib/tailscale"
+          }
+          env {
+            name  = "TS_KUBE_SECRET"
+            value = "grafana-tailscale-state"
+          }
+          env {
+            name  = "TS_USERSPACE"
+            value = "false"
+          }
+          env {
+            name = "TS_AUTHKEY"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.grafana_tailscale_auth.metadata[0].name
+                key  = "TS_AUTHKEY"
+              }
+            }
+          }
+          env {
+            name  = "TS_HOSTNAME"
+            value = var.grafana_domain
+          }
+          env {
+            name  = "TS_EXTRA_ARGS"
+            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+          }
+
+          security_context {
+            capabilities {
+              add = ["NET_ADMIN"]
+            }
+          }
+
+          volume_mount {
+            name       = "dev-net-tun"
+            mount_path = "/dev/net/tun"
+          }
+          volume_mount {
+            name       = "tailscale-state"
+            mount_path = "/var/lib/tailscale"
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "200m", memory = "192Mi" }
+          }
+        }
+
+        # Tailscale Volumes
+        volume {
           name = "dev-net-tun"
           host_path {
             path = "/dev/net/tun"
@@ -372,16 +265,6 @@ resource "kubernetes_deployment" "grafana" {
           name = "tailscale-state"
           empty_dir {}
         }
-        volume {
-          name = "secrets-store"
-          csi {
-            driver    = "secrets-store.csi.k8s.io"
-            read_only = true
-            volume_attributes = {
-              secretProviderClass = kubernetes_manifest.grafana_secret_provider.manifest.metadata.name
-            }
-          }
-        }
       }
     }
   }
@@ -390,20 +273,4 @@ resource "kubernetes_deployment" "grafana" {
     kubernetes_manifest.grafana_secret_provider,
     kubernetes_deployment.prometheus
   ]
-}
-
-resource "kubernetes_service" "grafana_internal" {
-  metadata {
-    name      = "grafana-internal"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  spec {
-    selector = { app = "grafana" }
-    port {
-      name        = "https"
-      port        = 443
-      target_port = 443
-    }
-    type = "ClusterIP"
-  }
 }

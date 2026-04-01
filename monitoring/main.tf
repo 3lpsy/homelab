@@ -27,7 +27,7 @@ terraform {
 }
 
 provider "kubernetes" {
-  config_path = pathexpand("/home/vanguard/.config/kube/config")
+  config_path = pathexpand(var.kubeconfig_path)
 }
 
 provider "vault" {

@@ -91,7 +91,7 @@ resource "kubernetes_deployment" "kube_state_metrics" {
 
         container {
           name  = "kube-state-metrics"
-          image = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0"
+          image = var.image_kube_state_metrics
 
           port {
             container_port = 8080

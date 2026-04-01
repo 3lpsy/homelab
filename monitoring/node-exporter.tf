@@ -22,7 +22,7 @@ resource "kubernetes_daemonset" "node_exporter" {
 
         container {
           name  = "node-exporter"
-          image = "prom/node-exporter:latest"
+          image = var.image_node_exporter
 
           args = [
             "--path.procfs=/host/proc",

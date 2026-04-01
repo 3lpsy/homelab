@@ -22,9 +22,12 @@ variable "headscale_api_key" {
 }
 
 variable "aws_region" {
-  type      = string
-  default   = "us-east-1"
-  sensitive = true
+  type    = string
+  default = "us-east-1"
+}
+
+variable "kubeconfig_path" {
+  type = string
 }
 
 variable "aws_access_key" {
@@ -92,4 +95,44 @@ variable "ntfy_users" {
 variable "ntfy_storage_size" {
   type    = string
   default = "2Gi"
+}
+
+variable "image_busybox" {
+  type    = string
+  default = "busybox:latest"
+}
+
+variable "image_tailscale" {
+  type    = string
+  default = "tailscale/tailscale:latest"
+}
+
+variable "image_nginx" {
+  type    = string
+  default = "nginx:alpine"
+}
+
+variable "image_prometheus" {
+  type    = string
+  default = "prom/prometheus:latest"
+}
+
+variable "image_node_exporter" {
+  type    = string
+  default = "prom/node-exporter:latest"
+}
+
+variable "image_kube_state_metrics" {
+  type    = string
+  default = "registry.k8s.io/kube-state-metrics/kube-state-metrics:latest"
+}
+
+variable "image_grafana" {
+  type    = string
+  default = "grafana/grafana:latest"
+}
+
+variable "image_ntfy" {
+  type    = string
+  default = "binwiederhier/ntfy:latest"
 }
