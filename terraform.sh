@@ -1,4 +1,7 @@
 #!/bin/bash
+set -euo pipefail
+trap 'exit 130' INT
+
 if [[ ! -f .env ]];then
     echo "Requires .env"
     exit

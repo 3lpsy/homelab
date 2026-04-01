@@ -2,7 +2,7 @@ terraform {
   required_providers {
     headscale = {
       source                = "awlsring/headscale"
-      version               = "~>0.4.0"
+      version               = "~>0.5.0"
       configuration_aliases = [headscale]
     }
   }
@@ -34,6 +34,7 @@ resource "headscale_pre_auth_key" "exit_node" {
   user           = headscale_user.users["exit_node_user"].id
   reusable       = true
   time_to_expire = "3y"
+  acl_tags       = ["tag:exitnode"]
 }
 # resource "headscale_user" "test_user" {
 #   name = "test_user"

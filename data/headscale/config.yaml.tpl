@@ -41,7 +41,7 @@ derp:
   # will be set up.
   auto_update_enabled: true
   # How often should we check for DERP updates?
-  update_frequency: 24h
+  update_frequency: 3h
 disable_check_updates: false
 ephemeral_node_inactivity_timeout: 30m
 database:

@@ -2,7 +2,7 @@ terraform {
   required_providers {
     headscale = {
       source                = "awlsring/headscale"
-      version               = "~>0.4.0"
+      version               = "~>0.5.0"
       configuration_aliases = [headscale]
     }
   }

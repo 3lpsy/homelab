@@ -12,7 +12,6 @@
     "group:ssh-clients": ["${personal_user}@"],
     "group:ssh-servers": ["${deck_user}@"],
     "group:syncthing-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@","${deck_user}@"],
-    "group:calendar-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@"],
     "group:vault-server": ["${vault_server_user}@"],
     // immich is also nextcloud TODO move collabora to nextcloud too
     "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
@@ -36,18 +35,6 @@
     "exitNode": ["tag:exitnode"]
   },
   "tagOwners": {
-    "tag:personal": ["group:personal"],
-    "tag:mobile": ["group:mobile"],
-    "tag:tablet": ["group:tablet"],
-    "tag:deck": ["group:deck"],
-    "tag:node-server": ["group:node-server"],
-    "tag:vault-server": ["group:vault-server"],
-    "tag:vault-clients": ["group:vault-clients"],
-    "tag:nextcloud-clients": ["group:nextcloud-clients", "group:collabora-server"],
-    "tag:nextcloud-server": ["group:nextcloud-server", "group:collabora-server"],
-    "tag:registry-server": ["group:registry-server"],
-    "tag:calendar-server": ["group:calendar-server"],
-    "tag:pihole-server": ["group:pihole-server"],
     "tag:exitnode": ["group:exitnodes"]
   },
   "hosts": {},
@@ -106,6 +93,7 @@
 
     // ntfy
     { "action": "accept", "src": ["group:ntfy-clients"], "dst": ["group:ntfy-server:443"] },
+  { "action": "accept", "src": ["group:personal"], "dst": ["group:exitnodes:22", "tag:exitnode:22"] },
 
     // users who can use any exit node
     {
@@ -113,7 +101,7 @@
       "src": ["group:personal", "group:mobile", "group:tv"],
       "dst": ["autogroup:internet:*"]
     },
-    { "action": "accept", "src": ["group:personal", "group:mobile", "group:tv"], "dst": ["group:exitnodes:*"] }
+  { "action": "accept", "src": ["group:personal", "group:mobile", "group:tv"], "dst": ["group:exitnodes:*", "tag:exitnode:*"] }
 
   ]
 }

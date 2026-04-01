@@ -12,5 +12,5 @@ variable "ssh_priv_key" {
 
 variable "headscale_version" {
   type    = string
-  default = "0.25.1"
+  default = "0.27.1"
 }
