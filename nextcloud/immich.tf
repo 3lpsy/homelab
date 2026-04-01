@@ -177,6 +177,15 @@ resource "kubernetes_deployment" "immich" {
             name  = "REDIS_PORT"
             value = "6379"
           }
+          env {
+            name = "REDIS_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = "immich-secrets"
+                key  = "redis_password"
+              }
+            }
+          }
 
           env {
             name  = "IMMICH_MACHINE_LEARNING_URL"

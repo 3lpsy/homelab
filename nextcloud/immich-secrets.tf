@@ -3,6 +3,11 @@ resource "random_password" "immich_db_password" {
   special = false
 }
 
+resource "random_password" "immich_redis_password" {
+  length  = 32
+  special = false
+}
+
 resource "headscale_pre_auth_key" "immich_server" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.nextcloud_server_user
   reusable       = true
@@ -36,7 +41,8 @@ resource "vault_kv_secret_v2" "immich_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "nextcloud/immich"
   data_json = jsonencode({
-    db_password = random_password.immich_db_password.result
+    db_password    = random_password.immich_db_password.result
+    redis_password = random_password.immich_redis_password.result
   })
 }
 
@@ -67,6 +73,10 @@ resource "kubernetes_manifest" "immich_secret_provider" {
             {
               objectName = "immich_db_password"
               key        = "db_password"
+            },
+            {
+              objectName = "immich_redis_password"
+              key        = "redis_password"
             }
           ]
         },
@@ -93,6 +103,11 @@ resource "kubernetes_manifest" "immich_secret_provider" {
             objectName = "immich_db_password"
             secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/nextcloud/immich"
             secretKey  = "db_password"
+          },
+          {
+            objectName = "immich_redis_password"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/nextcloud/immich"
+            secretKey  = "redis_password"
           },
           {
             objectName = "immich_tls_crt"
