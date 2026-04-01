@@ -25,7 +25,7 @@ resource "kubernetes_deployment" "redis" {
 
         container {
           name  = "redis"
-          image = "redis:7-alpine"
+          image = var.image_redis
 
           command = [
             "redis-server",
@@ -81,7 +81,6 @@ resource "kubernetes_deployment" "redis" {
           }
         }
 
-        # Mount the CSI volume for secret sync?
         volume {
           name = "secrets-store"
           csi {
@@ -118,6 +117,7 @@ resource "kubernetes_service" "redis" {
     }
   }
 }
+
 resource "kubernetes_deployment" "immich_redis" {
   metadata {
     name      = "immich-redis"
@@ -142,7 +142,7 @@ resource "kubernetes_deployment" "immich_redis" {
       spec {
         container {
           name  = "valkey"
-          image = "docker.io/valkey/valkey:9"
+          image = var.image_valkey
 
           port {
             container_port = 6379
@@ -179,7 +179,6 @@ resource "kubernetes_deployment" "immich_redis" {
     }
   }
 }
-
 
 resource "kubernetes_service" "immich_redis" {
   metadata {

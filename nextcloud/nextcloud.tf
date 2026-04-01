@@ -1,107 +1,3 @@
-resource "kubernetes_config_map" "nginx_config" {
-  metadata {
-    name      = "nginx-config"
-    namespace = kubernetes_namespace.nextcloud.metadata[0].name
-  }
-  data = {
-    "nginx.conf" = <<-EOT
-      events {
-        worker_connections 1024;
-      }
-      http {
-        access_log /var/log/nginx/access.log;
-        error_log /var/log/nginx/error.log;
-
-        upstream nextcloud {
-          server localhost:80;
-        }
-
-        upstream harp {
-          server appapi-harp:8780;
-        }
-
-        server {
-          listen 443 ssl;
-          server_name ${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain};
-
-          ssl_certificate /etc/nginx/certs/tls.crt;
-          ssl_certificate_key /etc/nginx/certs/tls.key;
-          ssl_protocols TLSv1.2 TLSv1.3;
-          ssl_ciphers HIGH:!aNULL:!MD5;
-          ssl_prefer_server_ciphers on;
-
-          set_real_ip_from 127.0.0.1;
-          set_real_ip_from ::1;
-          real_ip_header X-Forwarded-For;
-          real_ip_recursive on;
-
-
-          client_max_body_size 20G;
-          client_body_buffer_size 16M;
-
-          # Timeouts for large file operations
-          proxy_connect_timeout 3600;
-          proxy_send_timeout 3600;
-          proxy_read_timeout 3600;
-          send_timeout 3600;
-
-          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-          add_header X-Content-Type-Options "nosniff" always;
-          add_header X-Frame-Options "SAMEORIGIN" always;
-          add_header X-XSS-Protection "1; mode=block" always;
-          add_header Referrer-Policy "no-referrer" always;
-          add_header X-Robots-Tag "noindex, nofollow" always;
-
-          location /exapps/ {
-              proxy_pass http://harp;
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              proxy_set_header X-Forwarded-Host $host;
-              proxy_set_header X-Forwarded-Port $server_port;
-
-              # WebSocket support for ExApps
-              proxy_http_version 1.1;
-              proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "upgrade";
-
-              # Disable buffering for streaming
-              proxy_buffering off;
-              proxy_request_buffering off;
-            }
-
-          # Nextcloud CalDAV/CardDAV redirects
-          location = /.well-known/carddav {
-            return 301 https://$host/remote.php/dav;
-          }
-
-          location = /.well-known/caldav {
-            return 301 https://$host/remote.php/dav;
-          }
-
-          location / {
-            proxy_pass http://nextcloud;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Port $server_port;
-
-            # Essential for Nextcloud
-            proxy_buffering off;
-            proxy_request_buffering off;
-            proxy_max_temp_file_size 0;
-          }
-
-        }
-      }
-    EOT
-  }
-}
-
 resource "kubernetes_deployment" "nextcloud" {
   metadata {
     name      = "nextcloud"
@@ -121,7 +17,6 @@ resource "kubernetes_deployment" "nextcloud" {
       }
     }
 
-
     template {
       metadata {
         labels = {
@@ -140,116 +35,11 @@ resource "kubernetes_deployment" "nextcloud" {
             "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
           ]
         }
-        host_aliases {
-          ip = kubernetes_service.immich_internal.spec[0].cluster_ip
-          hostnames = [
-            "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-          ]
-        }
-        container {
-          name  = "nextcloud-tailscale"
-          image = "tailscale/tailscale:latest"
 
-          env {
-            name  = "TS_STATE_DIR"
-            value = "/var/lib/tailscale"
-          }
-
-          env {
-            name  = "TS_KUBE_SECRET"
-            value = "tailscale-state"
-          }
-
-          env {
-            name  = "TS_USERSPACE"
-            value = "false"
-          }
-
-          env {
-            name = "TS_AUTHKEY"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.tailscale_auth.metadata[0].name
-                key  = "TS_AUTHKEY"
-              }
-            }
-          }
-
-          env {
-            name  = "TS_HOSTNAME"
-            value = var.nextcloud_domain
-          }
-
-          env {
-            name  = "TS_EXTRA_ARGS"
-            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
-          }
-
-          security_context {
-            capabilities {
-              add = ["NET_ADMIN"]
-            }
-          }
-
-          volume_mount {
-            name       = "dev-net-tun"
-            mount_path = "/dev/net/tun"
-          }
-
-          volume_mount {
-            name       = "tailscale-state"
-            mount_path = "/var/lib/tailscale"
-          }
-        }
-
-        container {
-          name  = "nextcloud-nginx"
-          image = "nginx:alpine"
-
-          port {
-            container_port = 443
-            name           = "https"
-          }
-
-          volume_mount {
-            name       = "nextcloud-tls"
-            mount_path = "/etc/nginx/certs"
-            read_only  = true
-          }
-
-          volume_mount {
-            name       = "nginx-config"
-            mount_path = "/etc/nginx/nginx.conf"
-            sub_path   = "nginx.conf"
-          }
-
-          resources {
-            requests = {
-              cpu    = "100m"
-              memory = "256Mi"
-            }
-            limits = {
-              cpu    = "1000m"
-              memory = "2Gi"  # Increased for large file handling
-            }
-          }
-        }
-
+        # Nextcloud
         container {
           name  = "nextcloud"
-          # image = "nextcloud:latest"
-          image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
-          # Too muich memory?
-          # lifecycle {
-          #   post_start {
-          #     exec {
-          #       command = ["/bin/sh", "-c", "apt-get update && apt-get install -y ffmpeg"]
-          #     }
-          #   }
-          # }
-          # kubectl exec -n nextcloud <nextcloud-pod> -c nextcloud -- php occ config:system:set enabledPreviewProviders 0 --value="OC\\Preview\\Movie"
-          # kubectl exec -n nextcloud <nextcloud-pod> -c nextcloud -- php occ config:system:set enabledPreviewProviders 1 --value="OC\\Preview\\MP4"
-          # kubectl exec -n nextcloud <nextcloud-pod> -c nextcloud -- php occ config:system:set enabledPreviewProviders 2 --value="OC\\Preview\\MOV"
+          image = local.nextcloud_image
 
           port {
             container_port = 80
@@ -314,6 +104,7 @@ resource "kubernetes_deployment" "nextcloud" {
               }
             }
           }
+
           env {
             name  = "NEXTCLOUD_CSP_ALLOWED_DOMAINS"
             value = "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
@@ -397,40 +188,13 @@ resource "kubernetes_deployment" "nextcloud" {
           }
         }
 
+        # Nextcloud Volumes
         volume {
           name = "nextcloud-data"
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim.nextcloud_data.metadata[0].name
           }
         }
-
-        volume {
-          name = "nextcloud-tls"
-          secret {
-            secret_name = "nextcloud-tls"
-          }
-        }
-
-        volume {
-          name = "nginx-config"
-          config_map {
-            name = kubernetes_config_map.nginx_config.metadata[0].name
-          }
-        }
-
-        volume {
-          name = "dev-net-tun"
-          host_path {
-            path = "/dev/net/tun"
-            type = "CharDevice"
-          }
-        }
-
-        volume {
-          name = "tailscale-state"
-          empty_dir {}
-        }
-
         volume {
           name = "secrets-store"
           csi {
@@ -440,6 +204,124 @@ resource "kubernetes_deployment" "nextcloud" {
               secretProviderClass = kubernetes_manifest.nextcloud_secret_provider.manifest.metadata.name
             }
           }
+        }
+
+        # Nginx
+        container {
+          name  = "nextcloud-nginx"
+          image = var.image_nginx
+
+          port {
+            container_port = 443
+            name           = "https"
+          }
+
+          volume_mount {
+            name       = "nextcloud-tls"
+            mount_path = "/etc/nginx/certs"
+            read_only  = true
+          }
+
+          volume_mount {
+            name       = "nginx-config"
+            mount_path = "/etc/nginx/nginx.conf"
+            sub_path   = "nginx.conf"
+          }
+
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "256Mi"
+            }
+            limits = {
+              cpu    = "1000m"
+              memory = "2Gi"
+            }
+          }
+        }
+
+        # Nginx Volumes
+        volume {
+          name = "nextcloud-tls"
+          secret {
+            secret_name = "nextcloud-tls"
+          }
+        }
+        volume {
+          name = "nginx-config"
+          config_map {
+            name = kubernetes_config_map.nginx_config.metadata[0].name
+          }
+        }
+
+        # Tailscale
+        container {
+          name  = "nextcloud-tailscale"
+          image = var.image_tailscale
+
+          env {
+            name  = "TS_STATE_DIR"
+            value = "/var/lib/tailscale"
+          }
+
+          env {
+            name  = "TS_KUBE_SECRET"
+            value = "tailscale-state"
+          }
+
+          env {
+            name  = "TS_USERSPACE"
+            value = "false"
+          }
+
+          env {
+            name = "TS_AUTHKEY"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.tailscale_auth.metadata[0].name
+                key  = "TS_AUTHKEY"
+              }
+            }
+          }
+
+          env {
+            name  = "TS_HOSTNAME"
+            value = var.nextcloud_domain
+          }
+
+          env {
+            name  = "TS_EXTRA_ARGS"
+            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+          }
+
+          security_context {
+            capabilities {
+              add = ["NET_ADMIN"]
+            }
+          }
+
+          volume_mount {
+            name       = "dev-net-tun"
+            mount_path = "/dev/net/tun"
+          }
+
+          volume_mount {
+            name       = "tailscale-state"
+            mount_path = "/var/lib/tailscale"
+          }
+        }
+
+        # Tailscale Volumes
+        volume {
+          name = "dev-net-tun"
+          host_path {
+            path = "/dev/net/tun"
+            type = "CharDevice"
+          }
+        }
+        volume {
+          name = "tailscale-state"
+          empty_dir {}
         }
       }
     }
@@ -451,6 +333,7 @@ resource "kubernetes_deployment" "nextcloud" {
     kubernetes_service.redis
   ]
 }
+
 resource "kubernetes_service" "nextcloud_internal" {
   metadata {
     name      = "nextcloud-internal"
@@ -463,9 +346,9 @@ resource "kubernetes_service" "nextcloud_internal" {
     }
 
     port {
-      name        = "https" # Changed from "http"
-      port        = 443     # Changed from 80
-      target_port = 443     # Point to nginx's HTTPS port
+      name        = "https"
+      port        = 443
+      target_port = 443
     }
 
     type = "ClusterIP"

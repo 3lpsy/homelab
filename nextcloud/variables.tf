@@ -88,3 +88,89 @@ variable "immich_domain" {
   type    = string
   default = "immich"
 }
+
+# Container images
+
+variable "image_busybox" {
+  type    = string
+  default = "busybox:latest"
+}
+
+variable "image_tailscale" {
+  type    = string
+  default = "tailscale/tailscale:latest"
+}
+
+variable "image_nginx" {
+  type    = string
+  default = "nginx:alpine"
+}
+
+variable "image_postgres" {
+  type    = string
+  default = "postgres:15-alpine"
+}
+
+variable "image_immich_postgres" {
+  type    = string
+  default = "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0"
+}
+
+variable "image_redis" {
+  type    = string
+  default = "redis:7-alpine"
+}
+
+variable "image_valkey" {
+  type    = string
+  default = "docker.io/valkey/valkey:9"
+}
+
+variable "image_collabora" {
+  type    = string
+  default = "collabora/code:latest"
+}
+
+variable "image_harp" {
+  type    = string
+  default = "ghcr.io/nextcloud/nextcloud-appapi-harp:release"
+}
+
+variable "image_dind" {
+  type    = string
+  default = "docker:dind"
+}
+
+variable "image_immich_server" {
+  type    = string
+  default = "ghcr.io/immich-app/immich-server:release"
+}
+
+variable "image_immich_ml" {
+  type    = string
+  default = "ghcr.io/immich-app/immich-machine-learning:release"
+}
+
+variable "image_pihole" {
+  type    = string
+  default = "pihole/pihole:latest"
+}
+
+variable "image_registry" {
+  type    = string
+  default = "registry:2"
+}
+
+variable "image_radicale" {
+  type    = string
+  default = "ghcr.io/kozea/radicale:latest"
+}
+
+variable "image_python" {
+  type    = string
+  default = "python:3-alpine"
+}
+
+locals {
+  nextcloud_image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
+}

@@ -124,7 +124,7 @@ variable "image_node_exporter" {
 
 variable "image_kube_state_metrics" {
   type    = string
-  default = "registry.k8s.io/kube-state-metrics/kube-state-metrics:latest"
+  default = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.18.0"
 }
 
 variable "image_grafana" {

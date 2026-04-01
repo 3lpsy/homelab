@@ -5,8 +5,6 @@ resource "kubernetes_deployment" "harp" {
   }
 
   spec {
-    # replicas = 1
-
     selector {
       match_labels = {
         app = "appapi-harp"
@@ -22,31 +20,16 @@ resource "kubernetes_deployment" "harp" {
 
       spec {
         service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
+
         init_container {
           name  = "wait-for-secrets"
-          image = "busybox:latest"
-
+          image = var.image_busybox
           command = [
-            "sh",
-            "-c",
-            <<-EOT
-                  echo 'Waiting for secrets to sync from Vault...'
-                  TIMEOUT=300
-                  ELAPSED=0
-                  until [ -f /mnt/secrets/harp_shared_key ]; do
-                    if [ $ELAPSED -ge $TIMEOUT ]; then
-                      echo "Timeout waiting for secrets after $${TIMEOUT}s"
-                      exit 1
-                    fi
-                    echo "Still waiting... ($${ELAPSED}s)"
-                    sleep 5
-                    ELAPSED=$((ELAPSED + 5))
-                  done
-                  echo 'Secrets synced successfully!'
-                  ls -la /mnt/secrets/
-                EOT
+            "sh", "-c",
+            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
+              secret_file = "harp_shared_key"
+            })
           ]
-
           volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
@@ -54,86 +37,15 @@ resource "kubernetes_deployment" "harp" {
           }
         }
 
-        container {
-          name  = "dind"
-          image = "docker:dind"
-
-          security_context {
-            privileged = true
-          }
-
-          startup_probe {
-            exec {
-              command = ["sh", "-c", "test -S /var/run/docker.sock"]
-            }
-            initial_delay_seconds = 5
-            period_seconds        = 2
-            failure_threshold     = 60
-          }
-
-
-
-          readiness_probe {
-            exec {
-              command = ["docker", "info"]
-            }
-            initial_delay_seconds = 5
-            period_seconds        = 2
-          }
-
-
-          env {
-            name  = "DOCKER_TLS_CERTDIR"
-            value = ""
-          }
-
-          volume_mount {
-            name       = "docker-graph-storage"
-            mount_path = "/var/lib/docker"
-          }
-
-          volume_mount {
-            name       = "docker-socket"
-            mount_path = "/var/run"
-          }
-
-          resources {
-            requests = {
-              cpu    = "250m"
-              memory = "512Mi"
-            }
-            limits = {
-              cpu    = "2000m"
-              memory = "4Gi"
-            }
-          }
-        }
-
+        # HaRP
         container {
           name  = "harp"
-          image = "ghcr.io/nextcloud/nextcloud-appapi-harp:release"
+          image = var.image_harp
           command = [
-            "sh",
-            "-c",
-            <<-EOT
-                echo 'Waiting for Docker socket...'
-                TIMEOUT=120
-                ELAPSED=0
-                until [ -S /var/run/docker.sock ]; do
-                  if [ $ELAPSED -ge $TIMEOUT ]; then
-                    echo "Timeout waiting for Docker socket after $${TIMEOUT}s"
-                    exit 1
-                  fi
-                  echo "Still waiting for socket... ($${ELAPSED}s)"
-                  sleep 2
-                  ELAPSED=$((ELAPSED + 2))
-                done
-                echo 'Docker socket found!'
-                ls -la /var/run/docker.sock
-                echo 'Starting HaRP with original entrypoint...'
-                exec /usr/local/bin/start.sh
-              EOT
+            "sh", "-c",
+            file("${path.module}/../data/scripts/wait-for-docker-harp.sh.tpl")
           ]
+
           env {
             name = "HP_SHARED_KEY"
             value_from {
@@ -149,7 +61,6 @@ resource "kubernetes_deployment" "harp" {
             value = "info"
           }
 
-          # ADD THIS
           env {
             name  = "HP_VERBOSE_START"
             value = "1"
@@ -159,7 +70,6 @@ resource "kubernetes_deployment" "harp" {
             name  = "NC_INSTANCE_URL"
             value = "https://${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
           }
-
 
           port {
             container_port = 8780
@@ -210,6 +120,59 @@ resource "kubernetes_deployment" "harp" {
           }
         }
 
+        # Docker-in-Docker
+        container {
+          name  = "dind"
+          image = var.image_dind
+
+          security_context {
+            privileged = true
+          }
+
+          startup_probe {
+            exec {
+              command = ["sh", "-c", "test -S /var/run/docker.sock"]
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 2
+            failure_threshold     = 60
+          }
+
+          readiness_probe {
+            exec {
+              command = ["docker", "info"]
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 2
+          }
+
+          env {
+            name  = "DOCKER_TLS_CERTDIR"
+            value = ""
+          }
+
+          volume_mount {
+            name       = "docker-graph-storage"
+            mount_path = "/var/lib/docker"
+          }
+
+          volume_mount {
+            name       = "docker-socket"
+            mount_path = "/var/run"
+          }
+
+          resources {
+            requests = {
+              cpu    = "250m"
+              memory = "512Mi"
+            }
+            limits = {
+              cpu    = "2000m"
+              memory = "4Gi"
+            }
+          }
+        }
+
         volume {
           name = "docker-graph-storage"
           empty_dir {}
@@ -237,4 +200,29 @@ resource "kubernetes_deployment" "harp" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider
   ]
+}
+
+resource "kubernetes_service" "harp" {
+  metadata {
+    name      = "appapi-harp"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    selector = {
+      app = "appapi-harp"
+    }
+
+    port {
+      name        = "http"
+      port        = 8780
+      target_port = 8780
+    }
+
+    port {
+      name        = "frp"
+      port        = 8782
+      target_port = 8782
+    }
+  }
 }

@@ -49,6 +49,26 @@ resource "kubernetes_cluster_role" "kube_state_metrics" {
     resources  = ["leases"]
     verbs      = ["list", "watch"]
   }
+  rule {
+    api_groups = ["certificates.k8s.io"]
+    resources  = ["certificatesigningrequests"]
+    verbs      = ["list", "watch"]
+  }
+  rule {
+    api_groups = ["discovery.k8s.io"]
+    resources  = ["endpointslices"]
+    verbs      = ["list", "watch"]
+  }
+  rule {
+    api_groups = ["admissionregistration.k8s.io"]
+    resources  = ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs      = ["list", "watch"]
+  }
+  rule {
+    api_groups = ["policy"]
+    resources  = ["poddisruptionbudgets"]
+    verbs      = ["list", "watch"]
+  }
 }
 
 resource "kubernetes_cluster_role_binding" "kube_state_metrics" {
@@ -109,17 +129,16 @@ resource "kubernetes_deployment" "kube_state_metrics" {
 
           liveness_probe {
             http_get {
-              path = "/livez"
-              port = 8080
+              path = "/healthz"
+              port = 8081
             }
             initial_delay_seconds = 30
             period_seconds        = 30
           }
-
           readiness_probe {
             http_get {
-              path = "/readyz"
-              port = 8080
+              path = "/healthz"
+              port = 8081
             }
             initial_delay_seconds = 5
             period_seconds        = 10

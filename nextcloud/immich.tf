@@ -1,67 +1,3 @@
-
-resource "kubernetes_config_map" "immich_nginx_config" {
-  metadata {
-    name      = "immich-nginx-config"
-    namespace = kubernetes_namespace.nextcloud.metadata[0].name
-  }
-  data = {
-    "nginx.conf" = <<-EOT
-      events {
-        worker_connections 1024;
-      }
-      http {
-        upstream immich {
-          server localhost:2283;
-        }
-
-        map $http_upgrade $connection_upgrade {
-          default upgrade;
-          '' close;
-        }
-
-        server {
-          listen 443 ssl;
-          server_name ${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain};
-
-          ssl_certificate     /etc/nginx/certs/tls.crt;
-          ssl_certificate_key /etc/nginx/certs/tls.key;
-          ssl_protocols       TLSv1.2 TLSv1.3;
-          ssl_ciphers         HIGH:!aNULL:!MD5;
-          ssl_prefer_server_ciphers on;
-
-          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-          # Large file uploads for photos/videos
-          client_max_body_size 10G;
-          client_body_buffer_size 16M;
-
-          proxy_connect_timeout 600;
-          proxy_send_timeout 600;
-          proxy_read_timeout 600;
-          send_timeout 600;
-
-          location / {
-            proxy_pass http://immich;
-            proxy_http_version 1.1;
-            proxy_set_header Host $http_host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Forwarded-Host $host;
-
-            # WebSocket support (for live photo updates, notifications)
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-
-            proxy_buffering off;
-            proxy_request_buffering off;
-          }
-        }
-      }
-    EOT
-  }
-}
-
 resource "kubernetes_deployment" "immich_machine_learning" {
   metadata {
     name      = "immich-machine-learning"
@@ -89,7 +25,7 @@ resource "kubernetes_deployment" "immich_machine_learning" {
       spec {
         container {
           name  = "machine-learning"
-          image = "ghcr.io/immich-app/immich-machine-learning:release"
+          image = var.image_immich_ml
 
           port {
             container_port = 3003
@@ -111,7 +47,6 @@ resource "kubernetes_deployment" "immich_machine_learning" {
             }
           }
 
-          # Immich ML has its own built-in healthcheck; we use a TCP check
           liveness_probe {
             tcp_socket {
               port = 3003
@@ -182,34 +117,14 @@ resource "kubernetes_deployment" "immich" {
       spec {
         service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
 
-        # Add www-data group (GID 33) so Immich can read Nextcloud's
-        # data directory which is owned by www-data:www-data with 770 perms.
-        # This is for shared pvc
-        # security_context {
-        #   supplemental_groups = [33]
-        # }
-        # No longer shared
-
         init_container {
           name  = "wait-for-secrets"
-          image = "busybox:latest"
+          image = var.image_busybox
           command = [
             "sh", "-c",
-            <<-EOT
-              echo 'Waiting for Immich secrets to sync from Vault...'
-              TIMEOUT=300
-              ELAPSED=0
-              until [ -f /mnt/secrets/immich_db_password ]; do
-                if [ $ELAPSED -ge $TIMEOUT ]; then
-                  echo "Timeout waiting for secrets after $${TIMEOUT}s"
-                  exit 1
-                fi
-                echo "Still waiting... ($${ELAPSED}s)"
-                sleep 5
-                ELAPSED=$((ELAPSED + 5))
-              done
-              echo 'Immich secrets synced successfully!'
-            EOT
+            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
+              secret_file = "immich_db_password"
+            })
           ]
           volume_mount {
             name       = "secrets-store"
@@ -218,91 +133,10 @@ resource "kubernetes_deployment" "immich" {
           }
         }
 
-        container {
-          name  = "immich-tailscale"
-          image = "tailscale/tailscale:latest"
-
-          env {
-            name  = "TS_STATE_DIR"
-            value = "/var/lib/tailscale"
-          }
-          env {
-            name  = "TS_KUBE_SECRET"
-            value = "immich-tailscale-state"
-          }
-          env {
-            name  = "TS_USERSPACE"
-            value = "false"
-          }
-          env {
-            name = "TS_AUTHKEY"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.immich_tailscale_auth.metadata[0].name
-                key  = "TS_AUTHKEY"
-              }
-            }
-          }
-          env {
-            name  = "TS_HOSTNAME"
-            value = var.immich_domain
-          }
-          env {
-            name  = "TS_EXTRA_ARGS"
-            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
-          }
-
-          security_context {
-            capabilities {
-              add = ["NET_ADMIN"]
-            }
-          }
-
-          volume_mount {
-            name       = "dev-net-tun"
-            mount_path = "/dev/net/tun"
-          }
-          volume_mount {
-            name       = "tailscale-state"
-            mount_path = "/var/lib/tailscale"
-          }
-        }
-
-        container {
-          name  = "immich-nginx"
-          image = "nginx:alpine"
-
-          port {
-            container_port = 443
-            name           = "https"
-          }
-
-          volume_mount {
-            name       = "immich-tls"
-            mount_path = "/etc/nginx/certs"
-            read_only  = true
-          }
-          volume_mount {
-            name       = "nginx-config"
-            mount_path = "/etc/nginx/nginx.conf"
-            sub_path   = "nginx.conf"
-          }
-
-          resources {
-            requests = {
-              cpu    = "50m"
-              memory = "64Mi"
-            }
-            limits = {
-              cpu    = "200m"
-              memory = "2Gi"
-            }
-          }
-        }
-
+        # Immich Server
         container {
           name  = "immich-server"
-          image = "ghcr.io/immich-app/immich-server:release"
+          image = var.image_immich_server
 
           port {
             container_port = 2283
@@ -359,16 +193,6 @@ resource "kubernetes_deployment" "immich" {
             mount_path = "/data"
           }
 
-          # Mount Nextcloud data read-only for External Library feature
-          # The path inside the container will be /mnt/nextcloud
-          # In Immich UI, set the external library import path to:
-          #   /mnt/nextcloud/data/<username>/files/Photos
-          # volume_mount {
-          #   name       = "nextcloud-data"
-          #   mount_path = "/mnt/nextcloud"
-          #   read_only  = true
-          # }
-
           volume_mount {
             name       = "localtime"
             mount_path = "/etc/localtime"
@@ -412,35 +236,13 @@ resource "kubernetes_deployment" "immich" {
           }
         }
 
+        # Immich Volumes
         volume {
           name = "immich-upload"
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim.immich_upload.metadata[0].name
           }
         }
-
-        # Nextcloud app data - mounted read-only for external library
-        # volume {
-        #   name = "nextcloud-data"
-        #   persistent_volume_claim {
-        #     claim_name = kubernetes_persistent_volume_claim.nextcloud_data.metadata[0].name
-        #   }
-        # }
-
-        volume {
-          name = "immich-tls"
-          secret {
-            secret_name = "immich-tls"
-          }
-        }
-
-        volume {
-          name = "nginx-config"
-          config_map {
-            name = kubernetes_config_map.immich_nginx_config.metadata[0].name
-          }
-        }
-
         volume {
           name = "localtime"
           host_path {
@@ -448,20 +250,6 @@ resource "kubernetes_deployment" "immich" {
             type = "File"
           }
         }
-
-        volume {
-          name = "dev-net-tun"
-          host_path {
-            path = "/dev/net/tun"
-            type = "CharDevice"
-          }
-        }
-
-        volume {
-          name = "tailscale-state"
-          empty_dir {}
-        }
-
         volume {
           name = "secrets-store"
           csi {
@@ -471,6 +259,117 @@ resource "kubernetes_deployment" "immich" {
               secretProviderClass = kubernetes_manifest.immich_secret_provider.manifest.metadata.name
             }
           }
+        }
+
+        # Nginx
+        container {
+          name  = "immich-nginx"
+          image = var.image_nginx
+
+          port {
+            container_port = 443
+            name           = "https"
+          }
+
+          volume_mount {
+            name       = "immich-tls"
+            mount_path = "/etc/nginx/certs"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "nginx-config"
+            mount_path = "/etc/nginx/nginx.conf"
+            sub_path   = "nginx.conf"
+          }
+
+          resources {
+            requests = {
+              cpu    = "50m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "2Gi"
+            }
+          }
+        }
+
+        # Nginx Volumes
+        volume {
+          name = "immich-tls"
+          secret {
+            secret_name = "immich-tls"
+          }
+        }
+        volume {
+          name = "nginx-config"
+          config_map {
+            name = kubernetes_config_map.immich_nginx_config.metadata[0].name
+          }
+        }
+
+        # Tailscale
+        container {
+          name  = "immich-tailscale"
+          image = var.image_tailscale
+
+          env {
+            name  = "TS_STATE_DIR"
+            value = "/var/lib/tailscale"
+          }
+          env {
+            name  = "TS_KUBE_SECRET"
+            value = "immich-tailscale-state"
+          }
+          env {
+            name  = "TS_USERSPACE"
+            value = "false"
+          }
+          env {
+            name = "TS_AUTHKEY"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.immich_tailscale_auth.metadata[0].name
+                key  = "TS_AUTHKEY"
+              }
+            }
+          }
+          env {
+            name  = "TS_HOSTNAME"
+            value = var.immich_domain
+          }
+          env {
+            name  = "TS_EXTRA_ARGS"
+            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+          }
+
+          security_context {
+            capabilities {
+              add = ["NET_ADMIN"]
+            }
+          }
+
+          volume_mount {
+            name       = "dev-net-tun"
+            mount_path = "/dev/net/tun"
+          }
+          volume_mount {
+            name       = "tailscale-state"
+            mount_path = "/var/lib/tailscale"
+          }
+        }
+
+        # Tailscale Volumes
+        volume {
+          name = "dev-net-tun"
+          host_path {
+            path = "/dev/net/tun"
+            type = "CharDevice"
+          }
+        }
+        volume {
+          name = "tailscale-state"
+          empty_dir {}
         }
       }
     }
@@ -483,3 +382,4 @@ resource "kubernetes_deployment" "immich" {
     kubernetes_deployment.immich_machine_learning
   ]
 }
+

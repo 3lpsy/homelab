@@ -25,7 +25,7 @@ resource "kubernetes_deployment" "postgres" {
 
         container {
           name  = "postgres"
-          image = "postgres:15-alpine"
+          image = var.image_postgres
 
           env {
             name  = "POSTGRES_DB"
@@ -36,6 +36,7 @@ resource "kubernetes_deployment" "postgres" {
             name  = "POSTGRES_USER"
             value = "nextcloud"
           }
+
           env {
             name = "POSTGRES_PASSWORD"
             value_from {
@@ -96,7 +97,6 @@ resource "kubernetes_deployment" "postgres" {
           }
         }
 
-        # CSI sync?
         volume {
           name = "secrets-store"
           csi {
@@ -134,8 +134,6 @@ resource "kubernetes_service" "postgres" {
   }
 }
 
-
-
 resource "kubernetes_deployment" "immich_postgres" {
   metadata {
     name      = "immich-postgres"
@@ -165,24 +163,12 @@ resource "kubernetes_deployment" "immich_postgres" {
 
         init_container {
           name  = "wait-for-secrets"
-          image = "busybox:latest"
+          image = var.image_busybox
           command = [
             "sh", "-c",
-            <<-EOT
-              echo 'Waiting for Immich secrets to sync from Vault...'
-              TIMEOUT=300
-              ELAPSED=0
-              until [ -f /mnt/secrets/immich_db_password ]; do
-                if [ $ELAPSED -ge $TIMEOUT ]; then
-                  echo "Timeout waiting for secrets after $${TIMEOUT}s"
-                  exit 1
-                fi
-                echo "Still waiting... ($${ELAPSED}s)"
-                sleep 5
-                ELAPSED=$((ELAPSED + 5))
-              done
-              echo 'Immich secrets synced successfully!'
-            EOT
+            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
+              secret_file = "immich_db_password"
+            })
           ]
           volume_mount {
             name       = "secrets-store"
@@ -193,7 +179,7 @@ resource "kubernetes_deployment" "immich_postgres" {
 
         container {
           name  = "postgres"
-          image = "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0"
+          image = var.image_immich_postgres
 
           env {
             name  = "POSTGRES_DB"
