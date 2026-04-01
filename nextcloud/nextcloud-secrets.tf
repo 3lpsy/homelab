@@ -1,4 +1,4 @@
-# Shared namespace resources (serves nextcloud, collabora, harp, immich)
+# Shared namespace resources (serves nextcloud, collabora, immich)
 
 resource "kubernetes_namespace" "nextcloud" {
   metadata {
@@ -193,10 +193,6 @@ resource "kubernetes_manifest" "nextcloud_secret_provider" {
               key        = "redis_password"
             },
             {
-              objectName = "harp_shared_key"
-              key        = "harp_shared_key"
-            },
-            {
               objectName = "collabora_password"
               key        = "collabora_password"
             }
@@ -261,11 +257,6 @@ resource "kubernetes_manifest" "nextcloud_secret_provider" {
             secretKey  = "privkey_pem"
           },
           {
-            objectName = "harp_shared_key"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/nextcloud/harp"
-            secretKey  = "shared_key"
-          },
-          {
             objectName = "collabora_password"
             secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/nextcloud/config"
             secretKey  = "collabora_password"
@@ -290,7 +281,6 @@ resource "kubernetes_manifest" "nextcloud_secret_provider" {
     vault_kubernetes_auth_backend_role.nextcloud,
     vault_kv_secret_v2.nextcloud,
     vault_kv_secret_v2.nextcloud_tls,
-    vault_kv_secret_v2.harp,
     vault_kv_secret_v2.collabora_tls
   ]
 }

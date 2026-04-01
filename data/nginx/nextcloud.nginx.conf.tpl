@@ -9,9 +9,6 @@ http {
     server localhost:80;
   }
 
-  upstream harp {
-    server appapi-harp:8780;
-  }
 
   server {
     listen 443 ssl;
@@ -43,22 +40,6 @@ http {
     add_header Referrer-Policy "no-referrer" always;
     add_header X-Robots-Tag "noindex, nofollow" always;
 
-    location /exapps/ {
-      proxy_pass http://harp;
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_set_header X-Forwarded-Host $host;
-      proxy_set_header X-Forwarded-Port $server_port;
-
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection "upgrade";
-
-      proxy_buffering off;
-      proxy_request_buffering off;
-    }
 
     location = /.well-known/carddav {
       return 301 https://$host/remote.php/dav;

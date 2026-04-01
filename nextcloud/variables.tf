@@ -131,16 +131,6 @@ variable "image_collabora" {
   default = "collabora/code:latest"
 }
 
-variable "image_harp" {
-  type    = string
-  default = "ghcr.io/nextcloud/nextcloud-appapi-harp:release"
-}
-
-variable "image_dind" {
-  type    = string
-  default = "docker:dind"
-}
-
 variable "image_immich_server" {
   type    = string
   default = "ghcr.io/immich-app/immich-server:release"
