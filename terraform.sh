@@ -5,11 +5,15 @@ if [[ ! -f .env ]];then
 fi
 
 source .env
-
+if [[ ! -d "$STATE_DIRS" ]]; then
+    echo "Could not find state folder: $STATE_DIRS"
+fi
+DEPLOYMENTS="homelab cluster vault vault-conf nextcloud monitoring monitoring-conf"
 DEPLOYMENT_DIR=$1
+
 shift
 
-if [[ "$DEPLOYMENT_DIR" != "changes" && ! -d $DEPLOYMENT_DIR ]]; then
+if [[ "$DEPLOYMENT_DIR" != "all" && ! -d $DEPLOYMENT_DIR ]]; then
     echo "Could not find environment folder: $DEPLOYMENT_DIR"
     exit 1
 fi
@@ -17,33 +21,54 @@ fi
 # This script is not intended for multi party use at the same time.
 # Just a useful way to backup state in s3 and restore in on a second system later if need be
 
-# function encrypt() {
-#     echo "Encrypting $DEPLOYMENT_DIR/$STATE_FILE to $ENCRYPTED_STATE_FILE"
-#     age -e -R "$AGE_ENCRYPTION_KEY_PATH" -o "$ENCRYPTED_STATE_FILE" "$DEPLOYMENT_DIR/$STATE_FILE"
-# }
+function encrypt() {
+    for dep in $DEPLOYMENTS; do
+        local state_file="$STATE_DIRS/$dep/terraform.tfstate"
+        if [ ! -f "$state_file" ]; then echo "Skipping $dep: $state_file not found"; continue; fi
+        echo "age -e -R $AGE_ENCRYPTION_KEY_PATH -o ${state_file}.age $state_file"
+        age -e -R "$AGE_ENCRYPTION_KEY_PATH" -o "${state_file}.age" "$state_file"
+    done
+}
+
 # function decrypt() {
-#     echo "Decrypting $ENCRYPTED_STATE_FILE to restored.$STATE_FILE"
-#     age -d -i "$AGE_DECRYPTION_KEY_PATH" -o "restored.$STATE_FILE" "$ENCRYPTED_STATE_FILE"
+#     for dep in $DEPLOYMENTS; do
+#         local encrypted="$STATE_DIRS/$dep/terraform.tfstate.age"
+#         local state_file="$STATE_DIRS/$dep/terraform.tfstate"
+#         if [ ! -f "$encrypted" ]; then echo "Skipping $dep: $encrypted not found"; continue; fi
+#         if [ -f "$state_file" ]; then
+#             local backup_file="${state_file}.$(date +%s).backup"
+#             echo "mv $state_file $backup_file"
+#             mv "$state_file" "$backup_file"
+#         fi
+#         echo "age -d -i $AGE_DECRYPTION_KEY_PATH -o $state_file $encrypted"
+#         age -d -i "$AGE_DECRYPTION_KEY_PATH" -o "$state_file" "$encrypted"
+#     done
 # }
 
 # function pull() {
-#     echo "Pulling encrypted state from s3://$S3_BUCKET/$DEPLOYMENT_DIR/$ENCRYPTED_STATE_FILE to $ENCRYPTED_STATE_FILE..."
-#     aws s3 cp s3://$S3_BUCKET/$DEPLOYMENT_DIR/$ENCRYPTED_STATE_FILE $ENCRYPTED_STATE_FILE
+#     for dep in $DEPLOYMENTS; do
+#         echo "aws s3 cp s3://$S3_BUCKET/$dep/terraform.tfstate.age $STATE_DIRS/$dep/terraform.tfstate.age"
+#         aws s3 cp "s3://$S3_BUCKET/$dep/terraform.tfstate.age" "$STATE_DIRS/$dep/terraform.tfstate.age"
+#     done
 # }
+
 # function restore() {
 #     pull
 #     decrypt
 # }
-# function backup(){
-#     encrypt
-#     echo "Copying $ENCRYPTED_STATE_FILE to s3://$S3_BUCKET/$DEPLOYMENT_DIR/$ENCRYPTED_STATE_FILE"
-#     aws s3 cp $ENCRYPTED_STATE_FILE  s3://$S3_BUCKET/$DEPLOYMENT_DIR/$ENCRYPTED_STATE_FILE
-# }
+
+function backup() {
+    encrypt
+    for dep in $DEPLOYMENTS; do
+        local encrypted="$STATE_DIRS/$dep/terraform.tfstate.age"
+        if [ ! -f "$encrypted" ]; then echo "Skipping $dep: $encrypted not found"; continue; fi
+        echo "aws s3 cp $encrypted s3://$S3_BUCKET/$dep/terraform.tfstate.age"
+        aws s3 cp "$encrypted" "s3://$S3_BUCKET/$dep/terraform.tfstate.age"
+    done
+}
 
 
-DEPLOYMENTS="homelab vault vault-conf nextcloud monitoring monitoring-conf"
-
-if [[ "$DEPLOYMENT_DIR" == "changes" ]]; then
+if [[ "$1" == "changes" ]]; then
   for dep in $DEPLOYMENTS; do
     echo "Checking $dep for changes...."
     output=$(terraform -chdir=$dep plan -detailed-exitcode 2>&1)
