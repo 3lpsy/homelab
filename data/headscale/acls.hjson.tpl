@@ -2,7 +2,7 @@
   // not using tags but we'll define them for now
   "groups": {
     "group:personal": ["${personal_user}@"],
-    "group:nomad-server": ["${nomad_server_user}@"],
+    "group:node-server": ["${nomad_server_user}@"],
     "group:mobile": ["${mobile_user}@"],
     "group:tablet": ["${tablet_user}@"],
     "group:deck": ["${deck_user}@"],
@@ -30,7 +30,7 @@
     "group:registry-server": ["${registry_server_user}@"],
     "group:pihole-server": ["${pihole_server_user}@"],
     "group:ntfy-server": ["${ntfy_server_user}@"],
-    "group:ntfy-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"]
+    "group:ntfy-clients": ["${prometheus_user}@", "${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"]
   },
   "autoApprovers": {
     "exitNode": ["tag:exitnode"]
@@ -40,7 +40,7 @@
     "tag:mobile": ["group:mobile"],
     "tag:tablet": ["group:tablet"],
     "tag:deck": ["group:deck"],
-    "tag:nomad-server": ["group:nomad-server"],
+    "tag:node-server": ["group:node-server"],
     "tag:vault-server": ["group:vault-server"],
     "tag:vault-clients": ["group:vault-clients"],
     "tag:nextcloud-clients": ["group:nextcloud-clients", "group:collabora-server"],
@@ -57,7 +57,7 @@
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:mobile:*"] },
     { "action": "accept", "src": ["group:tablet"], "dst": ["group:tablet:*"] },
     { "action": "accept", "src": ["group:deck"], "dst": ["group:deck:*"] },
-    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:nomad-server:*"] },
+    { "action": "accept", "src": ["group:node-server"], "dst": ["group:node-server:*"] },
     { "action": "accept", "src": ["group:vault-server"], "dst": ["group:vault-server:*"] },
     { "action": "accept", "src": ["group:collabora-server"], "dst": ["group:collabora-server:*"] },
 
@@ -65,13 +65,10 @@
     { "action": "accept", "src": ["group:ssh-clients"], "dst": ["group:ssh-servers:22"] },
 
     // personal access to nomad (k3s), for management
-    { "action": "accept", "src": ["group:personal"], "dst": ["group:nomad-server:22,80,443,6443"] },
+    { "action": "accept", "src": ["group:personal"], "dst": ["group:node-server:22,80,443,6443"] },
 
     // let nomad / k3s resolve dns:
-    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:openwrt:65535"] },
-    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:ntfy-server:65535"] },
-    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:registry-server:65535"] },
-    { "action": "accept", "src": ["group:nomad-server"], "dst": ["group:pihole-server:65535"] },
+    { "action": "accept", "src": ["group:node-server"], "dst": ["*:65535"] },
 
     // syncthing access to syncthing, tcp port and casting port
     { "action": "accept", "src": ["group:syncthing-clients"], "dst": ["group:syncthing-clients:22000,21027"] },
@@ -94,7 +91,7 @@
     // prometheus scrapes openwrt
     { "action": "accept", "src": ["group:prometheus"], "dst": ["group:openwrt:9100"] },
     // prometheus to scrape delphi (k3s)
-    { "action": "accept", "src": ["group:prometheus"], "dst": ["group:nomad-server:9100,10250"] },
+    { "action": "accept", "src": ["group:prometheus"], "dst": ["group:node-server:9100,10250"] },
     // personal management of openwrt
     { "action": "accept", "src": ["group:personal"], "dst": ["group:openwrt:22,80,443,9100"] },
 

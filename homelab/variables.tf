@@ -62,18 +62,6 @@ variable "tailnet_users" {
   }
 }
 
-variable "nomad_host_name" {
-  type = string
-}
-
-variable "nomad_ssh_user" {
-  type = string
-}
-
-variable "nomad_server_ip" {
-  type = string
-}
-
 variable "headscale_api_key" {
   type    = string
   default = ""

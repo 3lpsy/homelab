@@ -11,3 +11,8 @@ output "tailnet_user_map" {
 output "headscale_server_fqdn" {
   value = module.headscale-infra-dns.dns_domain
 }
+
+output "node_preauth_key" {
+  value     = module.tailnet-infra.nomad_server_preauth_key
+  sensitive = true
+}
