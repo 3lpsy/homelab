@@ -14,6 +14,16 @@ output "exit_node_preauth_key" {
   sensitive = true
 }
 
+output "ollama_preauth_key" {
+  value     = headscale_pre_auth_key.ollama.key
+  sensitive = true
+}
+
+output "litellm_preauth_key" {
+  value     = headscale_pre_auth_key.litellm.key
+  sensitive = true
+}
+
 
 output "user_map" {
   description = "Map of role keys to their created user IDs"

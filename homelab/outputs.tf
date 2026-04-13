@@ -16,3 +16,8 @@ output "node_preauth_key" {
   value     = module.tailnet-infra.nomad_server_preauth_key
   sensitive = true
 }
+
+output "litellm_master_key" {
+  value     = module.litellm.master_key
+  sensitive = true
+}

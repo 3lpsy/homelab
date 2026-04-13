@@ -36,9 +36,14 @@ resource "headscale_pre_auth_key" "exit_node" {
   time_to_expire = "3y"
   acl_tags       = ["tag:exitnode"]
 }
-# resource "headscale_user" "test_user" {
-#   name = "test_user"
-# }
-# resource "headscale_pre_auth_key" "test_user" {
-#   user = "test_user"
-# }
+
+resource "headscale_pre_auth_key" "ollama" {
+  user           = headscale_user.users["ollama_server_user"].id
+  reusable       = true
+  time_to_expire = "3y"
+}
+resource "headscale_pre_auth_key" "litellm" {
+  user           = headscale_user.users["litellm_server_user"].id
+  reusable       = true
+  time_to_expire = "3y"
+}

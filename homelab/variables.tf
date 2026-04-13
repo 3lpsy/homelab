@@ -58,7 +58,8 @@ variable "tailnet_users" {
     collabora_server_user = "collabora"
     pihole_server_user    = "pihole"
     ntfy_server_user      = "ntfy"
-
+    ollama_server_user    = "ollama"
+    litellm_server_user   = "litellm"
   }
 }
 
@@ -74,4 +75,27 @@ variable "acme_server_url" {
 variable "recursive_nameservers" {
   type    = list(string)
   default = ["9.9.9.9", "149.112.112.112"]
+}
+
+
+variable "bedrock_models" {
+  description = "Map of alias name to Bedrock model config (id + optional max output tokens)"
+  type = map(object({
+    model_id   = string
+    max_tokens = optional(number)
+  }))
+  default = {
+    "claude-sonnet-4-20250514" = {
+      model_id   = "us.anthropic.claude-sonnet-4-6"
+      max_tokens = 32000
+    }
+    "claude-opus-4-20250514" = {
+      model_id   = "us.anthropic.claude-opus-4-6-v1"
+      max_tokens = 8000
+    }
+    "claude-haiku-4-5" = {
+      model_id   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      max_tokens = 16000
+    }
+  }
 }
