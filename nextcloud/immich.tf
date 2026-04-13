@@ -51,7 +51,7 @@ resource "kubernetes_deployment" "immich_machine_learning" {
             tcp_socket {
               port = 3003
             }
-            initial_delay_seconds = 120
+            initial_delay_seconds = 30
             period_seconds        = 30
             timeout_seconds       = 10
           }
@@ -60,7 +60,7 @@ resource "kubernetes_deployment" "immich_machine_learning" {
             tcp_socket {
               port = 3003
             }
-            initial_delay_seconds = 60
+            initial_delay_seconds = 30
             period_seconds        = 10
           }
         }
@@ -230,7 +230,7 @@ resource "kubernetes_deployment" "immich" {
               path = "/api/server/ping"
               port = 2283
             }
-            initial_delay_seconds = 60
+            initial_delay_seconds = 30
             period_seconds        = 30
             timeout_seconds       = 10
           }
@@ -391,4 +391,3 @@ resource "kubernetes_deployment" "immich" {
     kubernetes_deployment.immich_machine_learning
   ]
 }
-

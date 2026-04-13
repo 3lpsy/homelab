@@ -99,7 +99,7 @@ resource "kubernetes_deployment" "pihole" {
               path = "/admin"
               port = 80
             }
-            initial_delay_seconds = 60
+            initial_delay_seconds = 30
             period_seconds        = 30
           }
 

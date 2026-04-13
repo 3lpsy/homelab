@@ -50,7 +50,7 @@ resource "kubernetes_job" "configure_nextcloud_and_collabora" {
 
               php occ config:system:set trusted_domains 2 --value="${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
-              php occ config:app:set richdocuments wopi_allowlist --value="127.0.0.1,::1,localhost,${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain},${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain},10.43.0.0/16,10.42.0.0/16"
+              php occ config:app:set richdocuments wopi_allowlist --value="127.0.0.1,::1,localhost,${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain},${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain},10.43.0.0/16,10.42.0.0/16,100.64.0.0/10"
               php occ config:app:set richdocuments doc_format --value="ooxml"
 
               php occ config:app:delete richdocuments discovery || true
@@ -63,6 +63,7 @@ resource "kubernetes_job" "configure_nextcloud_and_collabora" {
               php occ config:app:get richdocuments wopi_allowlist
               php occ config:system:get allow_local_remote_servers
               php occ config:system:get trusted_domains
+
             EOT
           ]
 
@@ -178,6 +179,10 @@ resource "kubernetes_job" "configure_previews" {
               php occ config:system:set enabledPreviewProviders 9 --value="OC\Preview\MP4"
               php occ config:system:set enabledPreviewProviders 10 --value="OC\Preview\MOV"
               php occ config:system:set enabledPreviewProviders 11 --value="OC\Preview\HEIC"
+              php occ config:app:set richdocuments preview_enabled --value=no
+
+              php occ config:system:set enable_previews --value=true --type=boolean
+              php occ config:system:set "preview_disabled_mime_types" 0 --value="application/pdf"
 
               echo "Preview providers configured:"
               php occ config:system:get enabledPreviewProviders

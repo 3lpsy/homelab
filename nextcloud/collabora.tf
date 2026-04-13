@@ -24,12 +24,12 @@ resource "kubernetes_deployment" "collabora" {
 
       spec {
         service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
-        host_aliases {
-          ip = kubernetes_service.nextcloud_internal.spec[0].cluster_ip
-          hostnames = [
-            "${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-          ]
-        }
+        # host_aliases {
+        #   ip = kubernetes_service.nextcloud_internal.spec[0].cluster_ip
+        #   hostnames = [
+        #     "${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+        #   ]
+        # }
 
         init_container {
           name  = "wait-for-secrets"
@@ -44,6 +44,19 @@ resource "kubernetes_deployment" "collabora" {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
             read_only  = true
+          }
+        }
+
+        init_container {
+          name  = "fix-systemplate"
+          image = var.image_collabora
+          command = [
+            "sh", "-c",
+            "cp /opt/cool/systemplate/etc/* /mnt/systemplate-etc/ 2>/dev/null; cp /etc/passwd /etc/group /etc/hosts /etc/host.conf /etc/resolv.conf /mnt/systemplate-etc/ 2>/dev/null; echo 'Systemplate etc updated'"
+          ]
+          volume_mount {
+            name       = "systemplate-etc"
+            mount_path = "/mnt/systemplate-etc"
           }
         }
 
@@ -108,14 +121,25 @@ resource "kubernetes_deployment" "collabora" {
             read_only  = true
           }
 
+          volume_mount {
+            name       = "systemplate-etc"
+            mount_path = "/opt/cool/systemplate/etc"
+          }
+
           resources {
             requests = {
-              cpu    = "500m"
-              memory = "1Gi"
+              cpu    = "1000m"
+              memory = "2Gi"
             }
             limits = {
-              cpu    = "2000m"
+              cpu    = "4000m"
               memory = "4Gi"
+            }
+          }
+
+          security_context {
+            capabilities {
+              add = ["SYS_CHROOT", "SYS_ADMIN", "FOWNER", "CHOWN"]
             }
           }
 
@@ -124,7 +148,7 @@ resource "kubernetes_deployment" "collabora" {
               path = "/hosting/discovery"
               port = 9980
             }
-            initial_delay_seconds = 60
+            initial_delay_seconds = 30
             period_seconds        = 30
             timeout_seconds       = 10
           }
@@ -140,6 +164,10 @@ resource "kubernetes_deployment" "collabora" {
         }
 
         # Collabora Volumes
+        volume {
+          name = "systemplate-etc"
+          empty_dir {}
+        }
         volume {
           name = "secrets-store"
           csi {

@@ -29,12 +29,12 @@ resource "kubernetes_deployment" "nextcloud" {
         image_pull_secrets {
           name = kubernetes_secret.registry_pull_secret.metadata[0].name
         }
-        host_aliases {
-          ip = kubernetes_service.collabora_internal.spec[0].cluster_ip
-          hostnames = [
-            "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-          ]
-        }
+        # host_aliases {
+        #   ip = kubernetes_service.collabora_internal.spec[0].cluster_ip
+        #   hostnames = [
+        #     "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+        #   ]
+        # }
 
         # Nextcloud
         container {
@@ -152,7 +152,7 @@ resource "kubernetes_deployment" "nextcloud" {
               memory = "512Mi"
             }
             limits = {
-              cpu    = "2000m"
+              cpu    = "4000m"
               memory = "4Gi"
             }
           }
@@ -166,7 +166,7 @@ resource "kubernetes_deployment" "nextcloud" {
                 value = "${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
               }
             }
-            initial_delay_seconds = 180
+            initial_delay_seconds = 30
             period_seconds        = 30
             timeout_seconds       = 5
             failure_threshold     = 5
@@ -181,7 +181,7 @@ resource "kubernetes_deployment" "nextcloud" {
                 value = "${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
               }
             }
-            initial_delay_seconds = 120
+            initial_delay_seconds = 30
             period_seconds        = 10
             timeout_seconds       = 3
             failure_threshold     = 30
@@ -234,7 +234,7 @@ resource "kubernetes_deployment" "nextcloud" {
               memory = "256Mi"
             }
             limits = {
-              cpu    = "1000m"
+              cpu    = "2000m"
               memory = "2Gi"
             }
           }

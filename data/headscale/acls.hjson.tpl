@@ -9,13 +9,11 @@
     "group:devbox": ["${devbox_user}@"],
     "group:exitnodes": ["${exit_node_user}@"],
     "group:tv": ["${tv_user}@"],
-    "group:ssh-clients": ["${personal_user}@"],
-    "group:ssh-servers": ["${deck_user}@"],
     "group:syncthing-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@","${deck_user}@"],
     "group:vault-server": ["${vault_server_user}@"],
     // immich is also nextcloud TODO move collabora to nextcloud too
     "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
-    "group:nextcloud-clients": ["${personal_user}@", "${mobile_user}@"],
+    "group:nextcloud-clients": ["${nextcloud_server_user}@", "${collabora_server_user}@", "${personal_user}@", "${mobile_user}@"],
     "group:nextcloud-server": ["${nextcloud_server_user}@"],
     "group:collabora-server": ["${collabora_server_user}@"],
     "group:pihole-clients": ["${personal_user}@", "${mobile_user}@", "${tv_user}@"],
@@ -29,7 +27,10 @@
     "group:registry-server": ["${registry_server_user}@"],
     "group:pihole-server": ["${pihole_server_user}@"],
     "group:ntfy-server": ["${ntfy_server_user}@"],
-    "group:ntfy-clients": ["${prometheus_user}@", "${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"]
+    "group:ntfy-clients": ["${prometheus_user}@", "${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
+    "group:ollama-server": ["${ollama_server_user}@"],
+    "group:litellm-server": ["${litellm_server_user}@"],
+    "group:litellm-clients": ["${personal_user}@", "${mobile_user}@"]
   },
   "autoApprovers": {
     "exitNode": ["tag:exitnode"]
@@ -47,9 +48,7 @@
     { "action": "accept", "src": ["group:node-server"], "dst": ["group:node-server:*"] },
     { "action": "accept", "src": ["group:vault-server"], "dst": ["group:vault-server:*"] },
     { "action": "accept", "src": ["group:collabora-server"], "dst": ["group:collabora-server:*"] },
-
-    // access ssh from personal
-    { "action": "accept", "src": ["group:ssh-clients"], "dst": ["group:ssh-servers:22"] },
+    { "action": "accept", "src": ["group:nextcloud-server"], "dst": ["group:nextcloud-server:*"] },
 
     // personal access to nomad (k3s), for management
     { "action": "accept", "src": ["group:personal"], "dst": ["group:node-server:22,80,443,6443"] },
@@ -63,6 +62,18 @@
     // calendar clients access to personal, tmp
     { "action": "accept", "src": ["group:calendar-clients"], "dst": ["group:calendar-server:443"] },
 
+    // let personal talk to ollama
+    { "action": "accept", "src": ["group:personal"], "dst": ["group:ollama-server:*"] },
+
+    // litellm
+    // litellm clients to litellm proxy
+    { "action": "accept", "src": ["group:litellm-clients"], "dst": ["group:litellm-server:4000"] },
+
+    // litellm proxy to ollama backend
+    { "action": "accept", "src": ["group:litellm-server"], "dst": ["group:ollama-server:11434"] },
+
+    // personal to litellm ssh
+    { "action": "accept", "src": ["group:personal"], "dst": ["group:litellm-server:22"] },
     // vault clients access to vault server
     { "action": "accept", "src": ["group:vault-clients"], "dst": ["group:vault-server:443,8201"] },
 
