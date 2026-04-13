@@ -9,10 +9,6 @@ output "tv_preauth_key" {
 }
 
 
-output "exit_node_preauth_key" {
-  value     = headscale_pre_auth_key.exit_node.key
-  sensitive = true
-}
 
 output "ollama_preauth_key" {
   value     = headscale_pre_auth_key.ollama.key

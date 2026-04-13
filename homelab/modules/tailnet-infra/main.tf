@@ -30,12 +30,6 @@ resource "headscale_pre_auth_key" "tv" {
   time_to_expire = "3y"
 }
 
-resource "headscale_pre_auth_key" "exit_node" {
-  user           = headscale_user.users["exit_node_user"].id
-  reusable       = true
-  time_to_expire = "3y"
-  acl_tags       = ["tag:exitnode"]
-}
 
 resource "headscale_pre_auth_key" "ollama" {
   user           = headscale_user.users["ollama_server_user"].id

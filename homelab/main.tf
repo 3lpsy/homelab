@@ -131,42 +131,27 @@ module "tailnet-infra" {
   depends_on = [module.headscale-infra-tls]
 }
 
-module "exit-node-0" {
-  source                  = "./modules/exit-node"
-  ami                     = "ami-0b6c6ebed2801a5cb" # 24.04
-  ec2_user                = "ubuntu"
-  ssh_user                = "ubuntu"
-  ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
-  vpc_id                  = module.headscale-infra.vpc_id
-  gateway_id              = module.headscale-infra.gateway_id
-  ssh_pub_key             = trimspace(file(var.ssh_pub_key_path))
-  headscale_server_domain = module.headscale-infra-dns.dns_domain
-  tailnet_auth_key        = module.tailnet-infra.exit_node_preauth_key
-  node_name               = "0"
-
-  depends_on = [module.tailnet-infra]
-
-}
 
 
 
 
-module "litellm" {
-  source                  = "./modules/litellm"
-  ami                     = "ami-0b6c6ebed2801a5cb" # Ubuntu 24.04
-  ec2_user                = "ubuntu"
-  ssh_user                = "ubuntu"
-  ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
-  ssh_pub_key             = trimspace(file(var.ssh_pub_key_path))
-  vpc_id                  = module.headscale-infra.vpc_id
-  subnet_id               = module.exit-node-0.subnet_id
-  headscale_server_domain = module.headscale-infra-dns.dns_domain
-  tailnet_auth_key        = module.tailnet-infra.litellm_preauth_key
-  aws_region              = var.aws_region
-  bedrock_models          = var.bedrock_models
 
-  depends_on = [module.tailnet-infra]
-}
+# module "litellm" {
+#   source                  = "./modules/litellm"
+#   ami                     = "ami-0b6c6ebed2801a5cb" # Ubuntu 24.04
+#   ec2_user                = "ubuntu"
+#   ssh_user                = "ubuntu"
+#   ssh_priv_key            = trimspace(file(var.ssh_priv_key_path))
+#   ssh_pub_key             = trimspace(file(var.ssh_pub_key_path))
+#   vpc_id                  = module.headscale-infra.vpc_id
+#   subnet_id               = module.exit-node-0.subnet_id
+#   headscale_server_domain = module.headscale-infra-dns.dns_domain
+#   tailnet_auth_key        = module.tailnet-infra.litellm_preauth_key
+#   aws_region              = var.aws_region
+#   bedrock_models          = var.bedrock_models
+
+#   depends_on = [module.tailnet-infra]
+# }
 
 # module "ollama-server" {
 #   source = "./modules/ollama"

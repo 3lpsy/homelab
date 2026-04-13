@@ -161,6 +161,26 @@ variable "image_python" {
   default = "python:3-alpine"
 }
 
+variable "image_wireguard" {
+  type    = string
+  default = "linuxserver/wireguard:latest"
+}
+
+variable "wireguard_config_dir" {
+  description = "Path to directory containing WireGuard .conf files for ProtonVPN exit nodes"
+  type        = string
+}
+
+variable "k8s_pod_cidr" {
+  type    = string
+  default = "10.42.0.0/16"
+}
+
+variable "k8s_service_cidr" {
+  type    = string
+  default = "10.43.0.0/16"
+}
+
 locals {
   nextcloud_image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
 }
