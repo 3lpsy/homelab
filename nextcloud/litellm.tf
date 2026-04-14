@@ -43,7 +43,7 @@ resource "kubernetes_deployment" "litellm_postgres" {
 
         container {
           name  = "postgres"
-          image = var.image_postgres
+          image = var.image_litellm_postgres
 
           env {
             name  = "POSTGRES_DB"
@@ -145,8 +145,6 @@ resource "kubernetes_service" "litellm_postgres" {
     }
   }
 }
-
-# --- LiteLLM Proxy ---
 
 resource "kubernetes_deployment" "litellm" {
   metadata {
@@ -263,11 +261,11 @@ resource "kubernetes_deployment" "litellm" {
           resources {
             requests = {
               cpu    = "100m"
-              memory = "256Mi"
+              memory = "512Mi"
             }
             limits = {
               cpu    = "500m"
-              memory = "1Gi"
+              memory = "2Gi"
             }
           }
 

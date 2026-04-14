@@ -192,6 +192,11 @@ variable "litellm_default_user_max_budget" {
   default     = 20
 }
 
+variable "image_litellm_postgres" {
+  type    = string
+  default = "pgvector/pgvector:pg15"
+}
+
 variable "image_litellm" {
   type    = string
   default = "ghcr.io/berriai/litellm:main-latest"

@@ -1,4 +1,3 @@
-# --- Namespace & RBAC ---
 
 resource "kubernetes_namespace" "litellm" {
   metadata {
@@ -53,8 +52,6 @@ resource "kubernetes_role_binding" "litellm_tailscale" {
   }
 }
 
-# --- IAM (least-privilege Bedrock-only credentials) ---
-
 resource "aws_iam_user" "litellm_bedrock" {
   name = "litellm-bedrock"
 }
@@ -96,8 +93,6 @@ resource "aws_iam_access_key" "litellm_bedrock" {
   user = aws_iam_user.litellm_bedrock.name
 }
 
-# --- Random passwords ---
-
 resource "random_password" "litellm_master_key" {
   length  = 32
   special = false
@@ -107,8 +102,6 @@ resource "random_password" "litellm_db" {
   length  = 24
   special = false
 }
-
-# --- Headscale ---
 
 resource "headscale_pre_auth_key" "litellm" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.litellm_server_user
@@ -127,8 +120,6 @@ resource "kubernetes_secret" "litellm_tailscale_auth" {
   }
 }
 
-# --- TLS ---
-
 module "litellm-tls" {
   source                = "./../templates/infra-tls"
   account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
@@ -140,8 +131,6 @@ module "litellm-tls" {
 
   providers = { acme = acme }
 }
-
-# --- Vault ---
 
 resource "vault_kv_secret_v2" "litellm_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
@@ -182,8 +171,6 @@ resource "vault_kubernetes_auth_backend_role" "litellm" {
   token_policies                   = [vault_policy.litellm.name]
   token_ttl                        = 86400
 }
-
-# --- SecretProviderClass ---
 
 resource "kubernetes_manifest" "litellm_secret_provider" {
   manifest = {
