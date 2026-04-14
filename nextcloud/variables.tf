@@ -181,6 +181,63 @@ variable "k8s_service_cidr" {
   default = "10.43.0.0/16"
 }
 
+variable "litellm_domain" {
+  type    = string
+  default = "litellm"
+}
+
+variable "litellm_default_user_max_budget" {
+  description = "Default max_budget (USD) applied to newly-created internal LiteLLM users"
+  type        = number
+  default     = 20
+}
+
+variable "image_litellm" {
+  type    = string
+  default = "ghcr.io/berriai/litellm:main-latest"
+}
+
+variable "bedrock_models" {
+  description = "Map of alias name to Bedrock model config (id + optional max output tokens)"
+  type = map(object({
+    model_id   = string
+    max_tokens = optional(number)
+  }))
+  default = {
+    "claude-sonnet-4-20250514" = {
+      model_id   = "us.anthropic.claude-sonnet-4-6"
+      max_tokens = 32000
+    }
+    "claude-opus-4-20250514" = {
+      model_id   = "us.anthropic.claude-opus-4-6-v1"
+      max_tokens = 8000
+    }
+    "claude-haiku-4-5" = {
+      model_id   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      max_tokens = 16000
+    }
+    "kimi-k2.5" = {
+      model_id = "moonshotai.kimi-k2.5"
+    }
+    "glm-5" = {
+      model_id = "zai.glm-5"
+    }
+    "deepseek-v3.2" = {
+      model_id = "deepseek.v3.2"
+    }
+    "qwen3-coder-480b" = {
+      model_id = "qwen.qwen3-coder-480b-a35b-v1:0"
+    }
+    "qwen3-235b" = {
+      model_id = "qwen.qwen3-235b-a22b-2507-v1:0"
+    }
+    "llama4-maverick" = {
+      model_id   = "us.meta.llama4-maverick-17b-instruct-v1:0"
+      max_tokens = 32000
+    }
+  }
+}
+
 locals {
   nextcloud_image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
 }

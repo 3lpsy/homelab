@@ -15,3 +15,9 @@ provider "headscale" {
 provider "acme" {
   server_url = var.acme_server_url
 }
+
+provider "aws" {
+  region     = var.aws_region
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
+}

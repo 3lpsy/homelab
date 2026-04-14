@@ -16,6 +16,8 @@ apikey.txt
 
 *.cert
 .env
+.env.*
+!.env.example
 *.key
 
 # Local .terraform directories
@@ -48,6 +50,7 @@ override.tf.json
 CLAUDE.md
 AGENTS.md
 opencode.json
+opencode.jsonc
 .opencode/
 .opencode
 
