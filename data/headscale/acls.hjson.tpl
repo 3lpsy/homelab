@@ -63,11 +63,11 @@
     { "action": "accept", "src": ["group:calendar-clients"], "dst": ["group:calendar-server:443"] },
 
     // let personal talk to ollama
-    { "action": "accept", "src": ["group:personal"], "dst": ["group:ollama-server:*"] },
+    { "action": "accept", "src": ["group:personal", "group:mobile"], "dst": ["group:ollama-server:*"] },
 
     // litellm
     // litellm clients to litellm proxy
-    { "action": "accept", "src": ["group:litellm-clients"], "dst": ["group:litellm-server:4000"] },
+    { "action": "accept", "src": ["group:litellm-clients"], "dst": ["group:litellm-server:443"] },
 
     // litellm proxy to ollama backend
     { "action": "accept", "src": ["group:litellm-server"], "dst": ["group:ollama-server:11434"] },

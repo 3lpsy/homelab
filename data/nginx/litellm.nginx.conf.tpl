@@ -3,7 +3,7 @@ events {
 }
 http {
   upstream litellm {
-    server localhost:4000;
+    server 127.0.0.1:4000;
   }
 
   server {
