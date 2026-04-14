@@ -5,7 +5,7 @@ locals {
         model_name = alias
         litellm_params = { for k, v in {
           model           = "bedrock/${cfg.model_id}"
-          aws_region_name = var.aws_region
+          aws_region_name = coalesce(cfg.aws_region, var.aws_region)
           max_tokens      = cfg.max_tokens
           cache_control_injection_points = can(regex("anthropic", cfg.model_id)) ? [
             { location = "message", role = "system" },

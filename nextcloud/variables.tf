@@ -203,15 +203,16 @@ variable "image_litellm" {
 }
 
 variable "bedrock_models" {
-  description = "Map of alias name to Bedrock model config (id + optional max output tokens)"
+  description = "Map of alias name to Bedrock model config (id + optional max output tokens + optional region override)"
   type = map(object({
     model_id   = string
     max_tokens = optional(number)
+    aws_region = optional(string)
   }))
   default = {
     "claude-sonnet-4-20250514" = {
       model_id   = "us.anthropic.claude-sonnet-4-6"
-      max_tokens = 32000
+      max_tokens = 16000
     }
     "claude-opus-4-20250514" = {
       model_id   = "us.anthropic.claude-opus-4-6-v1"
@@ -222,23 +223,30 @@ variable "bedrock_models" {
       max_tokens = 16000
     }
     "kimi-k2.5" = {
-      model_id = "moonshotai.kimi-k2.5"
+      model_id   = "moonshotai.kimi-k2.5"
+      max_tokens = 16000
     }
     "glm-5" = {
-      model_id = "zai.glm-5"
+      model_id   = "zai.glm-5"
+      max_tokens = 16000
     }
     "deepseek-v3.2" = {
-      model_id = "deepseek.v3.2"
+      model_id   = "deepseek.v3.2"
+      max_tokens = 8000
     }
     "qwen3-coder-480b" = {
-      model_id = "qwen.qwen3-coder-480b-a35b-v1:0"
+      model_id   = "qwen.qwen3-coder-480b-a35b-v1:0"
+      aws_region = "us-west-2"
+      max_tokens = 16000
     }
     "qwen3-235b" = {
-      model_id = "qwen.qwen3-235b-a22b-2507-v1:0"
+      model_id   = "qwen.qwen3-235b-a22b-2507-v1:0"
+      aws_region = "us-west-2"
+      max_tokens = 8000
     }
     "llama4-maverick" = {
       model_id   = "us.meta.llama4-maverick-17b-instruct-v1:0"
-      max_tokens = 32000
+      max_tokens = 8000
     }
   }
 }
