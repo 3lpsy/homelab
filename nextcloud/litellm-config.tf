@@ -7,6 +7,7 @@ locals {
           model           = "bedrock/${cfg.model_id}"
           aws_region_name = coalesce(cfg.aws_region, var.aws_region)
           max_tokens      = cfg.max_tokens
+          fake_stream     = cfg.fake_stream
           cache_control_injection_points = can(regex("anthropic", cfg.model_id)) ? [
             { location = "message", role = "system" },
             { location = "message", index = -2 },
@@ -19,6 +20,9 @@ locals {
       default_internal_user_params = {
         max_budget = var.litellm_default_user_max_budget
       }
+      # Silently drop provider-unsupported params (e.g. tool_choice on Llama4
+      # Maverick via Bedrock) instead of 400-ing the request.
+      drop_params = true
     }
   })
 }

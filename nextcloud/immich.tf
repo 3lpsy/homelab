@@ -112,6 +112,9 @@ resource "kubernetes_deployment" "immich" {
         labels = {
           app = "immich"
         }
+        annotations = {
+          "nginx-config-hash" = sha1(kubernetes_config_map.immich_nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {

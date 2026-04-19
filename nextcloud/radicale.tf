@@ -16,6 +16,10 @@ resource "kubernetes_deployment" "radicale" {
     template {
       metadata {
         labels = { app = "radicale" }
+        annotations = {
+          "config-hash"       = sha1("${kubernetes_config_map.radicale_config.data["config"]}|${kubernetes_config_map.radicale_config.data["rights"]}")
+          "nginx-config-hash" = sha1(kubernetes_config_map.radicale_nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {

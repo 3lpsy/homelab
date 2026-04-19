@@ -69,6 +69,27 @@ resource "kubernetes_secret" "exitnode_tailscale_auth" {
   }
 }
 
+resource "kubernetes_secret" "exitnode_registry_pull_secret" {
+  metadata {
+    name      = "registry-pull-secret"
+    namespace = kubernetes_namespace.exitnode.metadata[0].name
+  }
+
+  type = "kubernetes.io/dockerconfigjson"
+
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        "${local.thunderbolt_registry}" = {
+          username = "internal"
+          password = random_password.registry_user_passwords["internal"].result
+          auth     = base64encode("internal:${random_password.registry_user_passwords["internal"].result}")
+        }
+      }
+    })
+  }
+}
+
 resource "kubernetes_secret" "exitnode_wg_config" {
   for_each = local.exitnode_names
 

@@ -15,6 +15,29 @@ resource "null_resource" "install_deps" {
   }
 }
 
+resource "null_resource" "sysctl_inotify" {
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+  provisioner "remote-exec" {
+    inline = [
+      <<-EOT
+        sudo tee /etc/sysctl.d/99-inotify.conf > /dev/null <<'EOF'
+fs.inotify.max_user_watches=524288
+fs.inotify.max_user_instances=512
+EOF
+      EOT
+      ,
+      "sudo sysctl --system"
+    ]
+  }
+  depends_on = [null_resource.install_deps]
+}
+
 resource "null_resource" "k3s_prep_firewalld" {
   connection {
     type        = "ssh"

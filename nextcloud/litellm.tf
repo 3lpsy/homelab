@@ -168,6 +168,10 @@ resource "kubernetes_deployment" "litellm" {
         labels = {
           app = "litellm"
         }
+        annotations = {
+          "config-hash"       = sha1(kubernetes_config_map.litellm_config.data["config.yaml"])
+          "nginx-config-hash" = sha1(kubernetes_config_map.litellm_nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {

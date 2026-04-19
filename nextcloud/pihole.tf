@@ -16,6 +16,9 @@ resource "kubernetes_deployment" "pihole" {
     template {
       metadata {
         labels = { app = "pihole" }
+        annotations = {
+          "nginx-config-hash" = sha1(kubernetes_config_map.pihole_nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {

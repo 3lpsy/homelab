@@ -47,10 +47,17 @@ resource "kubernetes_deployment" "exitnode" {
         labels = {
           app = "exitnode-${each.key}"
         }
+        annotations = {
+          "tinyproxy-config-hash" = sha1(kubernetes_config_map.exitnode_tinyproxy_config.data["tinyproxy.conf"])
+        }
       }
 
       spec {
         service_account_name = kubernetes_service_account.exitnode.metadata[0].name
+
+        image_pull_secrets {
+          name = kubernetes_secret.exitnode_registry_pull_secret.metadata[0].name
+        }
 
         # WireGuard — connects to ProtonVPN
         container {
@@ -146,6 +153,36 @@ resource "kubernetes_deployment" "exitnode" {
           }
         }
 
+        # Tinyproxy — HTTP/CONNECT proxy egressing through the pod's WG tunnel.
+        # SearXNG rotates across all exit-node proxies per request.
+        container {
+          name              = "tinyproxy"
+          image             = local.exitnode_tinyproxy_image
+          image_pull_policy = "Always"
+
+          port {
+            container_port = 8888
+            name           = "http-proxy"
+          }
+
+          volume_mount {
+            name       = "tinyproxy-config"
+            mount_path = "/etc/tinyproxy/tinyproxy.conf"
+            sub_path   = "tinyproxy.conf"
+          }
+
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "16Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "64Mi"
+            }
+          }
+        }
+
         volume {
           name = "wg-secret"
           secret {
@@ -165,7 +202,40 @@ resource "kubernetes_deployment" "exitnode" {
           name = "tailscale-state"
           empty_dir {}
         }
+
+        volume {
+          name = "tinyproxy-config"
+          config_map {
+            name = kubernetes_config_map.exitnode_tinyproxy_config.metadata[0].name
+          }
+        }
       }
+    }
+  }
+
+  depends_on = [
+    kubernetes_manifest.exitnode_tinyproxy_build,
+  ]
+}
+
+# Cluster-internal Service per exit-node pod exposing tinyproxy on :8888.
+# Consumed by searxng via `outgoing.proxies.all://` list.
+resource "kubernetes_service" "exitnode_proxy" {
+  for_each = local.exitnode_names
+
+  metadata {
+    name      = "exitnode-${each.key}-proxy"
+    namespace = kubernetes_namespace.exitnode.metadata[0].name
+  }
+
+  spec {
+    selector = {
+      app = "exitnode-${each.key}"
+    }
+    port {
+      name        = "http-proxy"
+      port        = 8888
+      target_port = 8888
     }
   }
 }

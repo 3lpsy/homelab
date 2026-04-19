@@ -203,11 +203,12 @@ variable "image_litellm" {
 }
 
 variable "bedrock_models" {
-  description = "Map of alias name to Bedrock model config (id + optional max output tokens + optional region override)"
+  description = "Map of alias name to Bedrock model config. `fake_stream = true` forces non-streaming upstream + synthesized SSE downstream — needed for non-Claude models on Bedrock that either don't support streaming or don't support tools during streaming (e.g. Llama 4 Maverick)."
   type = map(object({
-    model_id   = string
-    max_tokens = optional(number)
-    aws_region = optional(string)
+    model_id    = string
+    max_tokens  = optional(number)
+    aws_region  = optional(string)
+    fake_stream = optional(bool)
   }))
   default = {
     "claude-sonnet-4-20250514" = {
@@ -223,34 +224,118 @@ variable "bedrock_models" {
       max_tokens = 16000
     }
     "kimi-k2.5" = {
-      model_id   = "moonshotai.kimi-k2.5"
-      max_tokens = 16000
+      model_id    = "moonshotai.kimi-k2.5"
+      max_tokens  = 16000
+      fake_stream = true
     }
     "glm-5" = {
-      model_id   = "zai.glm-5"
-      max_tokens = 16000
+      model_id    = "zai.glm-5"
+      max_tokens  = 16000
+      fake_stream = true
     }
     "deepseek-v3.2" = {
-      model_id   = "deepseek.v3.2"
-      max_tokens = 8000
+      model_id    = "deepseek.v3.2"
+      max_tokens  = 8000
+      fake_stream = true
     }
     "qwen3-coder-480b" = {
-      model_id   = "qwen.qwen3-coder-480b-a35b-v1:0"
-      aws_region = "us-west-2"
-      max_tokens = 16000
+      model_id    = "qwen.qwen3-coder-480b-a35b-v1:0"
+      aws_region  = "us-west-2"
+      max_tokens  = 16000
+      fake_stream = true
     }
     "qwen3-235b" = {
-      model_id   = "qwen.qwen3-235b-a22b-2507-v1:0"
-      aws_region = "us-west-2"
-      max_tokens = 8000
+      model_id    = "qwen.qwen3-235b-a22b-2507-v1:0"
+      aws_region  = "us-west-2"
+      max_tokens  = 8000
+      fake_stream = true
     }
     "llama4-maverick" = {
-      model_id   = "us.meta.llama4-maverick-17b-instruct-v1:0"
-      max_tokens = 8000
+      model_id    = "us.meta.llama4-maverick-17b-instruct-v1:0"
+      max_tokens  = 8000
+      fake_stream = true
     }
   }
 }
 
+# Thunderbolt
+
+variable "thunderbolt_domain" {
+  type    = string
+  default = "thunderbolt"
+}
+
+variable "thunderbolt_ref" {
+  description = "git ref (branch, tag, commit) of thunderbird/thunderbolt to build"
+  type        = string
+  default     = "main"
+}
+
+variable "mcp_duckduckgo_domain" {
+  type    = string
+  default = "mcp-duckduckgo"
+}
+
+variable "searxng_domain" {
+  type    = string
+  default = "searxng"
+}
+
+variable "image_searxng" {
+  type    = string
+  default = "docker.io/searxng/searxng:latest"
+}
+
+variable "mcp_searxng_domain" {
+  type    = string
+  default = "mcp-searxng"
+}
+
+variable "mcp_searxng_api_key_count" {
+  description = "How many random Bearer API keys to mint for the searxng MCP. Consumers read them from vault at mcp/mcp-searxng/auth."
+  type        = number
+  default     = 2
+}
+
+variable "image_thunderbolt_postgres" {
+  type    = string
+  default = "postgres:18-alpine"
+}
+
+variable "image_mongo" {
+  type    = string
+  default = "mongo:7.0"
+}
+
+variable "image_keycloak" {
+  type    = string
+  default = "quay.io/keycloak/keycloak:26.0"
+}
+
+variable "image_powersync" {
+  type    = string
+  default = "journeyapps/powersync-service:latest"
+}
+
 locals {
   nextcloud_image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
+
+  thunderbolt_registry          = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  thunderbolt_frontend_image    = "${local.thunderbolt_registry}/thunderbolt-frontend:latest"
+  thunderbolt_backend_image     = "${local.thunderbolt_registry}/thunderbolt-backend:latest"
+  thunderbolt_fqdn              = "${var.thunderbolt_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  thunderbolt_public_url        = "https://${local.thunderbolt_fqdn}"
+  thunderbolt_admin_email       = "thunderbolt@${var.headscale_subdomain}.${var.headscale_magic_domain}"
+
+  mcp_duckduckgo_image = "${local.thunderbolt_registry}/mcp-duckduckgo:latest"
+  mcp_duckduckgo_fqdn  = "${var.mcp_duckduckgo_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  mcp_duckduckgo_path  = "/public/mcp-duckduckgo"
+
+  mcp_searxng_image = "${local.thunderbolt_registry}/mcp-searxng:latest"
+  mcp_searxng_fqdn  = "${var.mcp_searxng_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  mcp_searxng_path  = "/public/mcp-searxng"
+
+  exitnode_tinyproxy_image = "${local.thunderbolt_registry}/exitnode-tinyproxy:latest"
+
+  searxng_ranker_image = "${local.thunderbolt_registry}/searxng-ranker:latest"
 }

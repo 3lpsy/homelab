@@ -19,7 +19,7 @@
     "group:pihole-clients": ["${personal_user}@", "${mobile_user}@", "${tv_user}@"],
     "group:calendar-clients": ["${calendar_server_user}@", "${personal_user}@", "${mobile_user}@"],
     "group:calendar-server": ["${calendar_server_user}@"],
-    "group:registry-clients": ["${registry_server_user}@", "${nomad_server_user}@", "${personal_user}@"],
+    "group:registry-clients": ["${registry_server_user}@", "${nomad_server_user}@", "${personal_user}@", "${builder_user}@"],
     "group:grafana-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
     "group:grafana-server": ["${grafana_server_user}@"],
     "group:openwrt": ["${openwrt_user}@"],
@@ -29,8 +29,11 @@
     "group:ntfy-server": ["${ntfy_server_user}@"],
     "group:ntfy-clients": ["${prometheus_user}@", "${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
     "group:ollama-server": ["${ollama_server_user}@"],
-    "group:litellm-server": ["${litellm_server_user}@"],
-    "group:litellm-clients": ["${personal_user}@", "${mobile_user}@"]
+    "group:litellm-server": ["${litellm_server_user}@", "${thunderbolt_server_user}@"],
+    "group:litellm-clients": ["${personal_user}@", "${mobile_user}@", "${thunderbolt_server_user}@"],
+    "group:mcp":["${mcp_user}@"],
+    "group:searxng-clients": ["${personal_user}@", "${mobile_user}@", "${litellm_server_user}@", "${thunderbolt_server_user}@", "${mcp_user}@"],
+    "group:searxng-server": ["${searxng_server_user}@"]
   },
   "autoApprovers": {
     "exitNode": ["tag:exitnode"]
@@ -55,6 +58,8 @@
 
     // let nomad / k3s resolve dns:
     { "action": "accept", "src": ["group:node-server"], "dst": ["*:65535"] },
+    // let pihole resolve all dns
+    { "action": "accept", "src": ["group:pihole-server"], "dst": ["*:65535"] },
 
     // syncthing access to syncthing, tcp port and casting port
     { "action": "accept", "src": ["group:syncthing-clients"], "dst": ["group:syncthing-clients:22000,21027"] },
@@ -64,6 +69,12 @@
 
     // let personal talk to ollama
     { "action": "accept", "src": ["group:personal", "group:mobile"], "dst": ["group:ollama-server:*"] },
+    // let personal/mobile/litellm/thunderbolt talk to mcp
+    {
+        "action": "accept",
+        "src": ["group:personal", "group:mobile", "group:litellm-server"],
+        "dst": ["group:mcp:443"]
+    },
 
     // litellm
     // litellm clients to litellm proxy
@@ -72,8 +83,9 @@
     // litellm proxy to ollama backend
     { "action": "accept", "src": ["group:litellm-server"], "dst": ["group:ollama-server:11434"] },
 
-    // personal to litellm ssh
-    { "action": "accept", "src": ["group:personal"], "dst": ["group:litellm-server:22"] },
+    // searxng clients to server
+    { "action": "accept", "src": ["group:searxng-clients"], "dst": ["group:searxng-server:443"] },
+
     // vault clients access to vault server
     { "action": "accept", "src": ["group:vault-clients"], "dst": ["group:vault-server:443,8201"] },
 
@@ -96,6 +108,9 @@
     // allow ios to access devbox on 1420,1421,3000,8888
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] },
 
+    // allow personal to ssh into devbox
+    { "action": "accept", "src": ["group:personal"], "dst": ["group:devbox:22"] },
+
     // pihole clients to access pihole server
     { "action": "accept", "src": ["*"], "dst": ["group:pihole-server:53"] },
 
@@ -104,15 +119,20 @@
 
     // ntfy
     { "action": "accept", "src": ["group:ntfy-clients"], "dst": ["group:ntfy-server:443"] },
-  { "action": "accept", "src": ["group:personal"], "dst": ["group:exitnodes:22", "tag:exitnode:22"] },
+    { "action": "accept", "src": ["group:personal"], "dst": ["group:exitnodes:22", "tag:exitnode:22"] },
 
     // users who can use any exit node
+    // searxng doesn't really need it, uses cluster proxy
     {
       "action": "accept",
-      "src": ["group:personal", "group:mobile", "group:tv"],
+      "src": ["group:personal", "group:mobile", "group:tv", "group:devbox", "group:mcp", "group:searxng-server"],
       "dst": ["autogroup:internet:*"]
     },
-  { "action": "accept", "src": ["group:personal", "group:mobile", "group:tv"], "dst": ["group:exitnodes:*", "tag:exitnode:*"] }
+    {
+        "action": "accept",
+        "src": ["group:personal", "group:mobile", "group:tv", "group:devbox", "group:mcp", "group:searxng-server"],
+        "dst": ["group:exitnodes:*", "tag:exitnode:*"]
+    }
 
   ]
 }

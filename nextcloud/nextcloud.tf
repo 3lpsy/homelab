@@ -22,6 +22,10 @@ resource "kubernetes_deployment" "nextcloud" {
         labels = {
           app = "nextcloud"
         }
+        annotations = {
+          "build-job"         = local.nextcloud_build_job_name
+          "nginx-config-hash" = sha1(kubernetes_config_map.nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {
@@ -330,7 +334,8 @@ resource "kubernetes_deployment" "nextcloud" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider,
     kubernetes_service.postgres,
-    kubernetes_service.redis
+    kubernetes_service.redis,
+    kubernetes_manifest.nextcloud_build,
   ]
 }
 
