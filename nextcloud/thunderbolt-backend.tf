@@ -120,7 +120,7 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
 
           # Database
           env {
-            name = "DATABASE_DRIVER"
+            name  = "DATABASE_DRIVER"
             value = "postgres"
           }
           env {

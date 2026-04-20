@@ -24,7 +24,7 @@ resource "kubernetes_deployment" "thunderbolt" {
           # Rolls the pod whenever the frontend build Job's name changes
           # (i.e. whenever any input file or the git ref changes → new image)
           # so `:latest` is actually re-pulled.
-          "build-job"         = local.thunderbolt_frontend_build_job_name
+          "build-job" = local.thunderbolt_frontend_build_job_name
           # Rolls on outer TLS/proxy nginx config changes.
           "nginx-config-hash" = sha1(kubernetes_config_map.thunderbolt_nginx_config.data["nginx.conf"])
         }

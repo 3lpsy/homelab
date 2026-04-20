@@ -46,7 +46,7 @@ resource "kubernetes_deployment" "searxng_ranker" {
           image_pull_policy = "Always"
 
           env {
-            name  = "EXITNODE_PROXIES"
+            name = "EXITNODE_PROXIES"
             value = join(" ", [
               for k in sort(keys(local.exitnode_names)) :
               "http://exitnode-${k}-proxy.exitnode.svc.cluster.local:8888"

@@ -27,13 +27,13 @@ resource "kubernetes_role" "thunderbolt_tailscale" {
   }
 
   rule {
-    api_groups     = [""]
-    resources      = ["secrets"]
+    api_groups = [""]
+    resources  = ["secrets"]
     resource_names = [
       "thunderbolt-tailscale-state",
       "thunderbolt-backend-tailscale-state",
     ]
-    verbs          = ["get", "update", "patch"]
+    verbs = ["get", "update", "patch"]
   }
 }
 
@@ -160,16 +160,16 @@ resource "vault_kv_secret_v2" "thunderbolt_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "thunderbolt/config"
   data_json = jsonencode({
-    postgres_password         = random_password.thunderbolt_postgres.result
-    powersync_role_password   = random_password.thunderbolt_powersync_role.result
-    keycloak_db_password      = random_password.thunderbolt_keycloak_db.result
-    keycloak_admin_password   = random_password.thunderbolt_keycloak_admin.result
-    keycloak_admin_username   = "admin"
-    seed_user_password        = random_password.thunderbolt_seed_user.result
-    better_auth_secret        = random_password.thunderbolt_better_auth_secret.result
-    oidc_client_secret        = random_password.thunderbolt_oidc_client_secret.result
-    powersync_jwt_secret      = random_password.thunderbolt_powersync_jwt_secret.result
-    database_url              = "postgresql://postgres:${random_password.thunderbolt_postgres.result}@thunderbolt-postgres:5432/thunderbolt"
+    postgres_password       = random_password.thunderbolt_postgres.result
+    powersync_role_password = random_password.thunderbolt_powersync_role.result
+    keycloak_db_password    = random_password.thunderbolt_keycloak_db.result
+    keycloak_admin_password = random_password.thunderbolt_keycloak_admin.result
+    keycloak_admin_username = "admin"
+    seed_user_password      = random_password.thunderbolt_seed_user.result
+    better_auth_secret      = random_password.thunderbolt_better_auth_secret.result
+    oidc_client_secret      = random_password.thunderbolt_oidc_client_secret.result
+    powersync_jwt_secret    = random_password.thunderbolt_powersync_jwt_secret.result
+    database_url            = "postgresql://postgres:${random_password.thunderbolt_postgres.result}@thunderbolt-postgres:5432/thunderbolt"
   })
 }
 
@@ -240,17 +240,17 @@ resource "kubernetes_manifest" "thunderbolt_secret_provider" {
         vaultAddress = "http://vault.vault.svc.cluster.local:8200"
         roleName     = "thunderbolt"
         objects = yamlencode([
-          { objectName = "thunderbolt_postgres_password",        secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "postgres_password" },
-          { objectName = "thunderbolt_powersync_role_password",  secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "powersync_role_password" },
-          { objectName = "thunderbolt_keycloak_db_password",     secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "keycloak_db_password" },
-          { objectName = "thunderbolt_keycloak_admin_password",  secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "keycloak_admin_password" },
-          { objectName = "thunderbolt_keycloak_admin_username",  secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "keycloak_admin_username" },
-          { objectName = "thunderbolt_better_auth_secret",       secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "better_auth_secret" },
-          { objectName = "thunderbolt_oidc_client_secret",       secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "oidc_client_secret" },
-          { objectName = "thunderbolt_powersync_jwt_secret",     secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "powersync_jwt_secret" },
-          { objectName = "thunderbolt_database_url",             secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "database_url" },
-          { objectName = "thunderbolt_tls_crt",                  secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/tls",    secretKey = "fullchain_pem" },
-          { objectName = "thunderbolt_tls_key",                  secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/tls",    secretKey = "privkey_pem" },
+          { objectName = "thunderbolt_postgres_password", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "postgres_password" },
+          { objectName = "thunderbolt_powersync_role_password", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "powersync_role_password" },
+          { objectName = "thunderbolt_keycloak_db_password", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "keycloak_db_password" },
+          { objectName = "thunderbolt_keycloak_admin_password", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "keycloak_admin_password" },
+          { objectName = "thunderbolt_keycloak_admin_username", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "keycloak_admin_username" },
+          { objectName = "thunderbolt_better_auth_secret", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "better_auth_secret" },
+          { objectName = "thunderbolt_oidc_client_secret", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "oidc_client_secret" },
+          { objectName = "thunderbolt_powersync_jwt_secret", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "powersync_jwt_secret" },
+          { objectName = "thunderbolt_database_url", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/config", secretKey = "database_url" },
+          { objectName = "thunderbolt_tls_crt", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/tls", secretKey = "fullchain_pem" },
+          { objectName = "thunderbolt_tls_key", secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/thunderbolt/tls", secretKey = "privkey_pem" },
         ])
       }
     }

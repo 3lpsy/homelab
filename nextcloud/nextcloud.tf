@@ -333,8 +333,8 @@ resource "kubernetes_deployment" "nextcloud" {
 
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider,
-    kubernetes_service.postgres,
-    kubernetes_service.redis,
+    kubernetes_service.nextcloud_postgres,
+    kubernetes_service.nextcloud_redis,
     kubernetes_manifest.nextcloud_build,
   ]
 }
@@ -357,5 +357,261 @@ resource "kubernetes_service" "nextcloud_internal" {
     }
 
     type = "ClusterIP"
+  }
+}
+
+resource "kubernetes_deployment" "nextcloud_postgres" {
+  metadata {
+    name      = "postgres"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    replicas = 1
+
+    selector {
+      match_labels = {
+        app = "postgres"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "postgres"
+        }
+      }
+
+      spec {
+        service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
+
+        container {
+          name  = "postgres"
+          image = var.image_postgres
+
+          env {
+            name  = "POSTGRES_DB"
+            value = "nextcloud"
+          }
+
+          env {
+            name  = "POSTGRES_USER"
+            value = "nextcloud"
+          }
+
+          env {
+            name = "POSTGRES_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = "nextcloud-secrets"
+                key  = "postgres_password"
+              }
+            }
+          }
+
+          port {
+            container_port = 5432
+          }
+
+          volume_mount {
+            name       = "postgres-data"
+            mount_path = "/var/lib/postgresql/data"
+          }
+
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+
+          resources {
+            requests = {
+              cpu    = "250m"
+              memory = "256Mi"
+            }
+            limits = {
+              cpu    = "1000m"
+              memory = "1Gi"
+            }
+          }
+
+          liveness_probe {
+            exec {
+              command = ["pg_isready", "-U", "nextcloud"]
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            exec {
+              command = ["pg_isready", "-U", "nextcloud"]
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 5
+          }
+        }
+
+        volume {
+          name = "postgres-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.nextcloud_postgres_data.metadata[0].name
+          }
+        }
+
+        volume {
+          name = "secrets-store"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = kubernetes_manifest.nextcloud_secret_provider.manifest.metadata.name
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_manifest.nextcloud_secret_provider
+  ]
+}
+
+resource "kubernetes_service" "nextcloud_postgres" {
+  metadata {
+    name      = "postgres"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    selector = {
+      app = "postgres"
+    }
+
+    port {
+      port        = 5432
+      target_port = 5432
+    }
+  }
+}
+
+resource "kubernetes_deployment" "nextcloud_redis" {
+  metadata {
+    name      = "redis"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    replicas = 1
+
+    selector {
+      match_labels = {
+        app = "redis"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "redis"
+        }
+      }
+
+      spec {
+        service_account_name = kubernetes_service_account.nextcloud.metadata[0].name
+
+        container {
+          name  = "redis"
+          image = var.image_redis
+
+          command = [
+            "redis-server",
+            "--requirepass",
+            "$(REDIS_PASSWORD)"
+          ]
+
+          env {
+            name = "REDIS_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = "nextcloud-secrets"
+                key  = "redis_password"
+              }
+            }
+          }
+
+          port {
+            container_port = 6379
+          }
+
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+            limits = {
+              cpu    = "500m"
+              memory = "512Mi"
+            }
+          }
+
+          liveness_probe {
+            exec {
+              command = ["redis-cli", "ping"]
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            exec {
+              command = ["redis-cli", "ping"]
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 5
+          }
+        }
+
+        volume {
+          name = "secrets-store"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = kubernetes_manifest.nextcloud_secret_provider.manifest.metadata.name
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_manifest.nextcloud_secret_provider
+  ]
+}
+
+resource "kubernetes_service" "nextcloud_redis" {
+  metadata {
+    name      = "redis"
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+
+  spec {
+    selector = {
+      app = "redis"
+    }
+
+    port {
+      port        = 6379
+      target_port = 6379
+    }
   }
 }

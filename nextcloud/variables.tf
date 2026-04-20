@@ -320,12 +320,12 @@ variable "image_powersync" {
 locals {
   nextcloud_image = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/nextcloud:latest"
 
-  thunderbolt_registry          = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  thunderbolt_frontend_image    = "${local.thunderbolt_registry}/thunderbolt-frontend:latest"
-  thunderbolt_backend_image     = "${local.thunderbolt_registry}/thunderbolt-backend:latest"
-  thunderbolt_fqdn              = "${var.thunderbolt_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  thunderbolt_public_url        = "https://${local.thunderbolt_fqdn}"
-  thunderbolt_admin_email       = "thunderbolt@${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  thunderbolt_registry       = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  thunderbolt_frontend_image = "${local.thunderbolt_registry}/thunderbolt-frontend:latest"
+  thunderbolt_backend_image  = "${local.thunderbolt_registry}/thunderbolt-backend:latest"
+  thunderbolt_fqdn           = "${var.thunderbolt_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  thunderbolt_public_url     = "https://${local.thunderbolt_fqdn}"
+  thunderbolt_admin_email    = "thunderbolt@${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
   mcp_duckduckgo_image = "${local.thunderbolt_registry}/mcp-duckduckgo:latest"
   mcp_duckduckgo_fqdn  = "${var.mcp_duckduckgo_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"

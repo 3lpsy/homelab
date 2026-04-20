@@ -16,9 +16,9 @@ resource "kubernetes_daemonset" "node_exporter" {
       }
 
       spec {
-        host_network                     = true
-        host_pid                         = true
-        automount_service_account_token  = false
+        host_network                    = true
+        host_pid                        = true
+        automount_service_account_token = false
 
         container {
           name  = "node-exporter"
@@ -38,14 +38,14 @@ resource "kubernetes_daemonset" "node_exporter" {
           }
 
           volume_mount {
-            name              = "proc"
-            mount_path        = "/host/proc"
-            read_only         = true
+            name       = "proc"
+            mount_path = "/host/proc"
+            read_only  = true
           }
           volume_mount {
-            name              = "sys"
-            mount_path        = "/host/sys"
-            read_only         = true
+            name       = "sys"
+            mount_path = "/host/sys"
+            read_only  = true
           }
           volume_mount {
             name              = "root"

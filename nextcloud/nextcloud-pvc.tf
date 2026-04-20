@@ -20,7 +20,7 @@ resource "kubernetes_persistent_volume_claim" "nextcloud_data" {
   wait_until_bound = false
 }
 
-resource "kubernetes_persistent_volume_claim" "postgres_data" {
+resource "kubernetes_persistent_volume_claim" "nextcloud_postgres_data" {
   lifecycle {
     prevent_destroy = true
   }
