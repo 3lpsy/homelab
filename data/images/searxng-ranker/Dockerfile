@@ -1,4 +1,4 @@
-FROM python:3.11-alpine
+FROM python:3.14-alpine
 
 RUN pip install --no-cache-dir \
       "httpx>=0.27" \

@@ -21,8 +21,7 @@ resource "kubernetes_deployment" "mcp_searxng" {
           app = "mcp-searxng"
         }
         annotations = {
-          "build-job"         = local.mcp_searxng_build_job_name
-          "nginx-config-hash" = sha1(kubernetes_config_map.mcp_searxng_nginx_config.data["nginx.conf"])
+          "build-job" = local.mcp_searxng_build_job_name
         }
       }
 
@@ -33,23 +32,10 @@ resource "kubernetes_deployment" "mcp_searxng" {
           name = kubernetes_secret.mcp_registry_pull_secret.metadata[0].name
         }
 
-        init_container {
-          name  = "wait-for-secrets"
-          image = var.image_busybox
-          command = [
-            "sh", "-c",
-            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
-              secret_file = "mcp_searxng_tls_crt"
-            })
-          ]
-          volume_mount {
-            name       = "secrets-store"
-            mount_path = "/mnt/secrets"
-            read_only  = true
-          }
-        }
-
-        # SearXNG MCP server
+        # SearXNG MCP server — TLS + external routing live in mcp-shared.
+        # Tailscale sidecar is retained because this pod needs outbound
+        # tailnet access to reach searxng.<hs>.<magic> for upstream calls
+        # (the cert would TLS-fail on an in-cluster DNS hop).
         container {
           name              = "mcp-searxng"
           image             = local.mcp_searxng_image
@@ -64,14 +50,18 @@ resource "kubernetes_deployment" "mcp_searxng" {
             value = "8000"
           }
           env {
-            name  = "SEARXNG_URL"
+            name  = "MCP_SEARXNG_URL"
             value = "https://${var.searxng_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+          }
+          env {
+            name  = "LOG_LEVEL"
+            value = var.mcp_searxng_log_level
           }
           env {
             name = "MCP_API_KEYS"
             value_from {
               secret_key_ref {
-                name = "mcp-searxng-auth"
+                name = "mcp-auth"
                 key  = "api_keys_csv"
               }
             }
@@ -100,43 +90,16 @@ resource "kubernetes_deployment" "mcp_searxng" {
             initial_delay_seconds = 5
             period_seconds        = 10
           }
-        }
-
-        # TLS-terminating nginx
-        container {
-          name  = "nginx"
-          image = var.image_nginx
-
-          port {
-            container_port = 443
-            name           = "https"
-          }
 
           volume_mount {
-            name       = "mcp-searxng-tls"
-            mount_path = "/etc/nginx/certs"
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
             read_only  = true
           }
-          volume_mount {
-            name       = "nginx-config"
-            mount_path = "/etc/nginx/nginx.conf"
-            sub_path   = "nginx.conf"
-          }
-
-          resources {
-            requests = {
-              cpu    = "50m"
-              memory = "64Mi"
-            }
-            limits = {
-              cpu    = "200m"
-              memory = "256Mi"
-            }
-          }
         }
 
-        # Tailscale sidecar — registers as `mcp-searxng` under mcp_user so the
-        # pod can reach `searxng.hs.<magic>` over the tailnet for upstream calls.
+        # Tailscale sidecar — egress-only (no TS_HOSTNAME is still advertised
+        # to Headscale, but no traffic is destined to this node).
         container {
           name  = "tailscale"
           image = var.image_tailscale
@@ -188,24 +151,12 @@ resource "kubernetes_deployment" "mcp_searxng" {
         }
 
         volume {
-          name = "nginx-config"
-          config_map {
-            name = kubernetes_config_map.mcp_searxng_nginx_config.metadata[0].name
-          }
-        }
-        volume {
-          name = "mcp-searxng-tls"
-          secret {
-            secret_name = "mcp-searxng-tls"
-          }
-        }
-        volume {
           name = "secrets-store"
           csi {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.mcp_searxng_secret_provider.manifest.metadata.name
+              secretProviderClass = kubernetes_manifest.mcp_shared_secret_provider.manifest.metadata.name
             }
           }
         }
@@ -225,7 +176,7 @@ resource "kubernetes_deployment" "mcp_searxng" {
   }
 
   depends_on = [
-    kubernetes_manifest.mcp_searxng_secret_provider,
+    kubernetes_manifest.mcp_shared_secret_provider,
     kubernetes_manifest.mcp_searxng_build,
   ]
 }
@@ -240,9 +191,9 @@ resource "kubernetes_service" "mcp_searxng" {
       app = "mcp-searxng"
     }
     port {
-      name        = "https"
-      port        = 443
-      target_port = 443
+      name        = "http"
+      port        = 8000
+      target_port = 8000
     }
   }
 }

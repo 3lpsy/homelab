@@ -1,33 +1,28 @@
-# In-cluster build pipeline for the exitnode-tinyproxy image.
-#
-# Mirrors nextcloud/mcp-searxng-jobs.tf: BuildKit rootless Job in the shared
-# `builder` namespace joined to the tailnet via a native-sidecar tailscale
-# initContainer so rootless buildkit can reach the internal registry. The Job
-# name is suffixed with sha256 of the Dockerfile so terraform only creates a
-# new Job (= rebuild) when the Dockerfile content changes.
-
-resource "kubernetes_config_map" "exitnode_tinyproxy_build_context" {
+resource "kubernetes_config_map" "mcp_memory_build_context" {
   metadata {
-    name      = "exitnode-tinyproxy-build-context"
+    name      = "mcp-memory-build-context"
     namespace = kubernetes_namespace.builder.metadata[0].name
   }
 
   data = {
-    "Dockerfile" = file("${path.module}/../data/images/tinyproxy/Dockerfile")
+    "Dockerfile" = file("${path.module}/../data/images/mcp-memory/Dockerfile")
+    "server.py"  = file("${path.module}/../data/images/mcp-memory/server.py")
   }
 }
 
 locals {
-  exitnode_tinyproxy_dockerfile_hash = substr(sha256(file("${path.module}/../data/images/tinyproxy/Dockerfile")), 0, 8)
-  exitnode_tinyproxy_build_job_name  = "exitnode-tinyproxy-build-${local.exitnode_tinyproxy_dockerfile_hash}"
+  mcp_memory_dockerfile_hash = substr(sha256(
+    "${file("${path.module}/../data/images/mcp-memory/Dockerfile")}${file("${path.module}/../data/images/mcp-memory/server.py")}"
+  ), 0, 8)
+  mcp_memory_build_job_name = "mcp-memory-build-${local.mcp_memory_dockerfile_hash}"
 }
 
-resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
+resource "kubernetes_manifest" "mcp_memory_build" {
   manifest = {
     apiVersion = "batch/v1"
     kind       = "Job"
     metadata = {
-      name      = local.exitnode_tinyproxy_build_job_name
+      name      = local.mcp_memory_build_job_name
       namespace = kubernetes_namespace.builder.metadata[0].name
     }
     spec = {
@@ -35,7 +30,7 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
       template = {
         metadata = {
           labels = {
-            app = "exitnode-tinyproxy-build"
+            app = "mcp-memory-build"
           }
           annotations = {
             "container.apparmor.security.beta.kubernetes.io/buildkit" = "unconfined"
@@ -52,7 +47,7 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
               restartPolicy = "Always"
               env = [
                 { name = "TS_STATE_DIR", value = "/var/lib/tailscale" },
-                { name = "TS_KUBE_SECRET", value = "exitnode-tinyproxy-builder-tailscale-state" },
+                { name = "TS_KUBE_SECRET", value = "mcp-memory-builder-tailscale-state" },
                 { name = "TS_USERSPACE", value = "false" },
                 {
                   name = "TS_AUTHKEY"
@@ -63,7 +58,7 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
                     }
                   }
                 },
-                { name = "TS_HOSTNAME", value = "exitnode-tinyproxy-builder" },
+                { name = "TS_HOSTNAME", value = "mcp-memory-builder" },
                 { name = "TS_EXTRA_ARGS", value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}" },
               ]
               securityContext = {
@@ -93,7 +88,7 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
                 "--frontend=dockerfile.v0",
                 "--local=context=/workspace",
                 "--local=dockerfile=/workspace",
-                "--output=type=image,name=${local.exitnode_tinyproxy_image},push=true",
+                "--output=type=image,name=${local.thunderbolt_registry}/mcp-memory:latest,push=true",
               ]
               env = [
                 { name = "BUILDKITD_FLAGS", value = "--oci-worker-no-process-sandbox" },
@@ -106,7 +101,7 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
                 }
               }
               volumeMounts = [
-                { name = "dockerfile", mountPath = "/workspace", readOnly = true },
+                { name = "context", mountPath = "/workspace", readOnly = true },
                 { name = "docker-config", mountPath = "/home/user/.docker", readOnly = true },
               ]
               resources = {
@@ -118,9 +113,9 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
 
           volumes = [
             {
-              name = "dockerfile"
+              name = "context"
               configMap = {
-                name = kubernetes_config_map.exitnode_tinyproxy_build_context.metadata[0].name
+                name = kubernetes_config_map.mcp_memory_build_context.metadata[0].name
               }
             },
             {
@@ -173,6 +168,6 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
     kubernetes_role_binding.builder_tailscale,
     kubernetes_secret.builder_registry_pull_secret,
     kubernetes_secret.builder_tailscale_auth,
-    kubernetes_config_map.exitnode_tinyproxy_build_context,
+    kubernetes_config_map.mcp_memory_build_context,
   ]
 }

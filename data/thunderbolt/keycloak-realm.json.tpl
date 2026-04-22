@@ -2,6 +2,8 @@
   "realm": "thunderbolt",
   "enabled": true,
   "sslRequired": "external",
+  "ssoSessionIdleTimeout": 2592000,
+  "ssoSessionMaxLifespan": 2592000,
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -20,7 +22,7 @@
       "directAccessGrantsEnabled": false,
       "publicClient": false,
       "protocol": "openid-connect",
-      "defaultClientScopes": ["openid", "profile", "email"]
+      "defaultClientScopes": ["openid", "profile", "email", "offline_access"]
     }
   ],
   "users": [

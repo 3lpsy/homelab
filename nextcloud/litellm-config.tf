@@ -1,18 +1,22 @@
 locals {
   litellm_config_yaml = yamlencode({
     model_list = [
-      for alias, cfg in var.bedrock_models : {
+      for alias, cfg in var.llm_models : {
         model_name = alias
         litellm_params = { for k, v in {
-          model           = "bedrock/${cfg.model_id}"
-          aws_region_name = coalesce(cfg.aws_region, var.aws_region)
+          model           = "${cfg.provider}/${cfg.model_id}"
+          aws_region_name = cfg.provider == "bedrock" ? coalesce(cfg.aws_region, var.aws_region) : null
           max_tokens      = cfg.max_tokens
-          fake_stream     = cfg.fake_stream
-          cache_control_injection_points = can(regex("anthropic", cfg.model_id)) ? [
+          cache_control_injection_points = cfg.provider == "bedrock" && can(regex("anthropic", cfg.model_id)) ? [
             { location = "message", role = "system" },
             { location = "message", index = -2 },
             { location = "message", index = -1 },
           ] : null
+        } : k => v if v != null }
+        model_info = { for k, v in {
+          input_cost_per_token        = cfg.input_cost_per_token
+          output_cost_per_token       = cfg.output_cost_per_token
+          cache_read_input_token_cost = cfg.cache_read_input_token_cost
         } : k => v if v != null }
       }
     ]

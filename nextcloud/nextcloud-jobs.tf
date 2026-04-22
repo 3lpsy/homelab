@@ -1,6 +1,6 @@
 # In-cluster build pipeline for the nextcloud custom image.
 #
-# Mirrors the mcp-duckduckgo / thunderbolt pattern: rootless BuildKit as a k8s
+# Mirrors the mcp-searxng / thunderbolt pattern: rootless BuildKit as a k8s
 # Job in the `builder` namespace, tailscale native sidecar for registry egress.
 # Job name is suffixed with a sha256 of the Dockerfile so terraform only
 # re-creates a Job when the Dockerfile content changes.

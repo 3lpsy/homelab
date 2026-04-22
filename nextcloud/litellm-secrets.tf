@@ -141,6 +141,7 @@ resource "vault_kv_secret_v2" "litellm_config" {
     database_url          = "postgresql://litellm:${random_password.litellm_db.result}@litellm-postgres:5432/litellm"
     aws_access_key_id     = aws_iam_access_key.litellm_bedrock.id
     aws_secret_access_key = aws_iam_access_key.litellm_bedrock.secret
+    deepinfra_api_key     = var.deepinfra_api_key
   })
 }
 
@@ -192,6 +193,7 @@ resource "kubernetes_manifest" "litellm_secret_provider" {
             { objectName = "litellm_database_url", key = "database_url" },
             { objectName = "litellm_aws_access_key_id", key = "aws_access_key_id" },
             { objectName = "litellm_aws_secret_access_key", key = "aws_secret_access_key" },
+            { objectName = "litellm_deepinfra_api_key", key = "deepinfra_api_key" },
           ]
         },
         {
@@ -231,6 +233,11 @@ resource "kubernetes_manifest" "litellm_secret_provider" {
             objectName = "litellm_aws_secret_access_key"
             secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/litellm/config"
             secretKey  = "aws_secret_access_key"
+          },
+          {
+            objectName = "litellm_deepinfra_api_key"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/litellm/config"
+            secretKey  = "deepinfra_api_key"
           },
           {
             objectName = "litellm_tls_crt"

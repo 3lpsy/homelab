@@ -250,6 +250,16 @@ resource "kubernetes_deployment" "litellm" {
             value = var.aws_region
           }
 
+          env {
+            name = "DEEPINFRA_API_KEY"
+            value_from {
+              secret_key_ref {
+                name = "litellm-secrets"
+                key  = "deepinfra_api_key"
+              }
+            }
+          }
+
           volume_mount {
             name       = "litellm-config"
             mount_path = "/etc/litellm/config.yaml"

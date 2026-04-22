@@ -45,6 +45,8 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+.pytest_cache
+__pycache__
 # Experiment with AI
 .claude/
 memory

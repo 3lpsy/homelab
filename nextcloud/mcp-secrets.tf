@@ -37,6 +37,43 @@ resource "kubernetes_role_binding" "mcp_tailscale" {
   }
 }
 
+# Shared API keys — every MCP server in this namespace authenticates callers
+# against the same Bearer token set. Per-service SPCs below read this Vault
+# secret and materialise a k8s Secret named `<service>-auth` in the mcp ns.
+
+resource "random_password" "mcp_api_keys" {
+  for_each = toset(var.mcp_api_key_users)
+  length   = 48
+  special  = false
+}
+
+# Shared tenant-dir salt — every stateful MCP server in this namespace hashes
+# API keys through this same salt so a given key maps to one on-disk tenant
+# dir across services (e.g. /data/<hash>/memory.jsonl lives beside the
+# filesystem server's /data/<hash>/<session_hash>/ tree on the shared PVC).
+resource "random_password" "mcp_path_salt" {
+  length  = 64
+  special = false
+}
+
+locals {
+  # Sort for determinism — for_each over a set gives unordered iteration, and
+  # we don't want the CSV churning across plans.
+  mcp_api_keys_csv = join(",", [for u in sort(var.mcp_api_key_users) : random_password.mcp_api_keys[u].result])
+}
+
+resource "vault_kv_secret_v2" "mcp_auth" {
+  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+  name  = "mcp/auth"
+  data_json = jsonencode(merge(
+    {
+      api_keys_csv = local.mcp_api_keys_csv
+      path_salt    = random_password.mcp_path_salt.result
+    },
+    { for u, p in random_password.mcp_api_keys : "api_key_${u}" => p.result },
+  ))
+}
+
 # Headscale preauth — shared across all MCP runtime pods. Each pod sets its own
 # TS_HOSTNAME so they register as distinct tailnet nodes under user `mcp_user`.
 

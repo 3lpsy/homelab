@@ -14,10 +14,10 @@ resource "kubernetes_service_account" "mcp" {
 }
 
 locals {
-  # Add a new MCP server name here to grant its tailscale sidecar the RBAC
-  # needed to manage its state secret (`<name>-tailscale-state`).
+  # mcp-shared is the external fronting pod (TLS + routing).
+  # mcp-searxng keeps its own tailscale sidecar for egress to searxng.<hs>.
   mcp_server_names = [
-    "mcp-duckduckgo",
+    "mcp-shared",
     "mcp-searxng",
   ]
 }

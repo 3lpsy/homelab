@@ -1,6 +1,6 @@
-resource "kubernetes_deployment" "mcp_duckduckgo" {
+resource "kubernetes_deployment" "mcp_shared" {
   metadata {
-    name      = "mcp-duckduckgo"
+    name      = "mcp-shared"
     namespace = kubernetes_namespace.mcp.metadata[0].name
   }
 
@@ -11,31 +11,22 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
     }
     selector {
       match_labels = {
-        app = "mcp-duckduckgo"
+        app = "mcp-shared"
       }
     }
 
     template {
       metadata {
         labels = {
-          app = "mcp-duckduckgo"
+          app = "mcp-shared"
         }
         annotations = {
-          # Rolls the pod whenever the build Job's name changes (i.e. whenever
-          # the Dockerfile content hash changes → new image) so `:latest` is
-          # actually re-pulled.
-          "build-job" = local.mcp_duckduckgo_build_job_name
-          # Rolls the pod whenever the nginx config changes.
-          "nginx-config-hash" = sha1(kubernetes_config_map.mcp_duckduckgo_nginx_config.data["nginx.conf"])
+          "nginx-config-hash" = sha1(kubernetes_config_map.mcp_shared_nginx_config.data["nginx.conf"])
         }
       }
 
       spec {
         service_account_name = kubernetes_service_account.mcp.metadata[0].name
-
-        image_pull_secrets {
-          name = kubernetes_secret.mcp_registry_pull_secret.metadata[0].name
-        }
 
         init_container {
           name  = "wait-for-secrets"
@@ -43,7 +34,7 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
           command = [
             "sh", "-c",
             templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
-              secret_file = "mcp_duckduckgo_tls_crt"
+              secret_file = "mcp_shared_tls_crt"
             })
           ]
           volume_mount {
@@ -53,55 +44,8 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
           }
         }
 
-        # DuckDuckGo MCP server (nickclyde/duckduckgo-mcp-server, streamable-http)
-        container {
-          name              = "mcp-duckduckgo"
-          image             = local.mcp_duckduckgo_image
-          image_pull_policy = "Always"
-
-          env {
-            name  = "FASTMCP_HOST"
-            value = "0.0.0.0"
-          }
-          env {
-            name  = "FASTMCP_PORT"
-            value = "8000"
-          }
-          env {
-            name  = "DDG_SAFE_SEARCH"
-            value = "MODERATE"
-          }
-          env {
-            name  = "DDG_REGION"
-            value = "us-en"
-          }
-
-          port {
-            container_port = 8000
-            name           = "http"
-          }
-
-          resources {
-            requests = {
-              cpu    = "50m"
-              memory = "128Mi"
-            }
-            limits = {
-              cpu    = "500m"
-              memory = "512Mi"
-            }
-          }
-
-          readiness_probe {
-            tcp_socket {
-              port = 8000
-            }
-            initial_delay_seconds = 5
-            period_seconds        = 10
-          }
-        }
-
-        # TLS-terminating nginx (exposes /public/mcp-duckduckgo/ on :443)
+        # TLS-terminating nginx — routes /mcp-<name>/ to the matching
+        # ClusterIP service in the mcp namespace.
         container {
           name  = "nginx"
           image = var.image_nginx
@@ -112,7 +56,7 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
           }
 
           volume_mount {
-            name       = "mcp-duckduckgo-tls"
+            name       = "mcp-shared-tls"
             mount_path = "/etc/nginx/certs"
             read_only  = true
           }
@@ -128,13 +72,13 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
               memory = "64Mi"
             }
             limits = {
-              cpu    = "200m"
+              cpu    = "500m"
               memory = "256Mi"
             }
           }
         }
 
-        # Tailscale — routes ALL pod egress through a tailnet exit node
+        # Tailscale sidecar — the only tailnet node for every MCP server now.
         container {
           name  = "tailscale"
           image = var.image_tailscale
@@ -145,7 +89,7 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "mcp-duckduckgo-tailscale-state"
+            value = "mcp-shared-tailscale-state"
           }
           env {
             name  = "TS_USERSPACE"
@@ -162,7 +106,7 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
           }
           env {
             name  = "TS_HOSTNAME"
-            value = var.mcp_duckduckgo_domain
+            value = var.mcp_shared_domain
           }
           env {
             name  = "TS_EXTRA_ARGS"
@@ -188,13 +132,13 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
         volume {
           name = "nginx-config"
           config_map {
-            name = kubernetes_config_map.mcp_duckduckgo_nginx_config.metadata[0].name
+            name = kubernetes_config_map.mcp_shared_nginx_config.metadata[0].name
           }
         }
         volume {
-          name = "mcp-duckduckgo-tls"
+          name = "mcp-shared-tls"
           secret {
-            secret_name = "mcp-duckduckgo-tls"
+            secret_name = "mcp-shared-tls"
           }
         }
         volume {
@@ -203,7 +147,7 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.mcp_duckduckgo_secret_provider.manifest.metadata.name
+              secretProviderClass = kubernetes_manifest.mcp_shared_secret_provider.manifest.metadata.name
             }
           }
         }
@@ -223,19 +167,18 @@ resource "kubernetes_deployment" "mcp_duckduckgo" {
   }
 
   depends_on = [
-    kubernetes_manifest.mcp_duckduckgo_secret_provider,
-    kubernetes_manifest.mcp_duckduckgo_build,
+    kubernetes_manifest.mcp_shared_secret_provider,
   ]
 }
 
-resource "kubernetes_service" "mcp_duckduckgo" {
+resource "kubernetes_service" "mcp_shared" {
   metadata {
-    name      = "mcp-duckduckgo"
+    name      = "mcp-shared"
     namespace = kubernetes_namespace.mcp.metadata[0].name
   }
   spec {
     selector = {
-      app = "mcp-duckduckgo"
+      app = "mcp-shared"
     }
     port {
       name        = "https"

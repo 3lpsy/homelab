@@ -1,6 +1,6 @@
 # In-cluster build pipelines for the thunderbolt frontend and backend images.
 #
-# Mirrors the mcp-duckduckgo pattern: rootless BuildKit as a k8s Job in the
+# Mirrors the mcp-searxng pattern: rootless BuildKit as a k8s Job in the
 # `builder` namespace with a native-sidecar tailscale container for registry
 # egress. Job name is suffixed with a sha256 of the build context so terraform
 # only re-creates a Job (= triggers a rebuild) when any input file changes.

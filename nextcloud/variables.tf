@@ -202,60 +202,118 @@ variable "image_litellm" {
   default = "ghcr.io/berriai/litellm:main-latest"
 }
 
-variable "bedrock_models" {
-  description = "Map of alias name to Bedrock model config. `fake_stream = true` forces non-streaming upstream + synthesized SSE downstream — needed for non-Claude models on Bedrock that either don't support streaming or don't support tools during streaming (e.g. Llama 4 Maverick)."
+variable "llm_models" {
+  description = "Map of alias name to LiteLLM model config. `provider` selects upstream: `bedrock` (AWS IAM creds, optional per-model aws_region) or `deepinfra` (DEEPINFRA_API_KEY)."
   type = map(object({
-    model_id    = string
-    max_tokens  = optional(number)
-    aws_region  = optional(string)
-    fake_stream = optional(bool)
+    provider                    = string
+    model_id                    = string
+    max_tokens                  = optional(number)
+    aws_region                  = optional(string)
+    input_cost_per_token        = optional(number)
+    output_cost_per_token       = optional(number)
+    cache_read_input_token_cost = optional(number)
   }))
   default = {
-    "claude-sonnet-4-20250514" = {
-      model_id   = "us.anthropic.claude-sonnet-4-6"
-      max_tokens = 16000
+    # ============================================================
+    # FLAGSHIP — 100B-class MoE, fits 2×R9700 at 4-bit
+    # ============================================================
+    "flagship-gpt-oss-120b" = {
+      provider              = "deepinfra"
+      model_id              = "openai/gpt-oss-120b"
+      max_tokens            = 16000
+      input_cost_per_token  = 3.9e-8
+      output_cost_per_token = 1.9e-7
     }
-    "claude-opus-4-20250514" = {
-      model_id   = "us.anthropic.claude-opus-4-6-v1"
-      max_tokens = 8000
+
+    # ============================================================
+    # AGENTIC — 80-106B MoE, different architectural strengths
+    # ============================================================
+    "agent-glm-4.5-air" = {
+      provider              = "deepinfra"
+      model_id              = "zai-org/GLM-4.5-Air"
+      max_tokens            = 16000
+      input_cost_per_token  = 2e-7
+      output_cost_per_token = 1.1e-6
     }
-    "claude-haiku-4-5" = {
-      model_id   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-      max_tokens = 16000
+
+    "agent-qwen3-next-80b" = {
+      provider              = "deepinfra"
+      model_id              = "Qwen/Qwen3-Next-80B-A3B-Instruct"
+      max_tokens            = 32000 # long context shines here
+      input_cost_per_token  = 9e-8
+      output_cost_per_token = 1.1e-6
     }
-    "kimi-k2.5" = {
-      model_id    = "moonshotai.kimi-k2.5"
-      max_tokens  = 16000
-      fake_stream = true
+
+    # ============================================================
+    # CODING — 30B-A3B class, single-card friendly, A/B pair
+    # ============================================================
+    "coding-qwen-3.6-35b-a3b" = {
+      provider              = "deepinfra"
+      model_id              = "Qwen/Qwen3.6-35B-A3B"
+      max_tokens            = 16000
+      input_cost_per_token  = 2e-7
+      output_cost_per_token = 1e-6
     }
-    "glm-5" = {
-      model_id    = "zai.glm-5"
-      max_tokens  = 16000
-      fake_stream = true
+
+    "coding-glm-4.7-flash" = {
+      provider              = "deepinfra"
+      model_id              = "zai-org/GLM-4.7-Flash"
+      max_tokens            = 16000
+      input_cost_per_token  = 6e-8
+      output_cost_per_token = 4e-7
     }
-    "deepseek-v3.2" = {
-      model_id    = "deepseek.v3.2"
-      max_tokens  = 8000
-      fake_stream = true
+
+    # ============================================================
+    # DEFAULT — dense multimodal, runs on single R9700
+    # ============================================================
+    "default-gemma-4-31b" = {
+      provider              = "deepinfra"
+      model_id              = "google/gemma-4-31B-it"
+      max_tokens            = 16000
+      input_cost_per_token  = 1.3e-7
+      output_cost_per_token = 3.8e-7
     }
-    "qwen3-coder-480b" = {
-      model_id    = "qwen.qwen3-coder-480b-a35b-v1:0"
-      aws_region  = "us-west-2"
-      max_tokens  = 16000
-      fake_stream = true
+
+    # ============================================================
+    # BULK/FAST — small, cheap, high-throughput
+    # ============================================================
+    "default-qwen-3.5-4b" = {
+      provider              = "deepinfra"
+      model_id              = "Qwen/Qwen3.5-4B"
+      max_tokens            = 8000
+      input_cost_per_token  = 3e-8
+      output_cost_per_token = 1.5e-7
     }
-    "qwen3-235b" = {
-      model_id    = "qwen.qwen3-235b-a22b-2507-v1:0"
-      aws_region  = "us-west-2"
-      max_tokens  = 8000
-      fake_stream = true
+
+    "bulk-qwen-3.5-2b" = {
+      provider              = "deepinfra"
+      model_id              = "Qwen/Qwen3.5-2B"
+      max_tokens            = 4000
+      input_cost_per_token  = 2e-8
+      output_cost_per_token = 1e-7
     }
-    "llama4-maverick" = {
-      model_id    = "us.meta.llama4-maverick-17b-instruct-v1:0"
-      max_tokens  = 8000
-      fake_stream = true
+
+    "bulk-gpt-oss-20b" = {
+      provider              = "deepinfra"
+      model_id              = "openai/gpt-oss-20b"
+      max_tokens            = 8000
+      input_cost_per_token  = 3e-8
+      output_cost_per_token = 1.4e-7
+    }
+
+    "reasoning-qwen-3.5-27b" = {
+      provider              = "deepinfra"
+      model_id              = "Qwen/Qwen3.5-27B"
+      max_tokens            = 8000
+      input_cost_per_token  = 2.6e-7
+      output_cost_per_token = 2.6e-6
     }
   }
+}
+
+variable "deepinfra_api_key" {
+  type      = string
+  sensitive = true
 }
 
 # Thunderbolt
@@ -271,9 +329,22 @@ variable "thunderbolt_ref" {
   default     = "main"
 }
 
-variable "mcp_duckduckgo_domain" {
-  type    = string
-  default = "mcp-duckduckgo"
+variable "mcp_filesystem_log_level" {
+  description = "LOG_LEVEL for the filesystem MCP server (debug / info / warning / error)."
+  type        = string
+  default     = "info"
+}
+
+variable "mcp_memory_log_level" {
+  description = "LOG_LEVEL for the memory MCP server (debug / info / warning / error)."
+  type        = string
+  default     = "info"
+}
+
+variable "mcp_searxng_log_level" {
+  description = "LOG_LEVEL for the searxng MCP server (debug / info / warning / error)."
+  type        = string
+  default     = "info"
 }
 
 variable "searxng_domain" {
@@ -291,10 +362,15 @@ variable "mcp_searxng_domain" {
   default = "mcp-searxng"
 }
 
-variable "mcp_searxng_api_key_count" {
-  description = "How many random Bearer API keys to mint for the searxng MCP. Consumers read them from vault at mcp/mcp-searxng/auth."
-  type        = number
-  default     = 2
+variable "mcp_shared_domain" {
+  type    = string
+  default = "mcp-shared"
+}
+
+variable "mcp_api_key_users" {
+  description = "Named consumers of the shared MCP auth pool. One random Bearer key is minted per name and stored at vault `mcp/auth` under `api_key_<name>`, plus the aggregate `api_keys_csv` that every MCP pod reads."
+  type        = list(string)
+  default     = ["thunderbolt", "litellm"]
 }
 
 variable "image_thunderbolt_postgres" {
@@ -327,13 +403,22 @@ locals {
   thunderbolt_public_url     = "https://${local.thunderbolt_fqdn}"
   thunderbolt_admin_email    = "thunderbolt@${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
-  mcp_duckduckgo_image = "${local.thunderbolt_registry}/mcp-duckduckgo:latest"
-  mcp_duckduckgo_fqdn  = "${var.mcp_duckduckgo_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  mcp_duckduckgo_path  = "/public/mcp-duckduckgo"
+  mcp_searxng_image    = "${local.thunderbolt_registry}/mcp-searxng:latest"
+  mcp_filesystem_image = "${local.thunderbolt_registry}/mcp-filesystem:latest"
+  mcp_memory_image     = "${local.thunderbolt_registry}/mcp-memory:latest"
 
-  mcp_searxng_image = "${local.thunderbolt_registry}/mcp-searxng:latest"
-  mcp_searxng_fqdn  = "${var.mcp_searxng_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  mcp_searxng_path  = "/public/mcp-searxng"
+  mcp_shared_fqdn = "${var.mcp_shared_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+
+  # Backends the shared nginx proxies to. `upstream_path` is where each
+  # backend mounts its MCP endpoint. All three fastmcp servers mount at
+  # `/`, so nginx just strips the `/mcp-<name>/` prefix and passes the
+  # rest through — clients address every backend as the bare
+  # `/mcp-<name>/` URL.
+  mcp_backend_services = {
+    "mcp-filesystem" = { upstream_path = "/" }
+    "mcp-memory"     = { upstream_path = "/" }
+    "mcp-searxng"    = { upstream_path = "/" }
+  }
 
   exitnode_tinyproxy_image = "${local.thunderbolt_registry}/exitnode-tinyproxy:latest"
 

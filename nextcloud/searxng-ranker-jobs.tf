@@ -1,4 +1,4 @@
-# BuildKit job for the searxng-ranker image. Mirrors nextcloud/mcp-duckduckgo-jobs.tf
+# BuildKit job for the searxng-ranker image. Mirrors nextcloud/mcp-searxng-jobs.tf
 # and nextcloud/exitnode-tinyproxy-jobs.tf. Job name is suffixed with sha256 of
 # the Dockerfile — new Job (= rebuild) only when Dockerfile changes.
 

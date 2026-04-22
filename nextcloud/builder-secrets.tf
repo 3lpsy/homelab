@@ -28,8 +28,9 @@ resource "kubernetes_role" "builder_tailscale" {
     api_groups = [""]
     resources  = ["secrets"]
     resource_names = [
-      "mcp-duckduckgo-builder-tailscale-state",
       "mcp-searxng-builder-tailscale-state",
+      "mcp-filesystem-builder-tailscale-state",
+      "mcp-memory-builder-tailscale-state",
       "thunderbolt-frontend-builder-tailscale-state",
       "thunderbolt-backend-builder-tailscale-state",
       "nextcloud-builder-tailscale-state",

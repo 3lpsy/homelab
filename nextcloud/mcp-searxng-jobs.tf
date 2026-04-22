@@ -5,14 +5,14 @@ resource "kubernetes_config_map" "mcp_searxng_build_context" {
   }
 
   data = {
-    "Dockerfile" = file("${path.module}/../data/images/searxng-mcp/Dockerfile")
-    "server.py"  = file("${path.module}/../data/images/searxng-mcp/server.py")
+    "Dockerfile" = file("${path.module}/../data/images/mcp-searxng/Dockerfile")
+    "server.py"  = file("${path.module}/../data/images/mcp-searxng/server.py")
   }
 }
 
 locals {
   mcp_searxng_dockerfile_hash = substr(sha256(
-    "${file("${path.module}/../data/images/searxng-mcp/Dockerfile")}${file("${path.module}/../data/images/searxng-mcp/server.py")}"
+    "${file("${path.module}/../data/images/mcp-searxng/Dockerfile")}${file("${path.module}/../data/images/mcp-searxng/server.py")}"
   ), 0, 8)
   mcp_searxng_build_job_name = "mcp-searxng-build-${local.mcp_searxng_dockerfile_hash}"
 }
