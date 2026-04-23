@@ -67,6 +67,7 @@ resource "kubernetes_deployment" "exitnode" {
           command = ["/bin/sh", "-c"]
           args = [<<-EOT
             cp /wg-secret/wg0.conf /tmp/wg0.conf &&
+            chmod 600 /tmp/wg0.conf &&
             DEFAULT_GW=$(ip route | awk '/default/{print $3; exit}') &&
             DEFAULT_DEV=$(ip route | awk '/default/{print $5; exit}') &&
             sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
@@ -139,6 +140,17 @@ resource "kubernetes_deployment" "exitnode" {
           security_context {
             capabilities {
               add = ["NET_ADMIN"]
+            }
+          }
+
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
             }
           }
 

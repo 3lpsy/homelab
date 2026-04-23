@@ -1,3 +1,8 @@
+# Drop per-request info logs that leak user_id / client_id / rid on every
+# sync tick. `warn` keeps backend errors visible.
+logger:
+  level: warn
+
 replication:
   connections:
     - type: postgresql

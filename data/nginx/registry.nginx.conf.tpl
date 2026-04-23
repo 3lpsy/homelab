@@ -2,6 +2,20 @@ events {
   worker_connections 1024;
 }
 http {
+  # Drop query args from access log — registry uploads pack `_state=<long
+  # signed blob>&digest=<sha>` into every PUT/POST which bloats the log and
+  # isn't useful for ops.
+  log_format redacted '$remote_addr - $remote_user [$time_local] '
+                      '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent"';
+
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /var/log/nginx/access.log redacted if=$loggable;
+  error_log /dev/stderr crit;
+
   upstream registry {
     server localhost:5000;
   }
@@ -11,6 +25,7 @@ http {
 
   server {
     listen 443 ssl;
+    http2 on;
     server_name ${server_domain};
 
     ssl_certificate     /etc/nginx/certs/tls.crt;

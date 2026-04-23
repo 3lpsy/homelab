@@ -16,6 +16,9 @@ resource "kubernetes_deployment" "ntfy" {
     template {
       metadata {
         labels = { app = "ntfy" }
+        annotations = {
+          "nginx-config-hash" = sha1(kubernetes_config_map.ntfy_nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {

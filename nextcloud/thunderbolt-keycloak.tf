@@ -109,6 +109,21 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
             }
           }
 
+          env {
+            name  = "JAVA_OPTS_APPEND"
+            value = "-XX:InitialRAMPercentage=25 -XX:MaxRAMPercentage=60"
+          }
+
+          # Suppress the org.keycloak.events logger — routine
+          # CODE_TO_TOKEN_ERROR / LOGIN_ERROR entries include username,
+          # userId, sessionId and ipAddress at WARN. Keeping the root at
+          # INFO so other loggers still surface, only the events category
+          # is bumped to ERROR. Format is `root,category:level,…`.
+          env {
+            name  = "KC_LOG_LEVEL"
+            value = "INFO,org.keycloak.events:ERROR"
+          }
+
           port {
             container_port = 8080
             name           = "http"
@@ -128,11 +143,11 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
           resources {
             requests = {
               cpu    = "200m"
-              memory = "512Mi"
+              memory = "1.5Gi"
             }
             limits = {
               cpu    = "1500m"
-              memory = "1.5Gi"
+              memory = "4Gi"
             }
           }
 

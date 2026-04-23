@@ -27,6 +27,12 @@ resource "kubernetes_stateful_set" "vault" {
         labels = {
           app = "vault"
         }
+        annotations = {
+          # Forces pod roll when vault.hcl changes (e.g. log_level tweaks).
+          # Without this, CM content updates go unnoticed since the StatefulSet
+          # template hash doesn't change on CM-only edits.
+          "config-hash" = sha1(kubernetes_config_map.vault_config.data["vault.hcl"])
+        }
       }
 
       spec {

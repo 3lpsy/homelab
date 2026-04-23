@@ -12,5 +12,10 @@ resource "kubernetes_config_map" "coredns_tailscale_node_override" {
         forward . 100.100.100.100
       }
     EOT
+
+    # Satisfies k3s CoreDNS's `import /etc/coredns/custom/*.override` glob so
+    # it stops emitting `[WARNING] No files matching import glob pattern` on
+    # every reload. Empty file is a no-op import.
+    "empty.override" = ""
   }
 }

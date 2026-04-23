@@ -3,6 +3,25 @@ events {
 }
 
 http {
+  # Redacted access log. Drops:
+  #   - query string (so ?client_id=<uuid> on powersync endpoints is gone)
+  #   - path segment on /v1/pro/link-preview/<URL-ENCODED-URL>/... since that
+  #     reveals which links the user is viewing.
+  map $uri $logged_uri {
+    default                        $uri;
+    "~^/v1/pro/link-preview/"      /v1/pro/link-preview/REDACTED;
+  }
+  log_format redacted '$remote_addr - $remote_user [$time_local] '
+                      '"$request_method $logged_uri $server_protocol" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent"';
+
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /var/log/nginx/access.log redacted if=$loggable;
+  error_log /dev/stderr crit;
+
   upstream thunderbolt_frontend  { server 127.0.0.1:80; }
   upstream thunderbolt_backend   { server thunderbolt-backend.thunderbolt.svc.cluster.local:8000; }
   upstream thunderbolt_powersync { server thunderbolt-powersync.thunderbolt.svc.cluster.local:8080; }
@@ -10,6 +29,7 @@ http {
 
   server {
     listen 443 ssl;
+    http2 on;
     server_name ${server_domain};
 
     ssl_certificate     /etc/nginx/certs/tls.crt;
@@ -79,6 +99,20 @@ http {
     # Block source maps
     location ~* \.map$ {
       return 404;
+    }
+
+    # Better-auth fallback: server-side basePath defaults to `/api/auth`
+    # (no override in upstream), so its error/success redirects land
+    # outside the /v1 prefix. Rewrite to /v1/api/auth/* so the backend
+    # renders something instead of SPA index.html.
+    location ^~ /api/auth/ {
+      rewrite ^/api/auth/(.*) /v1/api/auth/$1 break;
+      proxy_pass http://thunderbolt_backend;
+      proxy_http_version 1.1;
+      proxy_set_header Host $http_host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # SPA (frontend container)

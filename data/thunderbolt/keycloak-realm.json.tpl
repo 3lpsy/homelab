@@ -22,7 +22,7 @@
       "directAccessGrantsEnabled": false,
       "publicClient": false,
       "protocol": "openid-connect",
-      "defaultClientScopes": ["openid", "profile", "email", "offline_access"]
+      "defaultClientScopes": ["openid", "profile", "email"]
     }
   ],
   "users": [

@@ -2,12 +2,20 @@ events {
   worker_connections 1024;
 }
 http {
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /var/log/nginx/access.log combined if=$loggable;
+  error_log /dev/stderr crit;
+
   upstream pihole {
     server localhost:80;
   }
 
   server {
     listen 443 ssl;
+    http2 on;
     server_name ${server_domain};
 
     ssl_certificate     /etc/nginx/certs/tls.crt;

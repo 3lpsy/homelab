@@ -132,7 +132,7 @@ resource "kubernetes_deployment" "collabora" {
           resources {
             requests = {
               cpu    = "1000m"
-              memory = "2Gi"
+              memory = "512Mi"
             }
             limits = {
               cpu    = "4000m"
@@ -146,9 +146,13 @@ resource "kubernetes_deployment" "collabora" {
             }
           }
 
+          # tcpSocket instead of httpGet — collabora treats kube-probe's
+          # connection close on a websocket-capable endpoint as an ERR
+          # (ECONNRESET + EPIPE pair every probe), spamming logs. tcpSocket
+          # only checks the port is accepting connections, which is enough
+          # signal for liveness and doesn't trigger websocket handshake.
           liveness_probe {
-            http_get {
-              path = "/hosting/discovery"
+            tcp_socket {
               port = 9980
             }
             initial_delay_seconds = 30
@@ -157,8 +161,7 @@ resource "kubernetes_deployment" "collabora" {
           }
 
           readiness_probe {
-            http_get {
-              path = "/hosting/discovery"
+            tcp_socket {
               port = 9980
             }
             initial_delay_seconds = 30
@@ -273,6 +276,17 @@ resource "kubernetes_deployment" "collabora" {
           security_context {
             capabilities {
               add = ["NET_ADMIN"]
+            }
+          }
+
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
             }
           }
 

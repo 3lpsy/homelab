@@ -197,6 +197,11 @@ resource "kubernetes_deployment" "litellm" {
         container {
           name  = "litellm"
           image = var.image_litellm
+          # :main-latest moves — force fresh pull so Prisma migrations run
+          # against the newest schema on each rollout. Fixes the recurring
+          # `column LiteLLM_MCPServerTable.source_url does not exist` log
+          # dumps from the old in-cluster schema.
+          image_pull_policy = "Always"
 
           args = ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
 
@@ -275,7 +280,7 @@ resource "kubernetes_deployment" "litellm" {
           resources {
             requests = {
               cpu    = "100m"
-              memory = "512Mi"
+              memory = "1Gi"
             }
             limits = {
               cpu    = "500m"
@@ -374,6 +379,17 @@ resource "kubernetes_deployment" "litellm" {
           security_context {
             capabilities {
               add = ["NET_ADMIN"]
+            }
+          }
+
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
             }
           }
 

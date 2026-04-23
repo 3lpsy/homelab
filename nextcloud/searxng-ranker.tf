@@ -4,6 +4,23 @@
 # restart of the searxng Deployment via pod-template annotation.
 
 resource "kubernetes_deployment" "searxng_ranker" {
+  # Fail fast if the WG dir is empty — otherwise EXITNODE_PROXIES renders
+  # as the empty string, the ranker script exits immediately with
+  # "no EXITNODE_PROXIES configured", and the kubernetes provider blocks
+  # for the full rollout timeout waiting on a pod that never gets Ready.
+  lifecycle {
+    precondition {
+      condition     = length(local.exitnode_names) > 0
+      error_message = "No *.conf files found in var.wireguard_config_dir (${var.wireguard_config_dir}); searxng-ranker requires at least one exit node."
+    }
+  }
+
+  # Surface misconfigs in ~3m instead of the 10m k8s-provider default.
+  timeouts {
+    create = "3m"
+    update = "3m"
+  }
+
   metadata {
     name      = "searxng-ranker"
     namespace = kubernetes_namespace.searxng.metadata[0].name
@@ -102,11 +119,11 @@ resource "kubernetes_deployment" "searxng_ranker" {
           resources {
             requests = {
               cpu    = "50m"
-              memory = "128Mi"
+              memory = "192Mi"
             }
             limits = {
               cpu    = "500m"
-              memory = "256Mi"
+              memory = "512Mi"
             }
           }
 

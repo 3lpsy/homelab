@@ -347,6 +347,91 @@ variable "mcp_searxng_log_level" {
   default     = "info"
 }
 
+variable "mcp_prometheus_log_level" {
+  description = "LOG_LEVEL for the prometheus MCP server (debug / info / warning / error)."
+  type        = string
+  default     = "info"
+}
+
+variable "mcp_prometheus_url" {
+  description = "Upstream Prometheus base URL for the MCP server. Default points at the in-cluster monitoring stack; set to an external/Mimir URL to retarget."
+  type        = string
+  default     = "http://prometheus.monitoring.svc.cluster.local:9090"
+}
+
+variable "mcp_litellm_log_level" {
+  description = "LOG_LEVEL for the litellm MCP server (debug / info / warning / error)."
+  type        = string
+  default     = "info"
+}
+
+variable "mcp_litellm_domain" {
+  description = "Tailnet hostname for the mcp-litellm tailscale sidecar. Egress-only; no traffic is destined to this node."
+  type        = string
+  default     = "mcp-litellm-egress"
+}
+
+variable "mcp_litellm_upstream_timeout" {
+  description = "httpx timeout (seconds) for upstream LiteLLM calls. /user/daily/activity and /spend/logs can be slow on busy proxies; bump if you see 'LiteLLM timed out' ToolErrors but /key/info returns promptly."
+  type        = number
+  default     = 60
+}
+
+variable "mcp_litellm_max_logs" {
+  description = "Hard cap on rows pulled from /spend/logs per tool call. Aggregation tools also respect it. Bump if monthly summaries return truncated=true."
+  type        = number
+  default     = 2000
+}
+
+variable "mcp_litellm_key_hashes" {
+  description = "Map from MCP tenant name (must match an entry in var.mcp_api_key_users) to a list of LiteLLM virtual-key hashes that tenant's MCP bearer is allowed to query spend for. Missing tenants or empty lists mean the tenant can query no spend. Hashes aren't secret — they're only filters against LiteLLM's DB, which authenticates via the master key the MCP pod holds. The hash is the 64-char lowercase hex shown as 'Hashed Token' in the LiteLLM UI."
+  type        = map(list(string))
+  default     = {}
+}
+
+variable "mcp_time_log_level" {
+  description = "LOG_LEVEL for the time MCP server (debug / info / warning / error)."
+  type        = string
+  default     = "info"
+}
+
+variable "mcp_time_default_timezone" {
+  description = "IANA zone the time MCP server uses when a tool call omits the timezone arg. Validated at pod boot (invalid zone crashes the pod)."
+  type        = string
+  default     = "America/Chicago"
+}
+
+variable "mcp_k8s_log_level" {
+  description = "LOG_LEVEL for the mcp-k8s auth-gate sidecar (debug / info / warning / error). The upstream binary's log level is set in mcp-k8s-config.tf."
+  type        = string
+  default     = "info"
+}
+
+variable "mcp_k8s_allowed_namespaces" {
+  description = "Namespaces the mcp-k8s server can read pods/logs/events from. Each entry gets a Role+RoleBinding scoped to that namespace; nothing else is reachable. Empty list = no access (server starts but every tool call returns RBAC forbidden). All listed namespaces must already exist at apply time. The `monitoring` namespace is created by the monitoring deployment (applied after this one), so add it after the monitoring deployment exists."
+  type        = list(string)
+  default = [
+    # `default` is included so upstream tools that default to the caller's
+    # current namespace (events_list with no namespace arg) don't 403 —
+    # there are no workloads here, so read grants are benign.
+    "default",
+    "exitnode",
+    "kube-system",
+    "litellm",
+    "mcp",
+    "monitoring",
+    "nextcloud",
+    "pihole",
+    "radicale",
+    "registry",
+    "searxng",
+    "thunderbolt",
+    # `vault` intentionally omitted — vault logs can include unseal /
+    # key-material context; no MCP bearer should be able to read them.
+    # Use `kubectl logs -n vault` out-of-band for vault debugging.
+  ]
+}
+
 variable "searxng_domain" {
   type    = string
   default = "searxng"
@@ -370,7 +455,7 @@ variable "mcp_shared_domain" {
 variable "mcp_api_key_users" {
   description = "Named consumers of the shared MCP auth pool. One random Bearer key is minted per name and stored at vault `mcp/auth` under `api_key_<name>`, plus the aggregate `api_keys_csv` that every MCP pod reads."
   type        = list(string)
-  default     = ["thunderbolt", "litellm"]
+  default     = ["thunderbolt", "litellm", "claude", "opencode"]
 }
 
 variable "image_thunderbolt_postgres" {
@@ -403,21 +488,30 @@ locals {
   thunderbolt_public_url     = "https://${local.thunderbolt_fqdn}"
   thunderbolt_admin_email    = "thunderbolt@${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
-  mcp_searxng_image    = "${local.thunderbolt_registry}/mcp-searxng:latest"
-  mcp_filesystem_image = "${local.thunderbolt_registry}/mcp-filesystem:latest"
-  mcp_memory_image     = "${local.thunderbolt_registry}/mcp-memory:latest"
+  mcp_searxng_image       = "${local.thunderbolt_registry}/mcp-searxng:latest"
+  mcp_filesystem_image    = "${local.thunderbolt_registry}/mcp-filesystem:latest"
+  mcp_memory_image        = "${local.thunderbolt_registry}/mcp-memory:latest"
+  mcp_prometheus_image    = "${local.thunderbolt_registry}/mcp-prometheus:latest"
+  mcp_time_image          = "${local.thunderbolt_registry}/mcp-time:latest"
+  mcp_k8s_image           = "${local.thunderbolt_registry}/mcp-k8s:latest"
+  mcp_k8s_auth_gate_image = "${local.thunderbolt_registry}/mcp-k8s-auth-gate:latest"
+  mcp_litellm_image       = "${local.thunderbolt_registry}/mcp-litellm:latest"
 
   mcp_shared_fqdn = "${var.mcp_shared_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
   # Backends the shared nginx proxies to. `upstream_path` is where each
-  # backend mounts its MCP endpoint. All three fastmcp servers mount at
-  # `/`, so nginx just strips the `/mcp-<name>/` prefix and passes the
-  # rest through — clients address every backend as the bare
-  # `/mcp-<name>/` URL.
+  # backend mounts its MCP endpoint. All fastmcp servers mount at `/`;
+  # mcp-k8s's auth-gate sidecar rewrites bare `/` to the upstream Go
+  # binary's `/mcp` Streamable HTTP route. So every MCP is addressed
+  # uniformly as `/mcp-<name>/`. upstream_path stays `/` for all.
   mcp_backend_services = {
     "mcp-filesystem" = { upstream_path = "/" }
     "mcp-memory"     = { upstream_path = "/" }
     "mcp-searxng"    = { upstream_path = "/" }
+    "mcp-prometheus" = { upstream_path = "/" }
+    "mcp-time"       = { upstream_path = "/" }
+    "mcp-litellm"    = { upstream_path = "/" }
+    "mcp-k8s"        = { upstream_path = "/" }
   }
 
   exitnode_tinyproxy_image = "${local.thunderbolt_registry}/exitnode-tinyproxy:latest"

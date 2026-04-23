@@ -208,3 +208,4 @@ resource "kubernetes_manifest" "registry_secret_provider" {
     vault_policy.registry
   ]
 }
+

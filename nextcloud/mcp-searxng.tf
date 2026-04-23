@@ -32,6 +32,22 @@ resource "kubernetes_deployment" "mcp_searxng" {
           name = kubernetes_secret.mcp_registry_pull_secret.metadata[0].name
         }
 
+        init_container {
+          name  = "wait-for-secrets"
+          image = var.image_busybox
+          command = [
+            "sh", "-c",
+            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
+              secret_file = "mcp_shared_api_keys_csv"
+            })
+          ]
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+        }
+
         # SearXNG MCP server — TLS + external routing live in mcp-shared.
         # Tailscale sidecar is retained because this pod needs outbound
         # tailnet access to reach searxng.<hs>.<magic> for upstream calls
@@ -84,17 +100,52 @@ resource "kubernetes_deployment" "mcp_searxng" {
           }
 
           readiness_probe {
-            tcp_socket {
+            http_get {
+              path = "/healthz"
               port = 8000
             }
             initial_delay_seconds = 5
             period_seconds        = 10
+          }
+          # Slower liveness — ~90s grace so a slow upstream SearXNG or
+          # tailnet blip doesn't flap the pod.
+          liveness_probe {
+            http_get {
+              path = "/healthz"
+              port = 8000
+            }
+            initial_delay_seconds = 20
+            period_seconds        = 30
+            failure_threshold     = 3
+            timeout_seconds       = 5
+          }
+
+          # Container-level only: pod-level run_as_non_root would break the
+          # tailscale sidecar (needs root + NET_ADMIN).
+          security_context {
+            run_as_non_root            = true
+            run_as_user                = 1000
+            run_as_group               = 1000
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            capabilities {
+              drop = ["ALL"]
+            }
+            seccomp_profile {
+              type = "RuntimeDefault"
+            }
           }
 
           volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
             read_only  = true
+          }
+          # /tmp emptyDir for Python / httpx / certifi temp writes; required
+          # because read_only_root_filesystem is on.
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
           }
         }
 
@@ -140,6 +191,17 @@ resource "kubernetes_deployment" "mcp_searxng" {
             }
           }
 
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
+            }
+          }
+
           volume_mount {
             name       = "dev-net-tun"
             mount_path = "/dev/net/tun"
@@ -169,6 +231,10 @@ resource "kubernetes_deployment" "mcp_searxng" {
         }
         volume {
           name = "tailscale-state"
+          empty_dir {}
+        }
+        volume {
+          name = "tmp"
           empty_dir {}
         }
       }

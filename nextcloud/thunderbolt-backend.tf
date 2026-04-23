@@ -175,6 +175,23 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
             value = "https://${var.searxng_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
           }
 
+          # Chat-completion upstream — route /v1/chat/completions through
+          # LiteLLM on the tailnet. Required to stop the `Thunderbolt
+          # inference URL or API key not configured` 500s on every request.
+          env {
+            name  = "THUNDERBOLT_INFERENCE_URL"
+            value = "https://${var.litellm_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+          }
+          env {
+            name = "THUNDERBOLT_INFERENCE_API_KEY"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.thunderbolt_inference.metadata[0].name
+                key  = "api_key"
+              }
+            }
+          }
+
           port {
             container_port = 8000
             name           = "http"
@@ -248,6 +265,17 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
           security_context {
             capabilities {
               add = ["NET_ADMIN"]
+            }
+          }
+
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
             }
           }
 

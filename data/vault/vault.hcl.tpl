@@ -1,5 +1,9 @@
 ui = true
 
+# Silence routine INFO-level `expiration: revoked lease` / `token create` lines
+# that reveal CSI auth cadence. Real issues still log at warn/error.
+log_level = "warn"
+
 # Internal listener for in-cluster communication (no TLS)
 listener "tcp" {
   address         = "0.0.0.0:8200"

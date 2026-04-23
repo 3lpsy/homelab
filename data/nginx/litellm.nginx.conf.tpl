@@ -2,12 +2,26 @@ events {
   worker_connections 1024;
 }
 http {
+  # Redacted access log: drop query string so ?api_key=<hash> / ?key=<hash>
+  # from LiteLLM admin calls don't land on disk.
+  log_format redacted '$remote_addr - $remote_user [$time_local] '
+                      '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent"';
+
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /var/log/nginx/access.log redacted if=$loggable;
+  error_log /dev/stderr crit;
+
   upstream litellm {
     server 127.0.0.1:4000;
   }
 
   server {
     listen 443 ssl;
+    http2 on;
     server_name ${server_domain};
 
     ssl_certificate     /etc/nginx/certs/tls.crt;

@@ -16,6 +16,11 @@ resource "kubernetes_deployment" "grafana" {
     template {
       metadata {
         labels = { app = "grafana" }
+        annotations = {
+          "datasources-hash"  = sha1(kubernetes_config_map.grafana_datasources.data["datasources.yaml"])
+          "dashboards-hash"   = sha1(kubernetes_config_map.grafana_dashboard_provisioning.data["dashboards.yaml"])
+          "nginx-config-hash" = sha1(kubernetes_config_map.grafana_nginx_config.data["nginx.conf"])
+        }
       }
 
       spec {
@@ -92,6 +97,14 @@ resource "kubernetes_deployment" "grafana" {
             name       = "grafana-data"
             mount_path = "/var/lib/grafana"
           }
+          # Empty dir at the path the `file` dashboard provider polls every
+          # 30s. Without this, grafana spams `Cannot read directory` ERRORs.
+          # Actual dashboards are provisioned via API by the monitoring-conf
+          # deployment, not through this path.
+          volume_mount {
+            name       = "grafana-dashboards-empty"
+            mount_path = "/var/lib/grafana/dashboards"
+          }
           volume_mount {
             name       = "grafana-datasources"
             mount_path = "/etc/grafana/provisioning/datasources"
@@ -147,6 +160,10 @@ resource "kubernetes_deployment" "grafana" {
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim.grafana_data.metadata[0].name
           }
+        }
+        volume {
+          name = "grafana-dashboards-empty"
+          empty_dir {}
         }
         volume {
           name = "secrets-store"

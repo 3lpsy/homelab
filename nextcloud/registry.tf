@@ -205,6 +205,17 @@ resource "kubernetes_deployment" "registry" {
             }
           }
 
+          resources {
+            requests = {
+              cpu    = "50m"
+              memory = "128Mi"
+            }
+            limits = {
+              cpu    = "500m"
+              memory = "512Mi"
+            }
+          }
+
           volume_mount {
             name       = "dev-net-tun"
             mount_path = "/dev/net/tun"

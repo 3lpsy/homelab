@@ -71,3 +71,4 @@ resource "kubernetes_manifest" "mcp_shared_secret_provider" {
     vault_kv_secret_v2.mcp_auth,
   ]
 }
+

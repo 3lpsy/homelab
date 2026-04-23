@@ -32,6 +32,33 @@ resource "kubernetes_deployment" "mcp_filesystem" {
           name = kubernetes_secret.mcp_registry_pull_secret.metadata[0].name
         }
 
+        # fs_group propagates to the PVC mount + CSI secrets-store mount so
+        # the non-root mcp user can read/write both. OnRootMismatch skips the
+        # recursive chown after the first successful mount.
+        security_context {
+          run_as_non_root          = true
+          run_as_user              = 1000
+          run_as_group             = 1000
+          fs_group                 = 1000
+          fs_group_change_policy   = "OnRootMismatch"
+        }
+
+        init_container {
+          name  = "wait-for-secrets"
+          image = var.image_busybox
+          command = [
+            "sh", "-c",
+            templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
+              secret_file = "mcp_shared_api_keys_csv"
+            })
+          ]
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+        }
+
         # Filesystem MCP server — TLS + routing live in the mcp-shared pod.
         container {
           name              = "mcp-filesystem"

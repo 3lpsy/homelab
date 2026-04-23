@@ -284,3 +284,4 @@ resource "kubernetes_manifest" "nextcloud_secret_provider" {
     vault_kv_secret_v2.collabora_tls
   ]
 }
+

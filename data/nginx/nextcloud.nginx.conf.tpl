@@ -2,8 +2,15 @@ events {
   worker_connections 1024;
 }
 http {
-  access_log /var/log/nginx/access.log;
-  error_log /var/log/nginx/error.log;
+  log_format combined_noprobe '$remote_addr - $remote_user [$time_local] '
+                              '"$request" $status $body_bytes_sent '
+                              '"$http_referer" "$http_user_agent"';
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /var/log/nginx/access.log combined_noprobe if=$loggable;
+  error_log /dev/stderr crit;
 
   upstream nextcloud {
     server localhost:80;
@@ -12,6 +19,7 @@ http {
 
   server {
     listen 443 ssl;
+    http2 on;
     server_name ${server_domain};
 
     ssl_certificate /etc/nginx/certs/tls.crt;

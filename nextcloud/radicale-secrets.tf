@@ -189,3 +189,4 @@ resource "kubernetes_manifest" "radicale_secret_provider" {
     vault_policy.radicale
   ]
 }
+

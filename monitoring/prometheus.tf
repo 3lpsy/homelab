@@ -18,6 +18,12 @@ resource "kubernetes_deployment" "prometheus" {
     template {
       metadata {
         labels = { app = "prometheus" }
+        annotations = {
+          "prometheus-config-hash"   = sha1(kubernetes_config_map.prometheus_config.data["prometheus.yml"])
+          "alert-rules-hash"         = sha1(kubernetes_config_map.prometheus_config.data["alert-rules.yml"])
+          "alertmanager-config-hash" = sha1(kubernetes_config_map.alertmanager_config.data["alertmanager.yml"])
+          "ntfy-bridge-script-hash"  = sha1(kubernetes_config_map.ntfy_bridge_script.data["ntfy-bridge.py"])
+        }
       }
 
       spec {

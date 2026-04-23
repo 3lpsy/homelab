@@ -39,6 +39,7 @@ resource "kubernetes_deployment" "thunderbolt_powersync" {
             value = "/config/config.yaml"
           }
 
+
           port {
             container_port = 8080
             name           = "http"

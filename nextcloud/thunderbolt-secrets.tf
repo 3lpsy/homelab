@@ -140,6 +140,21 @@ resource "kubernetes_secret" "thunderbolt_tailscale_auth" {
   }
 }
 
+# Thunderbolt backend points `/v1/chat/completions` at LiteLLM. The backend
+# reads the upstream API key from THUNDERBOLT_INFERENCE_API_KEY. Sharing the
+# LiteLLM master key today; swap to a scoped virtual key (created via LiteLLM
+# admin UI) once the single-user setup grows.
+resource "kubernetes_secret" "thunderbolt_inference" {
+  metadata {
+    name      = "thunderbolt-inference"
+    namespace = kubernetes_namespace.thunderbolt.metadata[0].name
+  }
+  type = "Opaque"
+  data = {
+    api_key = "sk-${random_password.litellm_master_key.result}"
+  }
+}
+
 # TLS cert
 
 module "thunderbolt-tls" {
@@ -263,3 +278,4 @@ resource "kubernetes_manifest" "thunderbolt_secret_provider" {
     vault_kv_secret_v2.thunderbolt_tls,
   ]
 }
+

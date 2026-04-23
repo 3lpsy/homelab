@@ -30,7 +30,7 @@
     "group:ntfy-clients": ["${prometheus_user}@", "${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
     "group:ollama-server": ["${ollama_server_user}@"],
     "group:litellm-server": ["${litellm_server_user}@", "${thunderbolt_server_user}@"],
-    "group:litellm-clients": ["${personal_user}@", "${mobile_user}@", "${thunderbolt_server_user}@"],
+    "group:litellm-clients": ["${personal_user}@", "${mobile_user}@", "${thunderbolt_server_user}@", "${mcp_user}@"],
     "group:mcp":["${mcp_user}@"],
     "group:searxng-clients": ["${personal_user}@", "${mobile_user}@", "${litellm_server_user}@", "${thunderbolt_server_user}@", "${mcp_user}@"],
     "group:searxng-server": ["${searxng_server_user}@"]
@@ -104,6 +104,9 @@
     { "action": "accept", "src": ["group:prometheus"], "dst": ["group:node-server:9100,10250"] },
     // personal management of openwrt
     { "action": "accept", "src": ["group:personal"], "dst": ["group:openwrt:22,80,443,9100"] },
+    // personal promethues ui
+     { "action": "accept", "src": ["group:personal"], "dst": ["group:prometheus:9090,9093"] },
+
 
     // allow ios to access devbox on 1420,1421,3000,8888
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:devbox:1420,1421,3000,8888"] },

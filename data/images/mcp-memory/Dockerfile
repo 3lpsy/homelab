@@ -10,7 +10,11 @@ COPY server.py /app/server.py
 
 ENV MCP_HOST=0.0.0.0 \
     MCP_PORT=8000 \
-    MCP_DATA_ROOT=/data
+    MCP_DATA_ROOT=/data \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN addgroup -g 1000 mcp && adduser -D -u 1000 -G mcp mcp
+USER mcp
 
 EXPOSE 8000
 

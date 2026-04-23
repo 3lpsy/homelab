@@ -39,7 +39,7 @@ resource "kubernetes_deployment" "immich_machine_learning" {
           resources {
             requests = {
               cpu    = "500m"
-              memory = "1Gi"
+              memory = "512Mi"
             }
             limits = {
               cpu    = "2000m"
@@ -220,7 +220,7 @@ resource "kubernetes_deployment" "immich" {
           resources {
             requests = {
               cpu    = "500m"
-              memory = "512Mi"
+              memory = "1Gi"
             }
             limits = {
               cpu    = "2000m"
@@ -361,6 +361,17 @@ resource "kubernetes_deployment" "immich" {
             }
           }
 
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
+            }
+          }
+
           volume_mount {
             name       = "dev-net-tun"
             mount_path = "/dev/net/tun"
@@ -481,11 +492,11 @@ resource "kubernetes_deployment" "immich_postgres" {
           resources {
             requests = {
               cpu    = "250m"
-              memory = "256Mi"
+              memory = "512Mi"
             }
             limits = {
               cpu    = "1000m"
-              memory = "1Gi"
+              memory = "2Gi"
             }
           }
 

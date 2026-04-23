@@ -30,6 +30,7 @@ import secrets
 import socket
 import urllib.parse
 from html.parser import HTMLParser
+from typing import Annotated, Any
 
 import httpx
 import uvicorn
@@ -67,6 +68,10 @@ logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.ERROR),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+# httpx logs full request URLs (including query strings) at INFO. Search
+# queries and arbitrary fetch URLs land in those logs; mute to WARNING so
+# only failures surface.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("mcp-searxng")
 log.info(
     "startup: searxng=%s api_keys=%d allowed_cidrs=%d log_level=%s",
@@ -109,18 +114,42 @@ class FetchResponse(BaseModel):
 
 
 # FastMCP v2: transport (host/port/path) is configured at http_app()/uvicorn
-# time, not on the constructor. Constructor takes only the server name.
-mcp = FastMCP("searxng")
+# time, not on the constructor. Constructor takes only the server name +
+# instructions.
+mcp = FastMCP(
+    "searxng",
+    instructions=(
+        "Two tools for web access:\n"
+        "  1. `search(query, ...)` — web search via SearXNG. Returns title/url/"
+        "snippet/engine for each hit plus optional infoboxes. Use when you need "
+        "to *find* pages.\n"
+        "  2. `fetch(url, max_chars=...)` — retrieve a specific URL and return "
+        "its plain-text body. HTML is stripped. Use when you already know the "
+        "URL (e.g. from a prior `search` result) and need its content.\n\n"
+        "`fetch` blocks private, loopback, link-local, and cluster-internal "
+        "addresses (SSRF defense) — expect `error: blocked: ...` for those.\n"
+        "For small models: lower `max_chars` (1000-5000) to stay within your "
+        "context window."
+    ),
+)
+
+
+async def _healthz(_request: Any) -> JSONResponse:
+    """Liveness + readiness probe target. No auth, no upstream calls."""
+    return JSONResponse({"ok": True})
+
+
+mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 @mcp.tool()
 async def search(
-    query: str,
-    limit: int = 10,
-    categories: str | None = None,
-    language: str | None = None,
+    query: Annotated[str, Field(min_length=1, max_length=4096, description="Search query string.")],
+    limit: Annotated[int, Field(ge=1, le=100)] = 10,
+    categories: Annotated[str | None, Field(max_length=256)] = None,
+    language: Annotated[str | None, Field(max_length=16)] = None,
     time_range: str | None = None,
-    safesearch: int = 0,
+    safesearch: Annotated[int, Field(ge=0, le=2)] = 0,
 ) -> SearchResponse:
     """Search the web via SearXNG.
 
@@ -146,10 +175,19 @@ async def search(
             r.raise_for_status()
             data = r.json()
     except httpx.HTTPError as e:
-        log.warning("search: query=%r failed: %s", query, e)
+        log.warning("search: query=%r failed (%s)", query, type(e).__name__)
         return SearchResponse(
             query=query,
-            error=f"{type(e).__name__}: {e}" if str(e) else type(e).__name__,
+            error=f"upstream unreachable ({type(e).__name__})",
+        )
+    except ValueError as e:
+        # r.json() on malformed upstream bodies raises ValueError — not an
+        # httpx.HTTPError — so it has to be caught separately or it would
+        # crash the tool dispatcher.
+        log.warning("search: query=%r returned non-JSON (%s)", query, type(e).__name__)
+        return SearchResponse(
+            query=query,
+            error=f"upstream returned non-JSON ({type(e).__name__})",
         )
 
     items = [
@@ -356,13 +394,19 @@ def _html_to_text(body: str) -> str:
 
 
 @mcp.tool()
-async def fetch(url: str, max_chars: int = 20000) -> FetchResponse:
+async def fetch(
+    url: Annotated[str, Field(min_length=1, max_length=2048, description="Absolute http(s) URL to fetch.")],
+    max_chars: Annotated[
+        int,
+        Field(ge=1, le=200000, description="Truncate returned text to this many characters. Lower (1000-5000) for small-context models."),
+    ] = 5000,
+) -> FetchResponse:
     """Fetch a URL and return its text content. HTML is stripped to plain text.
 
     Args:
       url: absolute http(s) URL. Private/loopback/link-local/metadata/cluster
            addresses are rejected (SSRF defense).
-      max_chars: truncate returned text to this many characters (default 20000)
+      max_chars: truncate returned text to this many characters.
     """
     current = url
     status: int | None = None
@@ -405,10 +449,12 @@ async def fetch(url: str, max_chars: int = 20000) -> FetchResponse:
         log.warning("fetch: url=%r blocked: %s", url, e)
         return FetchResponse(url=current, error=f"blocked: {e}")
     except httpx.HTTPError as e:
-        log.warning("fetch: url=%r failed: %s", current, e)
+        # Scrub `str(e)` — httpx exception text can include the upstream
+        # hostname/IP. The caller already has the URL; no need to echo it.
+        log.warning("fetch: url=%r failed (%s)", current, type(e).__name__)
         return FetchResponse(
             url=current,
-            error=f"{type(e).__name__}: {e}" if str(e) else type(e).__name__,
+            error=f"upstream unreachable ({type(e).__name__})",
         )
 
     body = b"".join(chunks)
@@ -416,6 +462,11 @@ async def fetch(url: str, max_chars: int = 20000) -> FetchResponse:
     if "html" in ctype or (not ctype and "<html" in text[:1024].lower()):
         text = _html_to_text(text)
     text = html.unescape(text)
+    # Truncate before line-filtering to bound CPU on multi-MiB responses.
+    # We overshoot by 2x so trailing-whitespace trimming can't leave us
+    # short of max_chars after filtering.
+    if len(text) > max_chars * 2:
+        text = text[: max_chars * 2]
     text = "\n".join(line for line in (ln.strip() for ln in text.splitlines()) if line)
 
     truncated = len(text) > max_chars
@@ -458,6 +509,11 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Unauthenticated health probe — kubelet sends no bearer.
+        if scope["path"] == "/healthz":
+            await self.app(scope, receive, send)
+            return
+
         headers = Headers(scope=scope)
         header = headers.get("authorization", "")
         token = header[7:].strip() if header.lower().startswith("bearer ") else ""
@@ -485,4 +541,4 @@ app = mcp.http_app(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower())
+    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)

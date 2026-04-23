@@ -94,6 +94,19 @@ class ProbeSpec:
     validator: Callable[[str], bool]
 
 
+# httpx.Client(proxy=...) leaks ~1MB/probe even under `with`; reuse one per proxy
+# for the process lifetime so we stay inside the 512Mi limit across cycles.
+_CLIENTS: dict[str, httpx.Client] = {}
+
+
+def _client_for(proxy_url: str) -> httpx.Client:
+    c = _CLIENTS.get(proxy_url)
+    if c is None:
+        c = httpx.Client(proxy=proxy_url, timeout=PROBE_TIMEOUT, follow_redirects=True)
+        _CLIENTS[proxy_url] = c
+    return c
+
+
 ENGINES: list[ProbeSpec] = [
     ProbeSpec("google",
               "https://www.google.com/search?q=test",
@@ -164,11 +177,10 @@ def probe(engine: ProbeSpec, proxy_url: str) -> tuple[bool, float]:
     """Probe one (engine, proxy). Returns (success, latency_ms)."""
     t0 = time.monotonic()
     try:
-        with httpx.Client(proxy=proxy_url, timeout=PROBE_TIMEOUT, follow_redirects=True) as c:
-            r = c.get(engine.url, headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) searxng-ranker/1.0",
-                "Accept-Language": "en-US,en;q=0.9",
-            })
+        r = _client_for(proxy_url).get(engine.url, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) searxng-ranker/1.0",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
         lat = (time.monotonic() - t0) * 1000.0
         if r.status_code != 200:
             return False, lat

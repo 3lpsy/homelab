@@ -189,3 +189,4 @@ resource "kubernetes_manifest" "searxng_secret_provider" {
     vault_policy.searxng
   ]
 }
+

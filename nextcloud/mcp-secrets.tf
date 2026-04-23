@@ -133,7 +133,7 @@ EOT
 resource "vault_kubernetes_auth_backend_role" "mcp" {
   backend                          = "kubernetes"
   role_name                        = "mcp"
-  bound_service_account_names      = ["mcp"]
+  bound_service_account_names      = ["mcp", "mcp-k8s"]
   bound_service_account_namespaces = ["mcp"]
   token_policies                   = [vault_policy.mcp.name]
   token_ttl                        = 86400

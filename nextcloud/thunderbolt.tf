@@ -149,6 +149,17 @@ resource "kubernetes_deployment" "thunderbolt" {
             }
           }
 
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
+            }
+          }
+
           volume_mount {
             name       = "dev-net-tun"
             mount_path = "/dev/net/tun"

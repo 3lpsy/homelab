@@ -9,10 +9,26 @@ http {
   log_format redacted '$remote_addr - $remote_user [$time_local] '
                       '"$request_method $uri $server_protocol" $status $body_bytes_sent '
                       '"$http_referer" "$http_user_agent"';
-  access_log /var/log/nginx/access.log redacted;
+
+  # Drop kube-probe noise from access log.
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /var/log/nginx/access.log redacted if=$loggable;
+
+  # nginx's error_log captures the full upstream URI on 502/connect-failed,
+  # which defeats the access_log redaction above when a backend drops. Raise
+  # to crit so routine upstream close/refused events don't land in logs.
+  error_log /dev/stderr crit;
 
   server {
     listen 443 ssl;
+    # HTTP/2 lets many MCP sessions share a single TCP connection.
+    # Without this, Firefox's 6-connection-per-host HTTP/1.1 limit starves
+    # MCPs once >3 persistent SSE streams are open (each MCP client holds
+    # a long-lived GET for event delivery).
+    http2 on;
     server_name ${server_domain};
 
     ssl_certificate     /etc/nginx/certs/tls.crt;
@@ -30,12 +46,31 @@ http {
     proxy_read_timeout    600;
     send_timeout          600;
 
+    # OAuth protected-resource metadata (RFC 9728). MCP HTTP clients probe
+    # this before sending requests; returning an empty authorization_servers
+    # list signals "bearer-only, no OAuth flow" so the client sends the
+    # static Authorization header instead of running OAuth discovery.
+    location = /.well-known/oauth-protected-resource {
+      default_type application/json;
+      return 200 '{"resource":"https://$host/","bearer_methods_supported":["header"],"authorization_servers":[]}';
+    }
+
+    location ~ ^/(?<svc>[a-z0-9-]+)/\.well-known/oauth-protected-resource$ {
+      default_type application/json;
+      return 200 '{"resource":"https://$host/$svc/","bearer_methods_supported":["header"],"authorization_servers":[]}';
+    }
+
 %{ for name, svc in services ~}
     # ${name} — upstream_path=${svc.upstream_path}
     location /${name}/ {
+      # CORS: auth rides the `Authorization` header (or `?api_key=` query
+      # arg), never cookies. `Allow-Credentials` is deliberately omitted so
+      # a malicious origin can't trick a browser into sending cookies with
+      # a cross-origin MCP request. Origin reflection without credentials
+      # still lets arbitrary pages probe the endpoint, but they cannot
+      # exfiltrate auth the user didn't explicitly put in the request.
       if ($request_method = OPTIONS) {
         add_header 'Access-Control-Allow-Origin'      $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods'     'GET, POST, OPTIONS, DELETE' always;
         add_header 'Access-Control-Allow-Headers'     'Content-Type, Accept, Authorization, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID' always;
         add_header 'Access-Control-Max-Age'           1728000;
@@ -45,7 +80,6 @@ http {
       }
 
       add_header 'Access-Control-Allow-Origin'      $http_origin always;
-      add_header 'Access-Control-Allow-Credentials' 'true' always;
       add_header 'Access-Control-Expose-Headers'    'Mcp-Session-Id, Mcp-Protocol-Version' always;
 
       # upstream_path is where the backend mounts its MCP endpoint.

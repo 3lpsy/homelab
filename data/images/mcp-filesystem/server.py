@@ -674,4 +674,4 @@ app = mcp.http_app(
 if __name__ == "__main__":
     # uvicorn respects the lifespan wired into the Starlette app returned by
     # http_app(), so FastMCP's session manager starts/stops cleanly.
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower())
+    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)

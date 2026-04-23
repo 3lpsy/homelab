@@ -131,3 +131,4 @@ resource "kubernetes_manifest" "immich_secret_provider" {
     vault_kv_secret_v2.immich_tls
   ]
 }
+

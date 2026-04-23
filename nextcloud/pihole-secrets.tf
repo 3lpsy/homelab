@@ -189,3 +189,4 @@ resource "kubernetes_manifest" "pihole_secret_provider" {
     vault_policy.pihole
   ]
 }
+
