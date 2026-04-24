@@ -56,6 +56,7 @@ resource "kubernetes_manifest" "thunderbolt_frontend_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {
@@ -220,6 +221,7 @@ resource "kubernetes_manifest" "thunderbolt_backend_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

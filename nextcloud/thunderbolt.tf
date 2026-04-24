@@ -26,7 +26,8 @@ resource "kubernetes_deployment" "thunderbolt" {
           # so `:latest` is actually re-pulled.
           "build-job" = local.thunderbolt_frontend_build_job_name
           # Rolls on outer TLS/proxy nginx config changes.
-          "nginx-config-hash" = sha1(kubernetes_config_map.thunderbolt_nginx_config.data["nginx.conf"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.thunderbolt_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "thunderbolt-tls"
         }
       }
 

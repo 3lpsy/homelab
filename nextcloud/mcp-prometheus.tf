@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "mcp_prometheus" {
           app = "mcp-prometheus"
         }
         annotations = {
-          "build-job" = local.mcp_prometheus_build_job_name
+          "build-job"                           = local.mcp_prometheus_build_job_name
+          "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
 

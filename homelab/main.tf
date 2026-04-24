@@ -130,3 +130,14 @@ module "tailnet-infra" {
   }
   depends_on = [module.headscale-infra-tls]
 }
+
+module "headscale-provision-tailscale" {
+  source                  = "./modules/headscale-provision-tailscale"
+  server_ip               = module.headscale-infra.public_ip
+  ssh_user                = module.headscale-infra.ssh_user
+  ssh_priv_key_path       = var.ssh_priv_key_path
+  headscale_server_domain = module.headscale-infra-tls.certificate_domain
+  tailnet_hostname        = "headscale-host"
+  preauth_key             = module.tailnet-infra.headscale_host_preauth_key
+  depends_on              = [module.headscale-provision-headscale, module.tailnet-infra]
+}

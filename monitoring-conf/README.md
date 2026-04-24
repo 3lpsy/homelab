@@ -1,16 +1,35 @@
 # Monitoring Configuration
 
-Configures Grafana after the monitoring stack is deployed. Connects to Grafana via the Grafana Terraform provider over Tailscale.
+Post-apply configuration for Grafana. Uses the Grafana Terraform
+provider over Tailscale to provision dashboards after the `monitoring`
+deployment has brought Grafana up.
 
 ## What it manages
 
-- **Dashboards** -- provisioned from JSON files in `data/dashboards/`. Sources noted in `dashboards.tf`.
+- **Dashboards**. Each JSON file in `../data/dashboards/` is mapped to
+  a Grafana dashboard resource through the `dashboards` local in
+  `dashboards.tf`. The Prometheus data source is looked up by name
+  (not created here; Grafana provisions it via its ConfigMap in the
+  `monitoring` deployment).
+
+Current dashboards: `homelab-overview`, `kube-state-metrics`,
+`k8s-global`, `k8s-nodes`, `k8s-pods`, `node-exporter`, `openwrt`.
 
 ## Files
 
-- `dashboards.tf` -- Prometheus datasource lookup and dashboard resources.
-- `main.tf` -- Grafana provider config.
+- `main.tf` -- Grafana provider config (Tailscale URL, admin auth
+  pulled from `monitoring`'s remote state).
+- `dashboards.tf` -- Prometheus datasource lookup, dashboard map,
+  `grafana_dashboard` resource.
 
 ## Gotchas
 
-- Depends on `monitoring` being fully applied first. The Grafana admin password is read from monitoring's state output.
+- **Depends on `monitoring`**. The Grafana admin password is read
+  from `terraform_remote_state.monitoring.outputs.grafana_admin_password`,
+  so `monitoring` must be fully applied first.
+- **Provider reaches Grafana over Tailscale**. The apply host must be
+  on the tailnet and able to resolve the Grafana FQDN.
+- **Adding a dashboard**. Drop the JSON file in `../data/dashboards/`,
+  add an entry to the `dashboards` local in `dashboards.tf`, and
+  re-apply. The key in the map is the stable Grafana UID prefix;
+  changing it creates a new dashboard rather than renaming.

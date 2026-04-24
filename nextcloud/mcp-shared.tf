@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "mcp_shared" {
           app = "mcp-shared"
         }
         annotations = {
-          "nginx-config-hash" = sha1(kubernetes_config_map.mcp_shared_nginx_config.data["nginx.conf"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.mcp_shared_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
 

@@ -28,6 +28,7 @@ resource "kubernetes_manifest" "searxng_ranker_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

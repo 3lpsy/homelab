@@ -152,3 +152,49 @@ variable "image_python" {
   type    = string
   default = "python:3-alpine"
 }
+
+variable "image_openobserve" {
+  type    = string
+  default = "public.ecr.aws/zinclabs/openobserve:latest"
+}
+
+variable "image_otel_collector" {
+  type        = string
+  default     = ""
+  description = "OTel collector image. Leave empty to use the custom in-cluster build from nextcloud/otel-collector-jobs.tf (alpine + systemd + upstream binary). Override only if you explicitly want upstream contrib (no journald receiver support)."
+}
+
+variable "registry_domain" {
+  type    = string
+  default = "registry"
+}
+
+variable "image_reloader" {
+  type    = string
+  default = "ghcr.io/stakater/reloader:latest"
+}
+
+variable "openobserve_domain" {
+  type    = string
+  default = "openobserve"
+}
+
+variable "openobserve_storage_size" {
+  type    = string
+  default = "100Gi"
+}
+
+variable "openobserve_retention_days" {
+  type    = number
+  default = 7
+}
+
+variable "openobserve_org" {
+  type        = string
+  default     = "default"
+  description = "OpenObserve organization slug used in ingest API paths"
+}
+
+variable "ssh_priv_key_path" {
+  type = string
+}

@@ -630,6 +630,246 @@ def test_display_has_no_filesystem_side_effects(key_a):
     assert not root.exists()  # _display did not create the session root
 
 
+# --- session_id validation --------------------------------------------------
+
+
+def test_session_id_rejects_spaces(key_a):
+    with pytest.raises(ValueError):
+        server._session_root_path("has space")
+
+
+def test_session_id_rejects_control_chars(key_a):
+    with pytest.raises(ValueError):
+        server._session_root_path("nl\nin-id")
+
+
+def test_session_id_rejects_path_separators(key_a):
+    # `/` and `\` would already be defanged by hashing, but the regex
+    # rejects them up front so the LLM gets a clean error early.
+    with pytest.raises(ValueError):
+        server._session_root_path("a/b")
+    with pytest.raises(ValueError):
+        server._session_root_path("a\\b")
+
+
+def test_session_id_rejects_overlong(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_SESSION_ID_CHARS", 8)
+    with pytest.raises(ValueError):
+        server._session_root_path("x" * 9)
+    # Boundary still ok.
+    server._session_root_path("x" * 8)
+
+
+def test_session_id_accepts_allowed_charset(key_a):
+    # All chars in [A-Za-z0-9._-] must work.
+    for sid in ("abc", "ABC", "0123", "a.b", "a-b", "a_b", "Mix.1-2_3"):
+        server._session_root_path(sid)
+
+
+def test_session_id_validation_runs_in_tools(key_a):
+    # End-to-end: a tool call with an invalid session_id must raise before
+    # any filesystem touch.
+    with pytest.raises(ValueError):
+        _call(server.write_file("bad id", "x.txt", "y"))
+
+
+# --- session-count quota ----------------------------------------------------
+#
+# These tests bind a unique api-key string into the contextvar instead of
+# using the shared key-a/b/c fixtures. The tenant dir is hashed from the
+# bound key, so a unique string = clean isolated tenant with no prior
+# sessions or files from other tests in the same module.
+
+
+def test_session_count_cap_blocks_new_session(monkeypatch):
+    server._api_key_ctx.set("isolated-scount-block")
+    monkeypatch.setattr(server, "MCP_MAX_SESSIONS_PER_TENANT", 2)
+    _call(server.write_file("scount-1", "a.txt", "x"))
+    _call(server.write_file("scount-2", "a.txt", "x"))
+    with pytest.raises(ValueError) as exc:
+        _call(server.write_file("scount-3", "a.txt", "x"))
+    assert "MCP_MAX_SESSIONS_PER_TENANT" in str(exc.value)
+
+
+def test_session_count_cap_allows_reuse_of_existing(monkeypatch):
+    server._api_key_ctx.set("isolated-scount-reuse")
+    monkeypatch.setattr(server, "MCP_MAX_SESSIONS_PER_TENANT", 2)
+    # Pre-fill the index up to the cap, then re-open one of them.
+    _call(server.describe_session("reuse-1", "first"))
+    _call(server.describe_session("reuse-2", "second"))
+    # Re-opening "reuse-1" must NOT trip the cap even though we're at it.
+    _call(server.write_file("reuse-1", "again.txt", "y"))
+    assert _call(server.read_file("reuse-1", "again.txt")) == "y"
+
+
+# --- tenant disk quota ------------------------------------------------------
+#
+# Same isolation pattern — fresh contextvar string per test so prior tests'
+# writes under shared keys don't pre-fill the tenant past the cap.
+
+
+def test_tenant_quota_blocks_oversize_write(monkeypatch):
+    server._api_key_ctx.set("isolated-quota-oversize")
+    monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 20)
+    _call(server.write_file("quota-tiny", "a.txt", "x" * 10))  # under cap
+    with pytest.raises(ValueError) as exc:
+        _call(server.write_file("quota-tiny", "b.txt", "y" * 50))
+    assert "MCP_MAX_TENANT_BYTES" in str(exc.value)
+
+
+def test_tenant_quota_offsets_replaced_file(monkeypatch):
+    # Replacing an existing file should subtract its current size from the
+    # projection, otherwise overwrites at the cap would always fail.
+    server._api_key_ctx.set("isolated-quota-replace")
+    monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 20)
+    _call(server.write_file("quota-replace", "a.txt", "x" * 15))
+    # Same byte-count overwrite — net zero, must be allowed.
+    _call(server.write_file("quota-replace", "a.txt", "y" * 15))
+    assert _call(server.read_file("quota-replace", "a.txt")) == "y" * 15
+
+
+def test_tenant_quota_blocks_edit(monkeypatch):
+    server._api_key_ctx.set("isolated-quota-edit")
+    _call(server.write_file("quota-edit", "f.txt", "abc"))
+    monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 5)
+    with pytest.raises(ValueError) as exc:
+        _call(server.edit_file(
+            "quota-edit", "f.txt",
+            [{"oldText": "abc", "newText": "x" * 100}],
+        ))
+    assert "MCP_MAX_TENANT_BYTES" in str(exc.value)
+
+
+def test_tenant_quota_dry_run_edit_skips_check(monkeypatch):
+    # dry_run never writes to disk so it must not consult the quota; the
+    # per-file MCP_MAX_FILE_BYTES check still fires elsewhere.
+    server._api_key_ctx.set("isolated-quota-dryrun")
+    _call(server.write_file("quota-edit-dry", "f.txt", "abc"))
+    monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 5)
+    out = _call(server.edit_file(
+        "quota-edit-dry", "f.txt",
+        [{"oldText": "abc", "newText": "abcd"}],
+        dry_run=True,
+    ))
+    assert "diff" in out
+
+
+def test_tenant_quota_is_per_tenant(monkeypatch):
+    # Tenant-A hits the cap; tenant-B with the same logical session_id is
+    # unaffected because hashes diverge by api-key.
+    monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 30)
+    server._api_key_ctx.set("isolated-quota-split-A")
+    _call(server.write_file("split-quota", "a.txt", "x" * 25))
+    with pytest.raises(ValueError):
+        _call(server.write_file("split-quota", "b.txt", "y" * 25))
+
+    server._api_key_ctx.set("isolated-quota-split-B")
+    # B's tenant dir is separate, so a fresh write must succeed.
+    _call(server.write_file("split-quota", "a.txt", "x" * 25))
+
+
+# --- list_directory cap -----------------------------------------------------
+
+
+def test_list_directory_truncates_with_sentinel(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_DIR_ENTRIES", 3)
+    for i in range(5):
+        _call(server.write_file("ld-cap", f"f{i:02d}.txt", "x"))
+    entries = _call(server.list_directory("ld-cap"))
+    # 3 files + 1 truncation sentinel
+    assert len(entries) == 4
+    assert entries[-1] == {"name": "...", "type": "truncated"}
+    # The first 3 entries are sorted lexicographically (deterministic for
+    # the under-cap collected portion).
+    real = [e for e in entries if e["type"] != "truncated"]
+    names = [e["name"] for e in real]
+    assert names == sorted(names)
+
+
+def test_list_directory_no_sentinel_when_under_cap(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_DIR_ENTRIES", 100)
+    _call(server.write_file("ld-clean", "a.txt", "x"))
+    entries = _call(server.list_directory("ld-clean"))
+    assert all(e["type"] != "truncated" for e in entries)
+
+
+# --- directory_tree caps ----------------------------------------------------
+
+
+def test_directory_tree_depth_cap(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_TREE_DEPTH", 1)
+    _call(server.write_file("dt-depth", "a/b/c/d.txt", "deep"))
+    tree = _call(server.directory_tree("dt-depth"))
+    # depth 0 → "a" (dir), depth 1 → "b" (dir but at cap, children=truncated)
+    a = next(n for n in tree if n["name"] == "a")
+    assert a["type"] == "dir"
+    b = next(n for n in a["children"] if n["name"] == "b")
+    assert b["type"] == "dir"
+    assert b["children"] == [{"name": "...", "type": "truncated"}]
+
+
+def test_directory_tree_node_cap(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_TREE_NODES", 2)
+    for n in ("a", "b", "c", "d"):
+        _call(server.write_file("dt-nodes", f"{n}.txt", "x"))
+    tree = _call(server.directory_tree("dt-nodes"))
+    # Stops emitting real entries after the first 2 nodes; trailing sentinel
+    # must appear so the LLM sees the listing was incomplete.
+    real = [n for n in tree if n["type"] != "truncated"]
+    sent = [n for n in tree if n["type"] == "truncated"]
+    assert len(real) <= 2
+    assert sent and sent[0] == {"name": "...", "type": "truncated"}
+
+
+def test_directory_tree_per_dir_entry_cap(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_DIR_ENTRIES", 2)
+    monkeypatch.setattr(server, "MCP_MAX_TREE_NODES", 100)
+    for n in ("a", "b", "c", "d"):
+        _call(server.write_file("dt-perdir", f"{n}.txt", "x"))
+    tree = _call(server.directory_tree("dt-perdir"))
+    # Per-dir cap of 2 + sentinel = 3 entries at the root.
+    assert len(tree) == 3
+    assert tree[-1] == {"name": "...", "type": "truncated"}
+
+
+# --- search_files cap -------------------------------------------------------
+
+
+def test_search_files_hits_cap(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_SEARCH_HITS", 3)
+    for i in range(10):
+        _call(server.write_file("sf-cap", f"x{i:02d}.log", "x"))
+    hits = _call(server.search_files("sf-cap", "*.log"))
+    # 3 real hits + 1 truncation marker string
+    real = [h for h in hits if not h.startswith("... (truncated")]
+    sent = [h for h in hits if h.startswith("... (truncated")]
+    assert len(real) == 3
+    assert len(sent) == 1
+
+
+def test_search_files_no_sentinel_when_under_cap(key_a, monkeypatch):
+    monkeypatch.setattr(server, "MCP_MAX_SEARCH_HITS", 100)
+    _call(server.write_file("sf-clean", "a.log", "x"))
+    hits = _call(server.search_files("sf-clean", "*.log"))
+    assert not any(h.startswith("... (truncated") for h in hits)
+
+
+# --- defaults / instructions wiring ----------------------------------------
+
+
+def test_max_edit_bytes_default_is_256kib():
+    # Lowered from 10 MiB to keep `MCP_MAX_EDITS * MCP_MAX_EDIT_BYTES` peak
+    # memory inside the 512 Mi pod limit.
+    assert server.MCP_MAX_EDIT_BYTES == 256 * 1024
+
+
+def test_instructions_present_on_server():
+    # FastMCP stores constructor `instructions=` for clients to fetch.
+    inst = getattr(server.mcp, "instructions", None) or ""
+    assert "session_id" in inst.lower()
+    assert "destructive" in inst.lower() or "destroy_session" in inst
+
+
 # --- HTTP integration tests -------------------------------------------------
 # Spin the actual uvicorn + Starlette + FastMCP stack in a background thread
 # and drive it with a real HTTP client. These exercise the AuthMiddleware
@@ -681,14 +921,14 @@ def live_server():
 
 def test_http_rejects_missing_bearer(live_server):
     # No Authorization header → AuthMiddleware returns 401 before routing.
-    r = httpx.post(f"{live_server}/mcp/", json={}, timeout=5)
+    r = httpx.post(f"{live_server}/", json={}, timeout=5)
     assert r.status_code == 401
 
 
 def test_http_rejects_bad_bearer(live_server):
     # Unknown token → 401.
     r = httpx.post(
-        f"{live_server}/mcp/",
+        f"{live_server}/",
         json={},
         headers={"Authorization": "Bearer not-a-real-key"},
         timeout=5,
@@ -700,7 +940,7 @@ def test_http_accepts_query_param_key(live_server):
     # ?api_key=... fallback path must also authenticate. A raw POST without a
     # valid MCP payload will not be 401 — it will be some 4xx/5xx from the
     # protocol layer. We only assert auth passed (i.e. not 401).
-    r = httpx.post(f"{live_server}/mcp/?api_key=key-a", json={}, timeout=5)
+    r = httpx.post(f"{live_server}/?api_key=key-a", json={}, timeout=5)
     assert r.status_code != 401
 
 
@@ -709,7 +949,9 @@ def test_mcp_end_to_end_tool_call(live_server):
     # test for the middleware fix: if the api-key contextvar does not reach
     # the tool handler, _session_root() raises PermissionError and the call
     # comes back as an error.
-    url = f"{live_server}/mcp/"
+    # The server is mounted at "/" (matches production: nginx proxy_pass at /),
+    # so the MCP client must connect to "/", not "/mcp/".
+    url = f"{live_server}/"
     transport = StreamableHttpTransport(url, headers={"Authorization": "Bearer key-a"})
 
     async def scenario():
@@ -732,7 +974,7 @@ def test_mcp_tenant_isolation_over_http(live_server):
     # Two different bearer tokens must land in different tenant sandboxes
     # even when using the same session_id. Proves the contextvar is actually
     # per-request, not leaking across tasks.
-    url = f"{live_server}/mcp/"
+    url = f"{live_server}/"
 
     def _client(token: str) -> Client:
         return Client(StreamableHttpTransport(url, headers={"Authorization": f"Bearer {token}"}))

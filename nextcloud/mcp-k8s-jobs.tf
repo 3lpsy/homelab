@@ -33,6 +33,7 @@ resource "kubernetes_manifest" "mcp_k8s_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {
@@ -209,6 +210,7 @@ resource "kubernetes_manifest" "mcp_k8s_auth_gate_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

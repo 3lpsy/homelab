@@ -17,9 +17,10 @@ resource "kubernetes_deployment" "grafana" {
       metadata {
         labels = { app = "grafana" }
         annotations = {
-          "datasources-hash"  = sha1(kubernetes_config_map.grafana_datasources.data["datasources.yaml"])
-          "dashboards-hash"   = sha1(kubernetes_config_map.grafana_dashboard_provisioning.data["dashboards.yaml"])
-          "nginx-config-hash" = sha1(kubernetes_config_map.grafana_nginx_config.data["nginx.conf"])
+          "datasources-hash"                    = sha1(kubernetes_config_map.grafana_datasources.data["datasources.yaml"])
+          "dashboards-hash"                     = sha1(kubernetes_config_map.grafana_dashboard_provisioning.data["dashboards.yaml"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.grafana_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "grafana-secrets,grafana-tls"
         }
       }
 

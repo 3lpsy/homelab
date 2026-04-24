@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "mcp_filesystem" {
           app = "mcp-filesystem"
         }
         annotations = {
-          "build-job" = local.mcp_filesystem_build_job_name
+          "build-job"                           = local.mcp_filesystem_build_job_name
+          "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
 

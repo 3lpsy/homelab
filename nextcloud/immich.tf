@@ -113,7 +113,8 @@ resource "kubernetes_deployment" "immich" {
           app = "immich"
         }
         annotations = {
-          "nginx-config-hash" = sha1(kubernetes_config_map.immich_nginx_config.data["nginx.conf"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.immich_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "immich-secrets,immich-tls"
         }
       }
 

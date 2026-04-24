@@ -41,6 +41,7 @@ resource "kubernetes_role" "builder_tailscale" {
       "nextcloud-builder-tailscale-state",
       "exitnode-tinyproxy-builder-tailscale-state",
       "searxng-ranker-builder-tailscale-state",
+      "otel-collector-builder-tailscale-state",
     ]
     verbs = ["get", "update", "patch"]
   }

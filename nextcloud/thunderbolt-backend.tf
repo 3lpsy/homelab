@@ -22,7 +22,8 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
         }
         annotations = {
           # Rolls the pod whenever the backend build Job's name changes.
-          "build-job" = local.thunderbolt_backend_build_job_name
+          "build-job"                           = local.thunderbolt_backend_build_job_name
+          "secret.reloader.stakater.com/reload" = "thunderbolt-secrets"
         }
       }
 

@@ -382,6 +382,27 @@ def test_auth_accepts_valid_bearer_and_binds_contextvar():
     assert server._api_key_ctx.get() in ("", None)
 
 
+# --- instructions wiring -----------------------------------------------------
+
+
+def test_instructions_present_on_server():
+    # FastMCP stores constructor `instructions=` and surfaces it via
+    # initialize → serverInfo.instructions. OSS clients inject it into the
+    # system prompt before tool use, so a regression to empty/absent silently
+    # drops workflow guidance for low-tier models.
+    inst = getattr(server.mcp, "instructions", None) or ""
+    assert inst.strip(), "FastMCP('memory') must carry an instructions block"
+    # Anchor on the hazards an OSS model needs spelled out.
+    assert "create_entities" in inst
+    assert "add_observations" in inst
+    assert "search_nodes" in inst
+    # "Create is not upsert" is the biggest foot-gun — make sure it stays
+    # in the text.
+    assert "skipped" in inst.lower() or "silent" in inst.lower()
+    # Wire-format note for the from/from_ trap.
+    assert "`from`" in inst
+
+
 def test_auth_accepts_query_param_key():
     captured: list[str] = []
 

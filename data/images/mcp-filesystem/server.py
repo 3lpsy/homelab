@@ -14,7 +14,14 @@ Environment:
   MCP_MAX_FILE_BYTES  Per-file byte ceiling for read/write/edit (default 10 MiB).
   MCP_MAX_READ_BATCH  Max paths per `read_multiple_files` call (default 32).
   MCP_MAX_EDITS       Max edits per `edit_file` call (default 64).
-  MCP_MAX_EDIT_BYTES  Per-edit oldText/newText byte ceiling (default 10 MiB).
+  MCP_MAX_EDIT_BYTES  Per-edit oldText/newText byte ceiling (default 256 KiB).
+  MCP_MAX_TENANT_BYTES        Per-tenant total disk quota (default 1 GiB).
+  MCP_MAX_SESSIONS_PER_TENANT Session count cap per tenant (default 256).
+  MCP_MAX_DIR_ENTRIES         list_directory per-dir cap (default 2000).
+  MCP_MAX_TREE_DEPTH          directory_tree recursion cap (default 32).
+  MCP_MAX_TREE_NODES          directory_tree total-node cap (default 5000).
+  MCP_MAX_SEARCH_HITS         search_files hit cap (default 2000).
+  MCP_MAX_SESSION_ID_CHARS    session_id length cap (default 128).
   LOG_LEVEL      debug / info / warning / error (default info).
 
 Tool set mirrors @modelcontextprotocol/server-filesystem with a mandatory
@@ -50,9 +57,18 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
 MCP_MAX_FILE_BYTES = int(os.environ.get("MCP_MAX_FILE_BYTES", str(10 * 1024 * 1024)))
 MCP_MAX_READ_BATCH = int(os.environ.get("MCP_MAX_READ_BATCH", "32"))
 MCP_MAX_EDITS = int(os.environ.get("MCP_MAX_EDITS", "64"))
-MCP_MAX_EDIT_BYTES = int(os.environ.get("MCP_MAX_EDIT_BYTES", str(10 * 1024 * 1024)))
+MCP_MAX_EDIT_BYTES = int(os.environ.get("MCP_MAX_EDIT_BYTES", str(256 * 1024)))
 MCP_MAX_DESCRIPTION_CHARS = int(os.environ.get("MCP_MAX_DESCRIPTION_CHARS", "1024"))
+MCP_MAX_TENANT_BYTES = int(os.environ.get("MCP_MAX_TENANT_BYTES", str(1 * 1024 * 1024 * 1024)))
+MCP_MAX_SESSIONS_PER_TENANT = int(os.environ.get("MCP_MAX_SESSIONS_PER_TENANT", "256"))
+MCP_MAX_DIR_ENTRIES = int(os.environ.get("MCP_MAX_DIR_ENTRIES", "2000"))
+MCP_MAX_TREE_DEPTH = int(os.environ.get("MCP_MAX_TREE_DEPTH", "32"))
+MCP_MAX_TREE_NODES = int(os.environ.get("MCP_MAX_TREE_NODES", "5000"))
+MCP_MAX_SEARCH_HITS = int(os.environ.get("MCP_MAX_SEARCH_HITS", "2000"))
+MCP_MAX_SESSION_ID_CHARS = int(os.environ.get("MCP_MAX_SESSION_ID_CHARS", "128"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.ERROR),
@@ -75,9 +91,39 @@ class EditOp(TypedDict):
     oldText: str
     newText: str
 
+_INSTRUCTIONS = """\
+Per-tenant sandboxed filesystem. Every tool takes a `session_id` string.
+
+SESSION_ID — pick a stable name per task (e.g. "bug-42", "scratch-notes")
+and REUSE IT across tool calls so files accumulate in one namespace.
+Different session_ids get different, isolated sandboxes; do NOT send a
+random UUID per call or your files will scatter. Allowed chars:
+[A-Za-z0-9._-], max MCP_MAX_SESSION_ID_CHARS (default 128).
+
+Typical workflow:
+  1. `list_sessions` to see existing namespaces for this tenant.
+  2. Reuse an existing session_id, or pick a new one.
+  3. Optional: `describe_session` to tag it with a human label.
+  4. Use `read_file` / `write_file` / `edit_file` / `list_directory` / etc.
+
+Sandbox rules:
+  - Paths are relative to the session root. `..` escapes are rejected.
+  - Absolute paths like `/foo.txt` are treated as session-root-relative.
+  - UTF-8 text only; binary reads will error.
+  - Symlinks surface in listings (type="symlink") but every op refuses them.
+
+Caps: per-file size, listing length, tree depth, search hits, tenant disk
+quota, session count. When a listing/tree/search is truncated you will see
+a trailing sentinel entry `{"name":"...", "type":"truncated"}` — narrow
+the path or pattern to see more.
+
+DESTRUCTIVE: `destroy_session` wipes every file in the session. Only call
+when the user explicitly asks to wipe it.
+"""
+
 # FastMCP v2: transport (host/port/path) is configured at run/http_app time,
 # not on the constructor. Constructor takes only the server name + options.
-mcp = FastMCP("filesystem")
+mcp = FastMCP("filesystem", instructions=_INSTRUCTIONS)
 
 
 def _hash(v: str) -> str:
@@ -150,6 +196,12 @@ def _session_root_path(session_id: str) -> pathlib.Path:
     """Pure: compute the session root path without touching the filesystem."""
     if not session_id or not session_id.strip():
         raise ValueError("session_id required")
+    if len(session_id) > MCP_MAX_SESSION_ID_CHARS:
+        raise ValueError(
+            f"session_id too long ({len(session_id)} > MCP_MAX_SESSION_ID_CHARS={MCP_MAX_SESSION_ID_CHARS})",
+        )
+    if not _SESSION_ID_RE.match(session_id):
+        raise ValueError("session_id must match [A-Za-z0-9._-]+ (no spaces or other chars)")
     key = _api_key_ctx.get()
     if not key:
         log.error("session_root: no api key in request context")
@@ -158,11 +210,24 @@ def _session_root_path(session_id: str) -> pathlib.Path:
 
 
 def _session_root(session_id: str, *, mkdir: bool = True) -> pathlib.Path:
-    """Resolve the session root. Creates it unless `mkdir=False`."""
+    """Resolve the session root. Creates it unless `mkdir=False`.
+
+    When creating, enforces MCP_MAX_SESSIONS_PER_TENANT against the tenant's
+    index. A session_id already in the index is not counted as a new session,
+    so no-op re-opens never trip the cap.
+    """
     root = _session_root_path(session_id)
     if not mkdir:
         return root.resolve() if root.exists() else root
     existed = root.exists()
+    if not existed:
+        sessions = _load_sessions()
+        already_indexed = any(s.get("session_id") == session_id for s in sessions)
+        if not already_indexed and len(sessions) >= MCP_MAX_SESSIONS_PER_TENANT:
+            raise ValueError(
+                f"session count exceeded: {len(sessions)} >= "
+                f"MCP_MAX_SESSIONS_PER_TENANT={MCP_MAX_SESSIONS_PER_TENANT}",
+            )
     root.mkdir(parents=True, exist_ok=True)
     if not existed:
         log.info("session_root created: %s", root)
@@ -170,6 +235,47 @@ def _session_root(session_id: str, *, mkdir: bool = True) -> pathlib.Path:
     else:
         log.debug("session_root: %s", root)
     return root.resolve()
+
+
+def _tenant_usage() -> int:
+    """Sum of all file sizes under the caller's tenant dir. Symlinks skipped.
+
+    Excludes the per-tenant `sessions.json` index — it is server metadata,
+    not user content, and would otherwise eat into the tenant's quota
+    purely as a function of how many sessions they've named.
+
+    O(n) walk — called on every write/edit. Acceptable for homelab scale;
+    swap for a cached counter if tenant trees grow large.
+    """
+    root = _tenant_dir()
+    if not root.exists():
+        return 0
+    sessions_index = _sessions_file()
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for name in filenames:
+            fp = pathlib.Path(dirpath) / name
+            if fp == sessions_index:
+                continue
+            try:
+                if fp.is_symlink():
+                    continue
+                total += fp.stat(follow_symlinks=False).st_size
+            except OSError:
+                # Vanished between walk and stat — just skip.
+                continue
+    return total
+
+
+def _check_tenant_quota(new_bytes: int, replaced_bytes: int = 0) -> None:
+    """Reject if writing new_bytes (replacing replaced_bytes of existing file) would exceed quota."""
+    current = _tenant_usage()
+    projected = current - replaced_bytes + new_bytes
+    if projected > MCP_MAX_TENANT_BYTES:
+        raise ValueError(
+            f"tenant disk quota exceeded: projected {projected} > "
+            f"MCP_MAX_TENANT_BYTES={MCP_MAX_TENANT_BYTES}",
+        )
 
 
 def _safe(session_id: str, user_path: str, *, must_exist: bool = False) -> pathlib.Path:
@@ -278,13 +384,23 @@ async def read_multiple_files(session_id: str, paths: list[str]) -> dict[str, di
 
 @mcp.tool()
 async def write_file(session_id: str, path: str, content: str) -> dict:
-    """Write content to a file, creating parent dirs as needed. Capped by MCP_MAX_FILE_BYTES."""
+    """Write content to a file, creating parent dirs as needed. Capped by MCP_MAX_FILE_BYTES.
+
+    Enforces the tenant-wide MCP_MAX_TENANT_BYTES quota (replacement size
+    offset against the existing file, if any).
+    """
     n = len(content.encode("utf-8"))
     if n > MCP_MAX_FILE_BYTES:
         raise ValueError(f"content exceeds MCP_MAX_FILE_BYTES ({n} > {MCP_MAX_FILE_BYTES})")
     p = _safe(session_id, path)
+    replaced = 0
     if p.exists():
         _reject_symlink(p)
+        try:
+            replaced = p.stat(follow_symlinks=False).st_size
+        except OSError:
+            replaced = 0
+    _check_tenant_quota(n, replaced)
     tmp = p.with_name(f"{p.name}.{secrets.token_hex(8)}.tmp")
     try:
         tmp.write_text(content, encoding="utf-8")
@@ -393,6 +509,7 @@ async def edit_file(
         raise ValueError(f"edited content exceeds MCP_MAX_FILE_BYTES ({out_bytes} > {MCP_MAX_FILE_BYTES})")
 
     if not dry_run:
+        _check_tenant_quota(out_bytes, size)
         tmp = p.with_name(f"{p.name}.{secrets.token_hex(8)}.tmp")
         try:
             # newline="" skips os.linesep translation so CRLF survives as-is.
@@ -434,34 +551,85 @@ def _entry_type(child: pathlib.Path) -> str:
 
 @mcp.tool()
 async def list_directory(session_id: str, path: str = ".") -> list[dict]:
-    """List entries. Returns name + type (file/dir/symlink). Symlinks can't be operated on."""
+    """List entries. Returns name + type (file/dir/symlink). Symlinks can't be operated on.
+
+    Capped at MCP_MAX_DIR_ENTRIES; past the cap a trailing
+    {"name": "...", "type": "truncated"} sentinel is appended.
+    """
     p = _safe(session_id, path, must_exist=True)
     if not p.is_dir():
         raise NotADirectoryError(path)
-    entries = [{"name": c.name, "type": _entry_type(c)} for c in sorted(p.iterdir())]
-    log.info("list_directory: %s (%d entries)", p, len(entries))
+    names: list[str] = []
+    truncated = False
+    with os.scandir(p) as it:
+        for entry in it:
+            if len(names) >= MCP_MAX_DIR_ENTRIES:
+                truncated = True
+                break
+            names.append(entry.name)
+    names.sort()
+    entries = [{"name": n, "type": _entry_type(p / n)} for n in names]
+    if truncated:
+        entries.append({"name": "...", "type": "truncated"})
+        log.warning("list_directory: truncated at %d for %s", MCP_MAX_DIR_ENTRIES, p)
+    log.info("list_directory: %s (%d entries, truncated=%s)", p, len(entries), truncated)
     return entries
 
 
 @mcp.tool()
 async def directory_tree(session_id: str, path: str = ".") -> list[dict]:
-    """Recursive nested listing. Symlinks appear as type=symlink and are not followed."""
+    """Recursive nested listing. Symlinks appear as type=symlink and are not followed.
+
+    Bounded by MCP_MAX_TREE_DEPTH (per-branch depth), MCP_MAX_TREE_NODES
+    (total nodes visited), and MCP_MAX_DIR_ENTRIES (per-directory). On
+    truncation a sibling/child `{"name":"...", "type":"truncated"}` entry
+    is emitted so the LLM can see the listing was incomplete.
+    """
     p = _safe(session_id, path, must_exist=True)
     if not p.is_dir():
         raise NotADirectoryError(path)
 
-    def walk(d: pathlib.Path) -> list[dict]:
+    counter = [0]  # total-node budget shared across recursion
+
+    def walk(d: pathlib.Path, depth: int) -> list[dict]:
+        if counter[0] >= MCP_MAX_TREE_NODES:
+            return [{"name": "...", "type": "truncated"}]
+        names: list[str] = []
+        per_dir_truncated = False
+        try:
+            with os.scandir(d) as it:
+                for entry in it:
+                    if len(names) >= MCP_MAX_DIR_ENTRIES:
+                        per_dir_truncated = True
+                        break
+                    names.append(entry.name)
+        except OSError:
+            return []
+        names.sort()
         nodes: list[dict] = []
-        for child in sorted(d.iterdir()):
+        for name in names:
+            if counter[0] >= MCP_MAX_TREE_NODES:
+                nodes.append({"name": "...", "type": "truncated"})
+                return nodes
+            counter[0] += 1
+            child = d / name
             t = _entry_type(child)
             if t == "dir":
-                nodes.append({"name": child.name, "type": "dir", "children": walk(child)})
+                if depth >= MCP_MAX_TREE_DEPTH:
+                    nodes.append({
+                        "name": name, "type": "dir",
+                        "children": [{"name": "...", "type": "truncated"}],
+                    })
+                else:
+                    nodes.append({"name": name, "type": "dir", "children": walk(child, depth + 1)})
             else:
-                nodes.append({"name": child.name, "type": t})
+                nodes.append({"name": name, "type": t})
+        if per_dir_truncated:
+            nodes.append({"name": "...", "type": "truncated"})
         return nodes
 
-    tree = walk(p)
-    log.info("directory_tree: %s (%d top-level entries)", p, len(tree))
+    tree = walk(p, 0)
+    log.info("directory_tree: %s (%d nodes total)", p, counter[0])
     return tree
 
 
@@ -497,12 +665,18 @@ async def search_files(
     path: str = ".",
     exclude_patterns: list[str] | None = None,
 ) -> list[str]:
-    """Recursively search for names matching `pattern` (glob). Excludes are globs applied to names."""
+    """Recursively search for names matching `pattern` (glob). Excludes are globs applied to names.
+
+    Capped at MCP_MAX_SEARCH_HITS; past the cap a trailing
+    "... (truncated at N)" sentinel string is appended so the LLM knows
+    to narrow the pattern.
+    """
     excludes = exclude_patterns or []
     root = _safe(session_id, path, must_exist=True)
     if not root.is_dir():
         raise NotADirectoryError(path)
     hits: list[str] = []
+    truncated = False
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         # Drop symlinked subdirs from recursion *and* from the listing below,
         # matching list_directory/directory_tree semantics.
@@ -519,8 +693,17 @@ async def search_files(
                 continue
             if fnmatch.fnmatch(name, pattern):
                 hits.append(_display(full, session_id))
-    log.info("search_files: root=%s pattern=%r hits=%d", root, pattern, len(hits))
-    return sorted(hits)
+                if len(hits) >= MCP_MAX_SEARCH_HITS:
+                    truncated = True
+                    break
+        if truncated:
+            break
+    hits.sort()
+    if truncated:
+        hits.append(f"... (truncated at {MCP_MAX_SEARCH_HITS})")
+        log.warning("search_files: truncated at %d for %s", MCP_MAX_SEARCH_HITS, root)
+    log.info("search_files: root=%s pattern=%r hits=%d truncated=%s", root, pattern, len(hits), truncated)
+    return hits
 
 
 @mcp.tool()

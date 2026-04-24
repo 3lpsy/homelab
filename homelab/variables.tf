@@ -64,6 +64,8 @@ variable "tailnet_users" {
     mcp_user                = "mcp"
     builder_user            = "builder"
     searxng_server_user     = "searxng"
+    log_server_user         = "openobserve"
+    headscale_host_user     = "headscale-host"
 
   }
 }

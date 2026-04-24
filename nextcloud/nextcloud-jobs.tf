@@ -30,6 +30,7 @@ resource "kubernetes_manifest" "nextcloud_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

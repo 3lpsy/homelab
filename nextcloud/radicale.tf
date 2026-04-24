@@ -17,8 +17,9 @@ resource "kubernetes_deployment" "radicale" {
       metadata {
         labels = { app = "radicale" }
         annotations = {
-          "config-hash"       = sha1("${kubernetes_config_map.radicale_config.data["config"]}|${kubernetes_config_map.radicale_config.data["rights"]}")
-          "nginx-config-hash" = sha1(kubernetes_config_map.radicale_nginx_config.data["nginx.conf"])
+          "config-hash"                         = sha1("${kubernetes_config_map.radicale_config.data["config"]}|${kubernetes_config_map.radicale_config.data["rights"]}")
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.radicale_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "radicale-secrets,radicale-tls"
         }
       }
 

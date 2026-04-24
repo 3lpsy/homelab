@@ -33,7 +33,10 @@
     "group:litellm-clients": ["${personal_user}@", "${mobile_user}@", "${thunderbolt_server_user}@", "${mcp_user}@"],
     "group:mcp":["${mcp_user}@"],
     "group:searxng-clients": ["${personal_user}@", "${mobile_user}@", "${litellm_server_user}@", "${thunderbolt_server_user}@", "${mcp_user}@"],
-    "group:searxng-server": ["${searxng_server_user}@"]
+    "group:searxng-server": ["${searxng_server_user}@"],
+    "group:log-server": ["${log_server_user}@"],
+    "group:log-clients": ["${log_server_user}@", "${personal_user}@", "${mobile_user}@", "${headscale_host_user}@"],
+    "group:headscale-host": ["${headscale_host_user}@"]
   },
   "autoApprovers": {
     "exitNode": ["tag:exitnode"]
@@ -122,6 +125,9 @@
 
     // ntfy
     { "action": "accept", "src": ["group:ntfy-clients"], "dst": ["group:ntfy-server:443"] },
+
+    // openobserve — ingest from shipping hosts + UI from end users (all on 443)
+    { "action": "accept", "src": ["group:log-clients"], "dst": ["group:log-server:443"] },
     { "action": "accept", "src": ["group:personal"], "dst": ["group:exitnodes:22", "tag:exitnode:22"] },
 
     // users who can use any exit node

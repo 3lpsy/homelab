@@ -27,6 +27,7 @@ resource "kubernetes_manifest" "mcp_filesystem_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

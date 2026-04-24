@@ -21,10 +21,11 @@ resource "kubernetes_deployment" "searxng" {
           app = "searxng"
         }
         annotations = {
-          # searxng-config is ranker-owned (ignore_changes on its data), so a
-          # TF-seed change no longer hashes into a different value. Rollouts
-          # triggered by ranker instead, via searxng-ranker/restartedAt.
-          "nginx-config-hash" = sha1(kubernetes_config_map.searxng_nginx_config.data["nginx.conf"])
+          "nginx-config-hash"                      = sha1(kubernetes_config_map.searxng_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload"    = "searxng-secrets,searxng-tls"
+          # Reloader watches searxng-config and rolls this Deployment whenever
+          # the ranker daemon rewrites it.
+          "configmap.reloader.stakater.com/reload" = "searxng-config"
         }
       }
 
@@ -333,14 +334,6 @@ resource "kubernetes_deployment" "searxng" {
   depends_on = [
     kubernetes_manifest.searxng_secret_provider,
   ]
-
-  # searxng-ranker rewrites this annotation on every cycle to force a rolling
-  # restart after it updates the settings.yml ConfigMap. TF must not revert it.
-  lifecycle {
-    ignore_changes = [
-      spec[0].template[0].metadata[0].annotations["searxng-ranker/restartedAt"],
-    ]
-  }
 }
 
 resource "kubernetes_service" "searxng" {

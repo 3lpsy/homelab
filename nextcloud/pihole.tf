@@ -17,7 +17,8 @@ resource "kubernetes_deployment" "pihole" {
       metadata {
         labels = { app = "pihole" }
         annotations = {
-          "nginx-config-hash" = sha1(kubernetes_config_map.pihole_nginx_config.data["nginx.conf"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.pihole_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "pihole-secrets,pihole-tls"
         }
       }
 

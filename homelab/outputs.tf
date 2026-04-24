@@ -17,6 +17,18 @@ output "node_preauth_key" {
   sensitive = true
 }
 
+output "headscale_ec2_public_ip" {
+  value = module.headscale-infra.public_ip
+}
+
+output "headscale_ec2_ssh_user" {
+  value = module.headscale-infra.ssh_user
+}
+
+output "headscale_ec2_tailnet_hostname" {
+  value = "headscale-host"
+}
+
 # output "litellm_master_key" {
 #   value     = module.litellm.master_key
 #   sensitive = true

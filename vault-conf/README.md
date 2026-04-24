@@ -1,36 +1,66 @@
 # Vault Configuration
 
-Configures Vault after the server is deployed. Sets up Kubernetes auth, the KV secrets engine, and the unseal key secret.
+Configures Vault after the server is up. Sets up the Kubernetes auth
+backend, the KV-v2 secrets engine, and writes the real unseal key into
+the Kubernetes secret that the auto-unseal sidecar watches.
 
 ## What it manages
 
-- **Kubernetes auth backend** -- allows pods to authenticate with Vault using their service account tokens. Creates a long-lived SA token for Vault's TokenReview API calls.
-- **KV-v2 secrets engine** -- mounted at `secret/`. All downstream deployments (nextcloud, monitoring) reference this mount path via remote state.
-- **Unseal key secret** -- stores the real unseal key in a Kubernetes secret so the auto-unseal sidecar in the vault pod can unseal Vault on restart.
+- **Kubernetes auth backend**. Lets pods authenticate to Vault with
+  their service account tokens. Creates a long-lived SA token for the
+  backend to call Kubernetes' TokenReview API.
+- **KV-v2 secrets engine**. Mounted at `secret/`. All downstream
+  deployments reference this mount path via `outputs.kv_mount_path`
+  read from this deployment's remote state.
+- **Unseal key secret**. Stores the real unseal key in the
+  `vault-unseal-keys` Kubernetes secret so the auto-unseal sidecar in
+  the Vault pod can unseal on restart.
 
 ## Files
 
-- `auth.tf` -- Kubernetes auth backend, service account token, backend config.
-- `kv.tf` -- KV-v2 mount and unseal key secret.
 - `main.tf` -- Vault and Kubernetes provider config.
+- `auth.tf` -- Kubernetes auth backend, long-lived SA token,
+  `vault_kubernetes_auth_backend_config`.
+- `kv.tf` -- `vault_mount "kv"` plus the `vault-unseal-keys` secret.
 - `outputs.tf` -- Exports `kv_mount_path` for downstream deployments.
 
 ## Bootstrap procedure
 
-Vault requires manual bootstrapping before this deployment can be applied:
+Vault requires a one-time manual bootstrap before this deployment can
+apply cleanly:
 
-1. Apply the `vault` deployment. It creates a placeholder unseal key secret with a dummy value. The auto-unseal sidecar will spin because the key is wrong.
-2. Manually initialize Vault (`vault operator init`) and unseal it.
-3. Import the existing unseal key secret into vault-conf state:
+1. Apply the `vault` deployment. It creates a placeholder
+   `vault-unseal-keys` secret with a dummy value; the auto-unseal
+   sidecar will loop because the key is wrong.
+2. Initialize Vault (`vault operator init`) and unseal it manually.
+   Record the real unseal key and root token.
+3. Import the existing secret into `vault-conf` state so Terraform
+   knows it owns the data:
+
    ```
    ./terraform.sh vault-conf import kubernetes_secret.vault_unseal_keys vault/vault-unseal-keys
    ```
-4. Apply vault-conf with the real unseal key and root token. This overwrites the dummy key so the auto-unseal sidecar works on future restarts.
 
-The `vault` deployment has `ignore_changes = [data]` on its copy of the secret so it never reverts the real key back to the dummy.
+4. Set the real unseal key and root token in `.env`, then apply
+   `vault-conf`. The apply overwrites the dummy key with the real
+   one, wires up the Kubernetes auth backend, and mounts the KV-v2
+   engine.
+
+The `vault` deployment has `ignore_changes = [data]` on its own copy
+of the unseal-keys secret so that future `vault apply` runs never
+revert the real key back to the dummy.
 
 ## Gotchas
 
-- **Root token**: The Vault provider authenticates with `vault_root_token`. This is expected -- vault-conf is bootstrap-level configuration.
-- **Dual ownership of unseal secret**: Both `vault` and `vault-conf` have a `kubernetes_secret.vault_unseal_keys` resource. The vault deployment owns the initial creation; vault-conf owns the data after import. Don't destroy vault-conf without understanding this.
-- **Single unseal key**: Only one key (`key1`) is stored, implying a shamir threshold of 1.
+- **Root token auth**. The Vault provider in this deployment
+  authenticates as root. That is intentional: this is bootstrap-level
+  configuration, and no other deployment needs root.
+- **Dual ownership of the unseal-keys secret**. Both `vault` and
+  `vault-conf` declare `kubernetes_secret.vault_unseal_keys`. `vault`
+  creates it with a dummy value on first apply. `vault-conf` imports
+  it and then owns the data. Do not destroy `vault-conf` without
+  understanding that the secret will revert to whatever `vault`
+  currently declares.
+- **Single unseal key**. Only `key1` is stored, which implies the
+  Shamir threshold is 1. Good enough for a single-operator homelab;
+  do not copy this into anything that matters.

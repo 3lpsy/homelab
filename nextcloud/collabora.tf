@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "collabora" {
           app = "collabora"
         }
         annotations = {
-          "nginx-config-hash" = sha1(kubernetes_config_map.collabora_nginx_config.data["nginx.conf"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.collabora_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "collabora-tls"
         }
       }
 

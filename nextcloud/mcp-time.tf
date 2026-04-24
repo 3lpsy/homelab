@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "mcp_time" {
           app = "mcp-time"
         }
         annotations = {
-          "build-job" = local.mcp_time_build_job_name
+          "build-job"                           = local.mcp_time_build_job_name
+          "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
 

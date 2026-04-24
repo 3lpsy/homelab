@@ -169,8 +169,9 @@ resource "kubernetes_deployment" "litellm" {
           app = "litellm"
         }
         annotations = {
-          "config-hash"       = sha1(kubernetes_config_map.litellm_config.data["config.yaml"])
-          "nginx-config-hash" = sha1(kubernetes_config_map.litellm_nginx_config.data["nginx.conf"])
+          "config-hash"                         = sha1(kubernetes_config_map.litellm_config.data["config.yaml"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.litellm_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "litellm-secrets,litellm-tls"
         }
       }
 

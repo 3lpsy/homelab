@@ -23,9 +23,10 @@ resource "kubernetes_deployment" "mcp_k8s" {
         annotations = {
           # Roll the pod when either the upstream mirror, the auth-gate code,
           # or the TOML config changes.
-          "build-job"   = local.mcp_k8s_build_job_name
-          "auth-build"  = local.mcp_k8s_auth_gate_build_job_name
-          "config-hash" = sha1(kubernetes_config_map.mcp_k8s_config.data["config.toml"])
+          "build-job"                           = local.mcp_k8s_build_job_name
+          "auth-build"                          = local.mcp_k8s_auth_gate_build_job_name
+          "config-hash"                         = sha1(kubernetes_config_map.mcp_k8s_config.data["config.toml"])
+          "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
 

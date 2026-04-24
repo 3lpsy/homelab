@@ -36,3 +36,9 @@ resource "headscale_pre_auth_key" "ollama" {
   reusable       = true
   time_to_expire = "3y"
 }
+
+resource "headscale_pre_auth_key" "headscale_host" {
+  user           = headscale_user.users["headscale_host_user"].id
+  reusable       = true
+  time_to_expire = "3y"
+}

@@ -95,7 +95,53 @@ class Graph(BaseModel):
     relations: list[Relation] = Field(default_factory=list)
 
 
-mcp = FastMCP("memory")
+_INSTRUCTIONS = """\
+Per-tenant knowledge graph. All state is scoped to the caller's API key —
+no cross-tenant reads or writes.
+
+Data model:
+  - Entity: {name, entityType, observations: [str, ...]}. `name` is the
+    primary key within your tenant. `entityType` is a free-form label
+    ("person", "project", "concept", ...).
+  - Observation: a string attached to one entity. Think "fact about X".
+  - Relation: {from, to, relationType}. Directed. The triple
+    (from, to, relationType) is the uniqueness key — the same (from, to)
+    pair with a different relationType is a separate relation.
+
+Typical workflow:
+  1. `search_nodes(query)` or `read_graph()` to see what already exists.
+  2. `create_entities([...])` for new nodes. EXISTING NAMES ARE SKIPPED
+     SILENTLY (idempotent). Re-calling create does NOT update entityType
+     or observations on an existing entity. To change an existing entity,
+     use `add_observations` / `delete_observations`, or delete+recreate.
+  3. `add_observations([{entityName, contents: [...]}])` to append facts
+     to an entity. The entity must already exist — this errors otherwise.
+  4. `create_relations([{from, to, relationType}])` to link entities.
+     Duplicate triples are skipped silently.
+
+Retrieval:
+  - `search_nodes(query)`: case-insensitive substring match over entity
+    name, entityType, and each observation. Returns matched entities plus
+    relations whose BOTH endpoints are in the match set. Relations to
+    unmatched neighbors are dropped — call `open_nodes` with the specific
+    names if you need them.
+  - `open_nodes(names)`: exact-name fetch. Same both-endpoints-must-match
+    rule for relations.
+  - `read_graph()`: the entire tenant graph. Fine on small graphs; avoid
+    on large ones.
+
+Deletion:
+  - `delete_entities(entityNames)` removes entities AND every relation
+    that touches them.
+  - `delete_observations([{entityName, observations}])` removes specific
+    strings from an entity; missing strings are ignored.
+  - `delete_relations([{from, to, relationType}])` removes exact triples.
+
+Wire format note: Relation JSON keys are `from`, `to`, `relationType` —
+use `from`, not `from_`.
+"""
+
+mcp = FastMCP("memory", instructions=_INSTRUCTIONS)
 
 
 def _hash(v: str) -> str:

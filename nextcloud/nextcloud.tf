@@ -23,8 +23,9 @@ resource "kubernetes_deployment" "nextcloud" {
           app = "nextcloud"
         }
         annotations = {
-          "build-job"         = local.nextcloud_build_job_name
-          "nginx-config-hash" = sha1(kubernetes_config_map.nginx_config.data["nginx.conf"])
+          "build-job"                           = local.nextcloud_build_job_name
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "nextcloud-secrets,nextcloud-tls"
         }
       }
 

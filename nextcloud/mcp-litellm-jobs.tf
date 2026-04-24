@@ -27,6 +27,7 @@ resource "kubernetes_manifest" "mcp_litellm_build" {
     }
     spec = {
       backoffLimit = 2
+      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "mcp_litellm" {
           app = "mcp-litellm"
         }
         annotations = {
-          "build-job" = local.mcp_litellm_build_job_name
+          "build-job"                           = local.mcp_litellm_build_job_name
+          "secret.reloader.stakater.com/reload" = "mcp-litellm-secrets"
         }
       }
 

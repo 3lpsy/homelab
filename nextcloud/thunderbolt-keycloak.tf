@@ -20,6 +20,9 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
         labels = {
           app = "thunderbolt-keycloak"
         }
+        annotations = {
+          "secret.reloader.stakater.com/reload" = "thunderbolt-secrets"
+        }
       }
 
       spec {

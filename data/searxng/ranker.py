@@ -16,7 +16,6 @@ import random
 import sys
 import threading
 import time
-from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Callable
 
@@ -40,7 +39,6 @@ log: logging.Logger = logging.getLogger("searxng-ranker")
 
 NAMESPACE = os.environ.get("SEARXNG_NAMESPACE", "searxng")
 CONFIGMAP = os.environ.get("SEARXNG_CONFIGMAP", "searxng-config")
-DEPLOYMENT = os.environ.get("SEARXNG_DEPLOYMENT", "searxng")
 
 INTERVAL = int(os.environ.get("RANKER_INTERVAL_SECONDS", "1800"))
 PROBE_TIMEOUT = float(os.environ.get("RANKER_PROBE_TIMEOUT_SECONDS", "8"))
@@ -270,9 +268,9 @@ def render_settings_yaml(current_yaml: str) -> str:
 # ---------- kubernetes I/O ----------
 
 
-def load_k8s() -> tuple[client.CoreV1Api, client.AppsV1Api]:
+def load_k8s() -> client.CoreV1Api:
     config.load_incluster_config()
-    return client.CoreV1Api(), client.AppsV1Api()
+    return client.CoreV1Api()
 
 
 def read_settings_yaml(core: client.CoreV1Api) -> str:
@@ -287,25 +285,6 @@ def patch_settings_yaml(core: client.CoreV1Api, new_yaml: str) -> None:
         name=CONFIGMAP,
         namespace=NAMESPACE,
         body={"data": {"settings.yml": new_yaml}},
-    )
-
-
-def trigger_rollout(apps: client.AppsV1Api) -> None:
-    now_iso = datetime.now(timezone.utc).isoformat()
-    apps.patch_namespaced_deployment(
-        name=DEPLOYMENT,
-        namespace=NAMESPACE,
-        body={
-            "spec": {
-                "template": {
-                    "metadata": {
-                        "annotations": {
-                            "searxng-ranker/restartedAt": now_iso,
-                        }
-                    }
-                }
-            }
-        },
     )
 
 
@@ -344,7 +323,7 @@ def main() -> None:
         sys.exit(1)
 
     start_health_server(HEALTH_PORT)
-    core, apps = load_k8s()
+    core = load_k8s()
 
     cycle = 0
     while True:
@@ -358,8 +337,7 @@ def main() -> None:
                 new_yaml = render_settings_yaml(current)
                 if new_yaml != current:
                     patch_settings_yaml(core, new_yaml)
-                    trigger_rollout(apps)
-                    log.info("[cycle=%d] settings.yml updated, rollout triggered", cycle)
+                    log.info("[cycle=%d] settings.yml updated; Reloader will roll searxng", cycle)
                 else:
                     log.info("[cycle=%d] settings.yml unchanged; no rollout", cycle)
         except Exception as exc:

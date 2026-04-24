@@ -6,9 +6,9 @@ resource "kubernetes_service_account" "searxng_ranker" {
   automount_service_account_token = true
 }
 
-# Ranker needs to read + mutate the searxng-config ConfigMap and patch the
-# searxng Deployment's pod-template annotations (to trigger rolling restart).
-# Scoped to those two resources by name.
+# Ranker only needs to read and mutate the searxng-config ConfigMap.
+# Stakater Reloader (cluster-wide) observes the ConfigMap change and rolls
+# the searxng Deployment — no direct Deployment patch permission needed.
 resource "kubernetes_role" "searxng_ranker" {
   metadata {
     name      = "searxng-ranker"
@@ -20,13 +20,6 @@ resource "kubernetes_role" "searxng_ranker" {
     resources      = ["configmaps"]
     resource_names = ["searxng-config"]
     verbs          = ["get", "patch", "update"]
-  }
-
-  rule {
-    api_groups     = ["apps"]
-    resources      = ["deployments"]
-    resource_names = ["searxng"]
-    verbs          = ["get", "patch"]
   }
 }
 

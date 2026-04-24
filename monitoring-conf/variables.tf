@@ -1,5 +1,3 @@
-
-
 variable "state_dirs" {
   type = string
 }
@@ -23,4 +21,3 @@ variable "headscale_subdomain" {
 variable "headscale_magic_domain" {
   type = string
 }
-
