@@ -308,6 +308,13 @@ resource "kubernetes_deployment" "mcp_litellm" {
     kubernetes_manifest.mcp_litellm_secret_provider,
     kubernetes_manifest.mcp_litellm_build,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "mcp_litellm" {

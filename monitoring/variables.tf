@@ -88,9 +88,10 @@ variable "ntfy_domain" {
 variable "ntfy_users" {
   type = map(string)
   default = {
-    grafana    = "admin"
-    mobile     = "user"
-    prometheus = "user"
+    grafana     = "admin"
+    mobile      = "user"
+    prometheus  = "user"
+    openobserve = "user"
   }
 }
 

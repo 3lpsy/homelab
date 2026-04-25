@@ -349,6 +349,13 @@ resource "kubernetes_deployment" "nextcloud" {
     kubernetes_service.nextcloud_redis,
     kubernetes_manifest.nextcloud_build,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "nextcloud_internal" {
@@ -488,6 +495,13 @@ resource "kubernetes_deployment" "nextcloud_postgres" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "nextcloud_postgres" {
@@ -608,6 +622,13 @@ resource "kubernetes_deployment" "nextcloud_redis" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "nextcloud_redis" {

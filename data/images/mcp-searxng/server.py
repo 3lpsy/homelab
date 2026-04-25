@@ -64,6 +64,44 @@ def _parse_cidrs(raw: str) -> list:
 
 ALLOWED_PRIVATE_CIDRS = _parse_cidrs(os.environ.get("MCP_ALLOWED_PRIVATE_CIDRS", ""))
 
+# SearXNG silently drops unknown category names and falls back to default —
+# an LLM that hallucinates "news_recent" or "academic" gets generic results
+# with no hint the filter was ignored. We validate against this known set
+# and surface the dropped names in the response. Admins can override to
+# match a customised SearXNG deployment via MCP_SEARXNG_CATEGORIES.
+_DEFAULT_SEARXNG_CATEGORIES = frozenset({
+    "general", "images", "videos", "news", "map",
+    "music", "it", "science", "files", "social media",
+})
+KNOWN_CATEGORIES: frozenset[str] = frozenset(
+    c.strip().lower()
+    for c in os.environ.get(
+        "MCP_SEARXNG_CATEGORIES",
+        ",".join(sorted(_DEFAULT_SEARXNG_CATEGORIES)),
+    ).split(",")
+    if c.strip()
+) or _DEFAULT_SEARXNG_CATEGORIES
+
+
+def _split_categories(raw: str) -> tuple[list[str], list[str]]:
+    """Split a comma-separated category list into (kept, dropped).
+
+    Whitespace-trimmed, case-insensitive membership in KNOWN_CATEGORIES.
+    Empty items are ignored entirely. Returns kept names in the caller's
+    original casing so downstream SearXNG still sees what it expects.
+    """
+    kept: list[str] = []
+    dropped: list[str] = []
+    for item in raw.split(","):
+        name = item.strip()
+        if not name:
+            continue
+        if name.lower() in KNOWN_CATEGORIES:
+            kept.append(name)
+        else:
+            dropped.append(name)
+    return kept, dropped
+
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.ERROR),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -101,6 +139,11 @@ class SearchResponse(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
     infoboxes: list[Infobox] = Field(default_factory=list)
     error: str | None = None
+    # Any caller-supplied category names that were not in KNOWN_CATEGORIES
+    # and therefore NOT sent to SearXNG. Empty list on the happy path.
+    # LLMs should treat a non-empty value as "your filter was ignored, use
+    # one of the known names or omit `categories`".
+    dropped_categories: list[str] = Field(default_factory=list)
 
 
 class FetchResponse(BaseModel):
@@ -162,8 +205,11 @@ async def search(
       safesearch: 0 (off), 1 (moderate), 2 (strict)
     """
     params: dict[str, str] = {"q": query, "format": "json", "safesearch": str(safesearch)}
+    dropped: list[str] = []
     if categories:
-        params["categories"] = categories
+        kept, dropped = _split_categories(categories)
+        if kept:
+            params["categories"] = ",".join(kept)
     if language:
         params["language"] = language
     if time_range:
@@ -179,6 +225,7 @@ async def search(
         return SearchResponse(
             query=query,
             error=f"upstream unreachable ({type(e).__name__})",
+            dropped_categories=dropped,
         )
     except ValueError as e:
         # r.json() on malformed upstream bodies raises ValueError — not an
@@ -188,6 +235,7 @@ async def search(
         return SearchResponse(
             query=query,
             error=f"upstream returned non-JSON ({type(e).__name__})",
+            dropped_categories=dropped,
         )
 
     items = [
@@ -209,13 +257,17 @@ async def search(
         )
         for b in (data.get("infoboxes") or [])
     ]
-    log.info("search: query=%r hits=%d", query, len(items))
+    if dropped:
+        log.info("search: query=%r hits=%d dropped_categories=%s", query, len(items), dropped)
+    else:
+        log.info("search: query=%r hits=%d", query, len(items))
     return SearchResponse(
         query=query,
         count=len(items),
         results=items,
         suggestions=data.get("suggestions") or [],
         infoboxes=infoboxes,
+        dropped_categories=dropped,
     )
 
 

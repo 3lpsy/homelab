@@ -51,6 +51,7 @@ resource "kubernetes_deployment" "prometheus" {
             "--storage.tsdb.path=/prometheus",
             "--storage.tsdb.retention.time=${var.prometheus_retention}",
             "--web.enable-lifecycle",
+            "--log.level=warn",
           ]
 
           port {
@@ -275,6 +276,13 @@ resource "kubernetes_deployment" "prometheus" {
         }
       }
     }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
   }
 }
 

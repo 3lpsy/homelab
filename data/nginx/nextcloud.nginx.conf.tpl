@@ -9,7 +9,7 @@ http {
     default            1;
     "~*kube-probe/"    0;
   }
-  access_log /var/log/nginx/access.log combined_noprobe if=$loggable;
+  access_log /dev/stdout combined_noprobe if=$loggable;
   error_log /dev/stderr crit;
 
   upstream nextcloud {

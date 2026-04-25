@@ -12,6 +12,10 @@ resource "kubernetes_config_map" "openobserve_env" {
     ZO_GRPC_PORT                   = "5081"
     ZO_COMPACT_DATA_RETENTION_DAYS = tostring(var.openobserve_retention_days)
     ZO_TELEMETRY                   = "false"
+    # Drop INFO chatter (flight->search SQL echo + access-log middleware lines
+    # that pollute the `pods` stream when searching for "error"). WARN+ still
+    # surfaces ingest rejections, schema conflicts, etc.
+    RUST_LOG = "warn"
   }
 }
 

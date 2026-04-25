@@ -762,11 +762,47 @@ async def get_metric_metadata(
     return _build(MetricMetadataResult, metadata=res.data)
 
 
+# Fields kept when `include_discovered=False` (the default). Everything else
+# on a Prometheus target entry — notably `discoveredLabels` (the full set of
+# `__meta_kubernetes_*` annotations) and `globalUrl` — gets dropped because
+# it easily dwarfs the useful payload on a Kubernetes cluster. OSS LLMs with
+# 8-32K context blow past the window on a single `get_targets()` otherwise.
+_TARGET_SLIM_FIELDS = frozenset({
+    "labels",
+    "scrapePool",
+    "scrapeUrl",
+    "health",
+    "lastError",
+    "lastScrape",
+    "lastScrapeDuration",
+    "scrapeInterval",
+    "scrapeTimeout",
+})
+
+
+def _slim_target(t: dict) -> dict:
+    return {k: v for k, v in t.items() if k in _TARGET_SLIM_FIELDS}
+
+
 @mcp.tool()
 async def get_targets(
     state: Literal["active", "dropped", "any"] | None = None,
+    include_discovered: Annotated[
+        bool,
+        Field(description=(
+            "Include `discoveredLabels` and `globalUrl` on each target. "
+            "Off by default — those fields are ~50 `__meta_kubernetes_*` "
+            "entries per target and explode response size. Turn on only "
+            "when debugging scrape relabel rules."
+        )),
+    ] = False,
 ) -> TargetsResult | PromError:
-    """List scrape targets, optionally filtered by state (active/dropped)."""
+    """List scrape targets, optionally filtered by state (active/dropped).
+
+    By default returns a slim per-target dict (labels, scrapePool, scrapeUrl,
+    health, lastError, lastScrape*, scrapeInterval, scrapeTimeout). Pass
+    `include_discovered=True` for the full upstream payload.
+    """
     params: list[tuple[str, Any]] = []
     if state is not None:
         params.append(("state", state))
@@ -775,11 +811,12 @@ async def get_targets(
         return res
     if not isinstance(res.data, dict):
         return PromError(error="unexpected /targets shape", error_type="upstream_json")
-    return _build(
-        TargetsResult,
-        active=res.data.get("activeTargets") or [],
-        dropped=res.data.get("droppedTargets") or [],
-    )
+    active = res.data.get("activeTargets") or []
+    dropped = res.data.get("droppedTargets") or []
+    if not include_discovered:
+        active = [_slim_target(t) for t in active]
+        dropped = [_slim_target(t) for t in dropped]
+    return _build(TargetsResult, active=active, dropped=dropped)
 
 
 @mcp.tool()

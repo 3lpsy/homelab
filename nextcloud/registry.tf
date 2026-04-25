@@ -63,6 +63,10 @@ resource "kubernetes_deployment" "registry" {
             name  = "REGISTRY_STORAGE_DELETE_ENABLED"
             value = "true"
           }
+          env {
+            name  = "REGISTRY_LOG_LEVEL"
+            value = "warn"
+          }
 
           volume_mount {
             name       = "registry-data"
@@ -246,4 +250,11 @@ resource "kubernetes_deployment" "registry" {
   depends_on = [
     kubernetes_manifest.registry_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }

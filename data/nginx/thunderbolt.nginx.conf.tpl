@@ -19,7 +19,7 @@ http {
     default            1;
     "~*kube-probe/"    0;
   }
-  access_log /var/log/nginx/access.log redacted if=$loggable;
+  access_log /dev/stdout redacted if=$loggable;
   error_log /dev/stderr crit;
 
   upstream thunderbolt_frontend  { server 127.0.0.1:80; }

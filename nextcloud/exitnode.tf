@@ -228,6 +228,13 @@ resource "kubernetes_deployment" "exitnode" {
   depends_on = [
     kubernetes_manifest.exitnode_tinyproxy_build,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 # Cluster-internal Service per exit-node pod exposing tinyproxy on :8888.

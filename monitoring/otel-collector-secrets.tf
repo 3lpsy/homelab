@@ -84,7 +84,7 @@ resource "vault_policy" "otel_collector" {
   name = "otel-collector-policy"
 
   policy = <<EOT
-path "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/openobserve/config" {
+path "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/openobserve/service-accounts/ingester" {
   capabilities = ["read"]
 }
 EOT
@@ -124,7 +124,7 @@ resource "kubernetes_manifest" "otel_collector_secret_provider" {
         objects = yamlencode([
           {
             objectName = "basic_b64"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/openobserve/config"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/openobserve/service-accounts/ingester"
             secretKey  = "basic_b64"
           },
         ])
@@ -135,7 +135,7 @@ resource "kubernetes_manifest" "otel_collector_secret_provider" {
   depends_on = [
     kubernetes_namespace.monitoring,
     vault_kubernetes_auth_backend_role.otel_collector,
-    vault_kv_secret_v2.openobserve_config,
+    vault_kv_secret_v2.openobserve_service_account,
     vault_policy.otel_collector,
   ]
 }

@@ -253,6 +253,13 @@ resource "kubernetes_deployment" "openobserve" {
   depends_on = [
     kubernetes_manifest.openobserve_secret_provider,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "openobserve" {

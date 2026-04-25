@@ -202,6 +202,54 @@ def test_search_shapes_result_model(monkeypatch):
     assert resp.infoboxes[0].urls == [{"url": "u"}]
 
 
+def test_search_drops_unknown_category_and_reports_it(monkeypatch):
+    # SearXNG silently drops unknown categories — an LLM's hallucinated
+    # filter would otherwise fall back to default with no signal. We
+    # pre-filter against KNOWN_CATEGORIES, strip unknowns from the upstream
+    # params, and surface them in `dropped_categories`.
+    Client, cap = _fake_get_client(json_data={"results": []})
+    monkeypatch.setattr(server.httpx, "AsyncClient", Client)
+
+    resp = _call(server.search("q", categories="news,bogus,science"))
+    # Kept categories reach upstream; unknown stripped.
+    assert cap["params"]["categories"] == "news,science"
+    assert resp.dropped_categories == ["bogus"]
+
+
+def test_search_all_unknown_categories_omits_param(monkeypatch):
+    # When every supplied category is unknown, `categories` param must be
+    # omitted entirely — otherwise SearXNG would see an empty string.
+    Client, cap = _fake_get_client(json_data={"results": []})
+    monkeypatch.setattr(server.httpx, "AsyncClient", Client)
+
+    resp = _call(server.search("q", categories="bogus1,bogus2"))
+    assert "categories" not in cap["params"]
+    assert resp.dropped_categories == ["bogus1", "bogus2"]
+
+
+def test_search_case_insensitive_category_match(monkeypatch):
+    # KNOWN_CATEGORIES is lowercase, but SearXNG is case-sensitive on the
+    # wire. Caller may send "News" or "GENERAL"; keep the original casing
+    # on the way out so the upstream still honors it.
+    Client, cap = _fake_get_client(json_data={"results": []})
+    monkeypatch.setattr(server.httpx, "AsyncClient", Client)
+
+    resp = _call(server.search("q", categories="News,GENERAL"))
+    assert cap["params"]["categories"] == "News,GENERAL"
+    assert resp.dropped_categories == []
+
+
+def test_search_social_media_category_allowed(monkeypatch):
+    # "social media" contains a space and is a legit SearXNG category —
+    # make sure the trim logic doesn't mangle it.
+    Client, cap = _fake_get_client(json_data={"results": []})
+    monkeypatch.setattr(server.httpx, "AsyncClient", Client)
+
+    resp = _call(server.search("q", categories="social media,news"))
+    assert cap["params"]["categories"] == "social media,news"
+    assert resp.dropped_categories == []
+
+
 def test_search_http_error_returns_error_payload(monkeypatch):
     err = httpx.ConnectError("boom")
     Client, _ = _fake_get_client(raise_exc=err)

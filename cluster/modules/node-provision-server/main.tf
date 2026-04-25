@@ -15,6 +15,29 @@ resource "null_resource" "install_deps" {
   }
 }
 
+# Fedora ships mesa-va-drivers without the patent-encumbered H.264/HEVC VAAPI
+# profiles, which means iGPU hardware decode is unavailable for almost every
+# IP camera codec. Swap to mesa-va-drivers-freeworld from RPM Fusion so the
+# Frigate pod's ffmpeg can use `preset-vaapi` without falling back to CPU.
+# Idempotent: rpmfusion-free-release re-install is a no-op when present, and
+# the dnf swap is gated on freeworld not already being installed.
+resource "null_resource" "gpu_vaapi" {
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm",
+      "rpm -q mesa-va-drivers-freeworld >/dev/null 2>&1 || sudo dnf swap -y mesa-va-drivers mesa-va-drivers-freeworld"
+    ]
+  }
+  depends_on = [null_resource.install_deps]
+}
+
 resource "null_resource" "sysctl_inotify" {
   connection {
     type        = "ssh"

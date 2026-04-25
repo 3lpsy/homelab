@@ -97,15 +97,18 @@ Templates in `../templates/` are reused across deployments:
 The `tailnet_users` variable maps a role key to a Headscale username.
 Every downstream service that needs a tailnet identity looks up its
 pre-auth key through `tailnet_user_map[role_key]`. Current roles:
-`personal_user`, `nomad_server_user` (legacy name for the K3s node),
-`mobile_user`, `registry_server_user`, `grafana_server_user`,
+`personal_user`, `personal_laptop_user`,
+`nomad_server_user` (legacy name for the K3s node), `mobile_user`, `registry_server_user`, `grafana_server_user`,
 `prometheus_user`, `openwrt_user`, `calendar_server_user`,
 `tablet_user`, `deck_user`, `devbox_user`, `exit_node_user`,
 `tv_user`, `vault_server_user`, `nextcloud_server_user`,
 `collabora_server_user`, `pihole_server_user`, `ntfy_server_user`,
 `ollama_server_user`, `litellm_server_user`,
 `thunderbolt_server_user`, `mcp_user`, `builder_user`,
-`searxng_server_user`, `log_server_user`, `headscale_host_user`.
+`searxng_server_user`, `log_server_user`, `headscale_host_user`,
+`homeassist_server_user`, `frigate_server_user`,
+`pod_provisioner_user` (used by the OpenObserve bootstrap Job to
+reach Vault over the tailnet).
 
 ## Gotchas
 

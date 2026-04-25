@@ -72,6 +72,13 @@ resource "kubernetes_deployment" "immich_machine_learning" {
       }
     }
   }
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "immich_machine_learning" {
@@ -405,6 +412,13 @@ resource "kubernetes_deployment" "immich" {
     kubernetes_deployment.immich_redis,
     kubernetes_deployment.immich_machine_learning
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_deployment" "immich_postgres" {
@@ -541,6 +555,13 @@ resource "kubernetes_deployment" "immich_postgres" {
   depends_on = [
     kubernetes_manifest.immich_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "immich_postgres" {
@@ -674,6 +695,13 @@ resource "kubernetes_deployment" "immich_redis" {
   depends_on = [
     kubernetes_manifest.immich_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "immich_redis" {

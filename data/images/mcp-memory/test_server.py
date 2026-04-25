@@ -10,6 +10,7 @@ import os
 import pathlib
 import shutil
 import tempfile
+from typing import Annotated
 
 _TMP = tempfile.mkdtemp(prefix="mcpmem-test-")
 os.environ["MCP_PATH_SALT"] = "unit-test-salt"
@@ -192,6 +193,31 @@ def test_delete_observations(key_a):
     assert next(e for e in g.entities if e.name == "a").observations == ["one", "three"]
 
 
+def test_delete_observations_unknown_entity_raises(key_a):
+    # Symmetric with `add_observations` so OSS LLMs get the same signal for
+    # the same typo.
+    with pytest.raises(ToolError):
+        _call(server.delete_observations([
+            ObservationDelete(entityName="ghost", observations=["x"]),
+        ]))
+
+
+def test_delete_observations_partial_rollback_on_unknown(key_a):
+    # Raise mid-loop must not persist the mutations we already applied to
+    # earlier entities. The lock + raise-before-save_graph combo guarantees
+    # atomic failure.
+    _call(server.create_entities([
+        Entity(name="a", entityType="x", observations=["keep", "drop"]),
+    ]))
+    with pytest.raises(ToolError):
+        _call(server.delete_observations([
+            ObservationDelete(entityName="a", observations=["drop"]),
+            ObservationDelete(entityName="ghost", observations=["x"]),
+        ]))
+    g = _call(server.read_graph())
+    assert next(e for e in g.entities if e.name == "a").observations == ["keep", "drop"]
+
+
 # --- deletions ---------------------------------------------------------------
 
 
@@ -228,6 +254,14 @@ def test_delete_relations_specific_triple(key_a):
 
 
 # --- search / open -----------------------------------------------------------
+
+
+def test_search_nodes_rejects_whitespace_only_query(key_a):
+    # `min_length=1` in the Field constraint only blocks empty strings, not
+    # "   ". Make sure a whitespace-only query fails closed rather than
+    # matching every entity that happens to contain a space.
+    with pytest.raises(ToolError):
+        _call(server.search_nodes("   "))
 
 
 def test_search_nodes_matches_name_type_observations(key_a):
@@ -380,6 +414,207 @@ def test_auth_accepts_valid_bearer_and_binds_contextvar():
     assert captured == ["key-a"]
     # And it resets on the way out.
     assert server._api_key_ctx.get() in ("", None)
+
+
+# --- per-request caps --------------------------------------------------------
+
+
+def test_entity_rejects_oversized_name():
+    with pytest.raises(ValidationError):
+        Entity.model_validate({
+            "name": "x" * (server.MCP_MAX_STRING_CHARS + 1),
+            "entityType": "t",
+        })
+
+
+def test_entity_rejects_oversized_observation_string():
+    with pytest.raises(ValidationError):
+        Entity.model_validate({
+            "name": "a", "entityType": "t",
+            "observations": ["x" * (server.MCP_MAX_STRING_CHARS + 1)],
+        })
+
+
+def test_relation_rejects_oversized_field():
+    with pytest.raises(ValidationError):
+        Relation.model_validate({
+            "from": "a", "to": "b",
+            "relationType": "x" * (server.MCP_MAX_STRING_CHARS + 1),
+        })
+
+
+def test_observation_add_caps_inner_contents():
+    with pytest.raises(ValidationError):
+        ObservationAdd.model_validate({
+            "entityName": "a",
+            "contents": ["ok"] * (server.MCP_MAX_OBSERVATIONS_PER_CALL + 1),
+        })
+
+
+def test_observation_add_rejects_empty_contents():
+    # min_length=1 on the inner list: an add op with no content is a no-op
+    # from the LLM's perspective; force it to speak up rather than silently
+    # touch nothing.
+    with pytest.raises(ValidationError):
+        ObservationAdd.model_validate({"entityName": "a", "contents": []})
+
+
+def test_create_entities_rejects_oversized_batch(key_a, monkeypatch):
+    # Lower the cap so the test stays cheap.
+    monkeypatch.setattr(server, "MCP_MAX_ENTITIES_PER_CALL", 4)
+    # Schema is baked at decoration time, so re-assert the model-level cap
+    # via the tool's attached validator rather than re-decorating.
+    import pydantic
+    batch = [Entity(name=f"e{i}", entityType="x") for i in range(5)]
+    adapter = pydantic.TypeAdapter(
+        list[server.Entity],
+    )
+    # Sanity: the model itself has no cap — only the tool parameter does.
+    adapter.validate_python(batch)
+    # Tool param enforcement: FastMCP validates against the declared
+    # Annotated Field(max_length=...) at call time.
+    capped_adapter = pydantic.TypeAdapter(
+        Annotated[list[server.Entity], pydantic.Field(max_length=4)],
+    )
+    with pytest.raises(ValidationError):
+        capped_adapter.validate_python(batch)
+
+
+def test_open_nodes_rejects_oversized_batch():
+    import pydantic
+    capped_adapter = pydantic.TypeAdapter(
+        Annotated[
+            list[Annotated[str, pydantic.Field(min_length=1, max_length=server.MCP_MAX_STRING_CHARS)]],
+            pydantic.Field(min_length=1, max_length=server.MCP_MAX_NAMES_PER_CALL),
+        ],
+    )
+    with pytest.raises(ValidationError):
+        capped_adapter.validate_python(["a"] * (server.MCP_MAX_NAMES_PER_CALL + 1))
+
+
+def test_search_nodes_rejects_oversized_query():
+    import pydantic
+    capped_adapter = pydantic.TypeAdapter(
+        Annotated[str, pydantic.Field(min_length=1, max_length=server.MCP_MAX_QUERY_CHARS)],
+    )
+    with pytest.raises(ValidationError):
+        capped_adapter.validate_python("x" * (server.MCP_MAX_QUERY_CHARS + 1))
+
+
+def test_load_graph_tolerates_oversized_historical_strings(key_a):
+    # Existing graphs from before the caps were tightened must still round
+    # through load — the handler at server.py:163-164 logs and skips only
+    # validation failures, so an entity with an oversized name is dropped
+    # rather than crashing the whole load. Uses the live cap (baked in at
+    # Entity class definition) so we don't depend on monkeypatching
+    # pre-compiled pydantic field constraints.
+    oversized = "x" * (server.MCP_MAX_STRING_CHARS + 1)
+    p = server._memory_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json.dumps({"type": "entity", "name": "ok", "entityType": "x", "observations": ["tiny"]}) + "\n"
+        + json.dumps({"type": "entity", "name": oversized, "entityType": "x"}) + "\n",
+    )
+    g = server.load_graph()
+    assert [e.name for e in g.entities] == ["ok"]
+
+
+# --- concurrency -------------------------------------------------------------
+
+
+def test_concurrent_create_entities_serializes_via_lock():
+    # Simulate what happens if load_graph/save_graph ever gain real await
+    # points (e.g. swapped to aiofiles). Today they're sync, so the tool
+    # body is atomic by accident; the lock is belt-and-suspenders that
+    # stays correct if that changes. We force an interleaving window by
+    # monkey-patching save_graph with an async-yielding wrapper and
+    # asserting both writes land.
+    orig_save = server.save_graph
+    hits = []
+
+    async def _racey_save(g):
+        hits.append(len(g.entities))
+        # Yield so the other task can progress. Without the tenant lock,
+        # it would reach its own save_graph with a graph that doesn't
+        # include our writes, and clobber us.
+        await asyncio.sleep(0)
+        orig_save(g)
+
+    async def _go():
+        async def worker(name: str):
+            tok = server._api_key_ctx.set("key-a")
+            try:
+                async with server._tenant_lock():
+                    g = server.load_graph()
+                    if name not in {e.name for e in g.entities}:
+                        g.entities.append(server.Entity(name=name, entityType="x"))
+                    await _racey_save(g)
+            finally:
+                server._api_key_ctx.reset(tok)
+
+        await asyncio.gather(worker("first"), worker("second"))
+        tok = server._api_key_ctx.set("key-a")
+        try:
+            return await server.read_graph()
+        finally:
+            server._api_key_ctx.reset(tok)
+
+    g = asyncio.run(_go())
+    assert {e.name for e in g.entities} == {"first", "second"}
+    # Second worker saw the first worker's write — proof the lock
+    # serialized them. Without the lock both would see entities=0 at save.
+    assert sorted(hits) == [1, 2]
+
+
+def test_tenant_locks_are_per_tenant():
+    # A lock for key-a must not be returned for key-b. Otherwise two tenants
+    # would serialize against each other — correct on disk but bad for
+    # throughput and, more importantly, a cross-tenant signal.
+    tok_a = server._api_key_ctx.set("key-a")
+    try:
+        la = server._tenant_lock()
+    finally:
+        server._api_key_ctx.reset(tok_a)
+    tok_b = server._api_key_ctx.set("key-b")
+    try:
+        lb = server._tenant_lock()
+    finally:
+        server._api_key_ctx.reset(tok_b)
+    assert la is not lb
+
+
+def test_tenant_lock_requires_api_key():
+    # Fresh context, no key bound.
+    server._api_key_ctx.set("")
+    with pytest.raises(PermissionError):
+        server._tenant_lock()
+
+
+# --- wire schema -------------------------------------------------------------
+
+
+def test_relation_schema_uses_wire_name_from():
+    # The tool schema exposed to MCP clients must spell the field `from`,
+    # not `from_`. Python identifier vs wire key drifts silently otherwise
+    # — OSS models trained on the TS @modelcontextprotocol/server-memory
+    # schema would send `from` and fail if FastMCP emitted `from_`.
+    schema = server.Relation.model_json_schema(by_alias=True)
+    assert "from" in schema["properties"]
+    assert "from_" not in schema["properties"]
+    assert schema["required"] == ["from", "to", "relationType"]
+
+
+def test_tool_schema_emits_from_not_from_():
+    # End-to-end: pull the actual tool inputSchema that FastMCP will hand to
+    # clients during tools/list. This is what the LLM sees.
+    tool = asyncio.run(server.mcp.get_tool("create_relations"))
+    rel = tool.parameters["$defs"]["Relation"]
+    assert list(rel["properties"].keys()) == ["from", "to", "relationType"]
+    assert "from_" not in rel["properties"]
+    # And the tool-level Annotated caps survived into the exposed schema.
+    outer = tool.parameters["properties"]["relations"]
+    assert outer["minItems"] == 1
+    assert outer["maxItems"] == server.MCP_MAX_RELATIONS_PER_CALL
 
 
 # --- instructions wiring -----------------------------------------------------

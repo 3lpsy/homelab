@@ -213,6 +213,9 @@ resource "kubernetes_job" "nextcloud_configure_collabora" {
               php occ config:system:set default_locale --value="en_US"
               php occ config:system:set force_language --value="en"
 
+              # Reduce log noise: 0=debug, 1=info, 2=warn, 3=error, 4=fatal.
+              php occ config:system:set loglevel --value=2 --type=integer
+
               echo "Configuring Collabora Office app..."
 
               php occ app:install richdocuments || echo "Collabora already installed"

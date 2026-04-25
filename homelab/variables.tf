@@ -41,6 +41,7 @@ variable "tailnet_users" {
   type        = map(string)
   default = {
     personal_user           = "stargate"
+    personal_laptop_user    = "ronin"
     nomad_server_user       = "orchard"
     mobile_user             = "mobile"
     registry_server_user    = "registry"
@@ -66,6 +67,9 @@ variable "tailnet_users" {
     searxng_server_user     = "searxng"
     log_server_user         = "openobserve"
     headscale_host_user     = "headscale-host"
+    pod_provisioner_user    = "pod-provisioner"
+    homeassist_server_user  = "homeassist"
+    frigate_server_user     = "frigate"
 
   }
 }

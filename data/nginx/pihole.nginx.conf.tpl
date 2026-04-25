@@ -6,7 +6,7 @@ http {
     default            1;
     "~*kube-probe/"    0;
   }
-  access_log /var/log/nginx/access.log combined if=$loggable;
+  access_log /dev/stdout combined if=$loggable;
   error_log /dev/stderr crit;
 
   upstream pihole {

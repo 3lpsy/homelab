@@ -13,6 +13,10 @@ resource "kubernetes_deployment" "searxng_ranker" {
       condition     = length(local.exitnode_names) > 0
       error_message = "No *.conf files found in var.wireguard_config_dir (${var.wireguard_config_dir}); searxng-ranker requires at least one exit node."
     }
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
   }
 
   # Surface misconfigs in ~3m instead of the 10m k8s-provider default.
@@ -87,7 +91,7 @@ resource "kubernetes_deployment" "searxng_ranker" {
 
           env {
             name  = "RANKER_INTERVAL_SECONDS"
-            value = "1800"
+            value = "43200"
           }
 
           env {

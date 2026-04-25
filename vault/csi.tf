@@ -8,6 +8,22 @@ resource "helm_release" "secrets_store_csi_driver" {
     name  = "syncSecret.enabled"
     value = "true"
   }
+
+  set {
+    name  = "enableSecretRotation"
+    value = "true"
+  }
+
+  set {
+    name  = "rotationPollInterval"
+    value = "2m"
+  }
+
+  # Reduce reconciler log volume — driver still logs warnings/errors.
+  set {
+    name  = "logVerbosity"
+    value = "0"
+  }
 }
 
 resource "helm_release" "vault_csi_provider" {

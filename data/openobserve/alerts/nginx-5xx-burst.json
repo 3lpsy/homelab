@@ -1,0 +1,23 @@
+{
+  "name": "nginx-5xx-burst",
+  "stream_type": "logs",
+  "stream_name": "nginx_access",
+  "is_real_time": false,
+  "query_condition": {
+    "query_type": "sql",
+    "sql": "SELECT count(*) AS total FROM \"nginx_access\" WHERE body LIKE '% 5__ %' OR body LIKE '%\" 500 %' OR body LIKE '%\" 502 %' OR body LIKE '%\" 503 %' OR body LIKE '%\" 504 %'"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 20,
+    "frequency": 5,
+    "frequency_type": "minutes",
+    "silence": 15
+  },
+  "destinations": ["ntfy"],
+  "description": "Nginx 5xx responses on headscale edge (>=20 in 5m).",
+  "enabled": true,
+  "row_template": "",
+  "tz_offset": 0
+}

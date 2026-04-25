@@ -2,6 +2,7 @@
   // not using tags but we'll define them for now
   "groups": {
     "group:personal": ["${personal_user}@"],
+    "group:personal-laptop": ["${personal_laptop_user}@"],
     "group:node-server": ["${nomad_server_user}@"],
     "group:mobile": ["${mobile_user}@"],
     "group:tablet": ["${tablet_user}@"],
@@ -12,13 +13,17 @@
     "group:syncthing-clients": ["${personal_user}@","${mobile_user}@","${tablet_user}@","${deck_user}@"],
     "group:vault-server": ["${vault_server_user}@"],
     // immich is also nextcloud TODO move collabora to nextcloud too
-    "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@"],
+    "group:vault-clients": ["${vault_server_user}@", "${personal_user}@", "${nomad_server_user}@", "${pod_provisioner_user}@"],
     "group:nextcloud-clients": ["${nextcloud_server_user}@", "${collabora_server_user}@", "${personal_user}@", "${mobile_user}@"],
     "group:nextcloud-server": ["${nextcloud_server_user}@"],
     "group:collabora-server": ["${collabora_server_user}@"],
     "group:pihole-clients": ["${personal_user}@", "${mobile_user}@", "${tv_user}@"],
     "group:calendar-clients": ["${calendar_server_user}@", "${personal_user}@", "${mobile_user}@"],
     "group:calendar-server": ["${calendar_server_user}@"],
+    "group:homeassist-clients": ["${homeassist_server_user}@", "${personal_user}@", "${mobile_user}@"],
+    "group:homeassist-server": ["${homeassist_server_user}@"],
+    "group:frigate-clients": ["${frigate_server_user}@", "${personal_user}@", "${mobile_user}@"],
+    "group:frigate-server": ["${frigate_server_user}@"],
     "group:registry-clients": ["${registry_server_user}@", "${nomad_server_user}@", "${personal_user}@", "${builder_user}@"],
     "group:grafana-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
     "group:grafana-server": ["${grafana_server_user}@"],
@@ -48,6 +53,7 @@
   "acls": [
     //  access to self
     { "action": "accept", "src": ["group:personal"], "dst": ["group:personal:*"] },
+    { "action": "accept", "src": ["group:personal-laptop"], "dst": ["group:personal:22"] },
     { "action": "accept", "src": ["group:mobile"], "dst": ["group:mobile:*"] },
     { "action": "accept", "src": ["group:tablet"], "dst": ["group:tablet:*"] },
     { "action": "accept", "src": ["group:deck"], "dst": ["group:deck:*"] },
@@ -69,6 +75,12 @@
 
     // calendar clients access to personal, tmp
     { "action": "accept", "src": ["group:calendar-clients"], "dst": ["group:calendar-server:443"] },
+
+    // home assistant clients access to home assistant server
+    { "action": "accept", "src": ["group:homeassist-clients"], "dst": ["group:homeassist-server:443"] },
+
+    // frigate clients access to frigate server
+    { "action": "accept", "src": ["group:frigate-clients"], "dst": ["group:frigate-server:443"] },
 
     // let personal talk to ollama
     { "action": "accept", "src": ["group:personal", "group:mobile"], "dst": ["group:ollama-server:*"] },

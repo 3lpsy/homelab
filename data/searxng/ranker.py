@@ -40,7 +40,7 @@ log: logging.Logger = logging.getLogger("searxng-ranker")
 NAMESPACE = os.environ.get("SEARXNG_NAMESPACE", "searxng")
 CONFIGMAP = os.environ.get("SEARXNG_CONFIGMAP", "searxng-config")
 
-INTERVAL = int(os.environ.get("RANKER_INTERVAL_SECONDS", "1800"))
+INTERVAL = int(os.environ.get("RANKER_INTERVAL_SECONDS", "43200"))
 PROBE_TIMEOUT = float(os.environ.get("RANKER_PROBE_TIMEOUT_SECONDS", "8"))
 TOP_N = int(os.environ.get("RANKER_TOP_N", "8"))
 ALPHA = float(os.environ.get("RANKER_EWMA_ALPHA", "0.3"))

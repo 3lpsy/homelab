@@ -147,6 +147,13 @@ resource "kubernetes_deployment" "kube_state_metrics" {
       }
     }
   }
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "kube_state_metrics" {

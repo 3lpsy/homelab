@@ -5,17 +5,34 @@ The graph is persisted as NDJSON at
 `$MCP_DATA_ROOT/<hash(api_key+salt)>/memory.jsonl`. One tenant per API key;
 no cross-tenant visibility.
 
+Data layout note: MCP_DATA_ROOT is shared with mcp-filesystem and both
+services derive the tenant dir as `sha256(MCP_PATH_SALT + api_key)[:32]`
+from the same salt — same key therefore maps to the same `/data/<hash>/`
+on disk. That's fine because mcp-filesystem confines all ops to
+`/data/<hash>/<session_hash>/` one level deeper, so it can't reach
+`memory.jsonl`. Don't change either service's path layout without
+re-checking this invariant.
+
 Environment:
-  MCP_API_KEYS   CSV of accepted Bearer tokens. Empty/unset is fail-closed.
-  MCP_PATH_SALT  Hex or base64 salt mixed into tenant hashes.
-  MCP_DATA_ROOT  Backing directory (default /data). Shared with mcp-filesystem;
-                 per-service salt means tenant dirs never collide.
-  MCP_HOST       Bind host (default 0.0.0.0)
-  MCP_PORT       Bind port (default 8000)
-  MCP_MAX_GRAPH_BYTES  Persisted graph size ceiling (default 32 MiB).
-  LOG_LEVEL      debug / info / warning / error (default info).
+  MCP_API_KEYS                   CSV of accepted Bearer tokens. Empty/unset
+                                 is fail-closed.
+  MCP_PATH_SALT                  Hex or base64 salt mixed into tenant hashes.
+  MCP_DATA_ROOT                  Backing directory (default /data).
+  MCP_HOST                       Bind host (default 0.0.0.0)
+  MCP_PORT                       Bind port (default 8000)
+  MCP_MAX_GRAPH_BYTES            Persisted graph size ceiling (default 32 MiB).
+  MCP_MAX_ENTITIES_PER_CALL      Max entities per create_entities call (256).
+  MCP_MAX_RELATIONS_PER_CALL     Max relations per create_/delete_relations (256).
+  MCP_MAX_OBSERVATIONS_PER_CALL  Max outer-list + inner-contents size on
+                                 add_/delete_observations (256).
+  MCP_MAX_NAMES_PER_CALL         Max names per delete_entities / open_nodes (256).
+  MCP_MAX_STRING_CHARS           Per-string char cap on names / types /
+                                 observations / relation fields (4096).
+  MCP_MAX_QUERY_CHARS            search_nodes query char cap (512).
+  LOG_LEVEL                      debug / info / warning / error (default info).
 """
 
+import asyncio
 import contextvars
 import hashlib
 import json
@@ -23,6 +40,7 @@ import logging
 import os
 import pathlib
 import secrets
+from typing import Annotated
 
 import uvicorn
 from fastmcp import FastMCP
@@ -39,7 +57,23 @@ DATA_ROOT = pathlib.Path(os.environ.get("MCP_DATA_ROOT", "/data")).resolve()
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
 MCP_MAX_GRAPH_BYTES = int(os.environ.get("MCP_MAX_GRAPH_BYTES", str(32 * 1024 * 1024)))
+# Per-call cardinality + per-string caps. These bound peak RSS / request body
+# size BEFORE the graph-wide MCP_MAX_GRAPH_BYTES rear-guard fires at save
+# time. Overridable via env so the admin can raise them without a rebuild.
+MCP_MAX_ENTITIES_PER_CALL = int(os.environ.get("MCP_MAX_ENTITIES_PER_CALL", "256"))
+MCP_MAX_RELATIONS_PER_CALL = int(os.environ.get("MCP_MAX_RELATIONS_PER_CALL", "256"))
+MCP_MAX_OBSERVATIONS_PER_CALL = int(os.environ.get("MCP_MAX_OBSERVATIONS_PER_CALL", "256"))
+MCP_MAX_NAMES_PER_CALL = int(os.environ.get("MCP_MAX_NAMES_PER_CALL", "256"))
+MCP_MAX_STRING_CHARS = int(os.environ.get("MCP_MAX_STRING_CHARS", "4096"))
+MCP_MAX_QUERY_CHARS = int(os.environ.get("MCP_MAX_QUERY_CHARS", "512"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+
+# Reusable constrained-string type. Only the per-item length is encoded here;
+# list-length caps go on the field that owns the list so Entity.observations
+# stays uncapped on the model (old persisted graphs may have long lists) while
+# tool-boundary inputs (ObservationAdd.contents, etc.) can enforce a tighter
+# per-call bound.
+_BoundedStr = Annotated[str, Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)]
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.ERROR),
@@ -55,12 +89,37 @@ log.info("startup: data_root=%s api_keys=%d log_level=%s", DATA_ROOT, len(API_KE
 
 _api_key_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("api_key", default="")
 
+# Per-tenant write lock. The mutating tools are a load_graph → mutate →
+# save_graph read-modify-write. Two concurrent calls on the same API key
+# would both load, mutate independently, and then one `os.replace` would
+# clobber the other. Event-loop-single-threaded reads of this dict are
+# atomic between awaits, so a plain dict is safe — no asyncio.Lock around
+# lock creation needed.
+_tenant_locks: dict[str, asyncio.Lock] = {}
+
+
+def _tenant_lock() -> asyncio.Lock:
+    """Return the asyncio.Lock for the caller's tenant, creating it on first use."""
+    key = _api_key_ctx.get()
+    if not key:
+        log.error("tenant_lock: no api key in request context")
+        raise PermissionError("no api key in request context")
+    tenant_hash = _hash(key)
+    lock = _tenant_locks.get(tenant_hash)
+    if lock is None:
+        lock = asyncio.Lock()
+        _tenant_locks[tenant_hash] = lock
+    return lock
+
 
 class Entity(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str = Field(min_length=1)
-    entityType: str = Field(min_length=1)
-    observations: list[str] = Field(default_factory=list)
+    name: str = Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)
+    entityType: str = Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)
+    # Per-item length bound; list length is intentionally uncapped so
+    # `load_graph` can still read historical entities with long observation
+    # lists. The per-call cardinality wall lives on the tool parameter.
+    observations: list[_BoundedStr] = Field(default_factory=list)
 
 
 class Relation(BaseModel):
@@ -69,9 +128,9 @@ class Relation(BaseModel):
     # `from_` (usable from Python). The custom serializer pins output keys
     # to `from` so fastmcp, NDJSON, and MCP responses all emit the spec name.
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
-    from_: str = Field(alias="from", min_length=1)
-    to: str = Field(min_length=1)
-    relationType: str = Field(min_length=1)
+    from_: str = Field(alias="from", min_length=1, max_length=MCP_MAX_STRING_CHARS)
+    to: str = Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)
+    relationType: str = Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)
 
     @model_serializer
     def _ser(self) -> dict:
@@ -79,15 +138,21 @@ class Relation(BaseModel):
 
 
 class ObservationAdd(BaseModel):
+    # Tool-boundary model only (not persisted), so the inner list cap is safe
+    # to encode directly on the field.
     model_config = ConfigDict(extra="forbid")
-    entityName: str = Field(min_length=1)
-    contents: list[str]
+    entityName: str = Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)
+    contents: list[_BoundedStr] = Field(
+        min_length=1, max_length=MCP_MAX_OBSERVATIONS_PER_CALL,
+    )
 
 
 class ObservationDelete(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    entityName: str = Field(min_length=1)
-    observations: list[str]
+    entityName: str = Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)
+    observations: list[_BoundedStr] = Field(
+        min_length=1, max_length=MCP_MAX_OBSERVATIONS_PER_CALL,
+    )
 
 
 class Graph(BaseModel):
@@ -248,108 +313,153 @@ def save_graph(g: Graph) -> None:
 
 
 @mcp.tool()
-async def create_entities(entities: list[Entity]) -> list[Entity]:
+async def create_entities(
+    entities: Annotated[
+        list[Entity],
+        Field(min_length=1, max_length=MCP_MAX_ENTITIES_PER_CALL),
+    ],
+) -> list[Entity]:
     """Create entities. Existing names are skipped (idempotent)."""
-    g = load_graph()
-    have = {e.name for e in g.entities}
-    added: list[Entity] = []
-    for e in entities:
-        if e.name in have:
-            continue
-        g.entities.append(e)
-        have.add(e.name)
-        added.append(e)
-    save_graph(g)
+    async with _tenant_lock():
+        g = load_graph()
+        have = {e.name for e in g.entities}
+        added: list[Entity] = []
+        for e in entities:
+            if e.name in have:
+                continue
+            g.entities.append(e)
+            have.add(e.name)
+            added.append(e)
+        save_graph(g)
     log.info("create_entities: added=%d skipped=%d", len(added), len(entities) - len(added))
     return added
 
 
 @mcp.tool()
-async def create_relations(relations: list[Relation]) -> list[Relation]:
+async def create_relations(
+    relations: Annotated[
+        list[Relation],
+        Field(min_length=1, max_length=MCP_MAX_RELATIONS_PER_CALL),
+    ],
+) -> list[Relation]:
     """Create relations. Duplicate (from, to, relationType) triples are skipped."""
-    g = load_graph()
-    have = {_rel_key(r) for r in g.relations}
-    added: list[Relation] = []
-    for r in relations:
-        k = _rel_key(r)
-        if k in have:
-            continue
-        g.relations.append(r)
-        have.add(k)
-        added.append(r)
-    save_graph(g)
+    async with _tenant_lock():
+        g = load_graph()
+        have = {_rel_key(r) for r in g.relations}
+        added: list[Relation] = []
+        for r in relations:
+            k = _rel_key(r)
+            if k in have:
+                continue
+            g.relations.append(r)
+            have.add(k)
+            added.append(r)
+        save_graph(g)
     log.info("create_relations: added=%d skipped=%d", len(added), len(relations) - len(added))
     return added
 
 
 @mcp.tool()
-async def add_observations(observations: list[ObservationAdd]) -> list[dict]:
+async def add_observations(
+    observations: Annotated[
+        list[ObservationAdd],
+        Field(min_length=1, max_length=MCP_MAX_OBSERVATIONS_PER_CALL),
+    ],
+) -> list[dict]:
     """Append observations to named entities. Returns per-entity added items."""
-    g = load_graph()
-    by_name = {e.name: e for e in g.entities}
-    result: list[dict] = []
-    for op in observations:
-        ent = by_name.get(op.entityName)
-        if ent is None:
-            log.info("add_observations: unknown entity %r", op.entityName)
-            raise ToolError(
-                f"entity {op.entityName!r} does not exist — "
-                "create it first with create_entities, or check spelling with read_graph/search_nodes"
-            )
-        existing = set(ent.observations)
-        added = [c for c in op.contents if c not in existing]
-        ent.observations.extend(added)
-        result.append({"entityName": op.entityName, "addedObservations": added})
-    save_graph(g)
+    async with _tenant_lock():
+        g = load_graph()
+        by_name = {e.name: e for e in g.entities}
+        result: list[dict] = []
+        for op in observations:
+            ent = by_name.get(op.entityName)
+            if ent is None:
+                log.info("add_observations: unknown entity %r", op.entityName)
+                raise ToolError(
+                    f"entity {op.entityName!r} does not exist — "
+                    "create it first with create_entities, or check spelling with read_graph/search_nodes"
+                )
+            existing = set(ent.observations)
+            added = [c for c in op.contents if c not in existing]
+            ent.observations.extend(added)
+            result.append({"entityName": op.entityName, "addedObservations": added})
+        save_graph(g)
     log.info("add_observations: %d entities touched", len(result))
     return result
 
 
 @mcp.tool()
-async def delete_entities(entityNames: list[str]) -> dict:
+async def delete_entities(
+    entityNames: Annotated[
+        list[_BoundedStr],
+        Field(min_length=1, max_length=MCP_MAX_NAMES_PER_CALL),
+    ],
+) -> dict:
     """Delete entities by name. Also removes relations touching them."""
-    g = load_graph()
-    targets = set(entityNames)
-    before_e, before_r = len(g.entities), len(g.relations)
-    g.entities = [e for e in g.entities if e.name not in targets]
-    g.relations = [r for r in g.relations if r.from_ not in targets and r.to not in targets]
-    save_graph(g)
-    removed = {
-        "entitiesRemoved": before_e - len(g.entities),
-        "relationsRemoved": before_r - len(g.relations),
-    }
+    async with _tenant_lock():
+        g = load_graph()
+        targets = set(entityNames)
+        before_e, before_r = len(g.entities), len(g.relations)
+        g.entities = [e for e in g.entities if e.name not in targets]
+        g.relations = [r for r in g.relations if r.from_ not in targets and r.to not in targets]
+        save_graph(g)
+        removed = {
+            "entitiesRemoved": before_e - len(g.entities),
+            "relationsRemoved": before_r - len(g.relations),
+        }
     log.info("delete_entities: %s", removed)
     return removed
 
 
 @mcp.tool()
-async def delete_observations(deletions: list[ObservationDelete]) -> dict:
-    """Remove specific observations from named entities."""
-    g = load_graph()
-    by_name = {e.name: e for e in g.entities}
-    total = 0
-    for op in deletions:
-        ent = by_name.get(op.entityName)
-        if ent is None:
-            continue
-        drop = set(op.observations)
-        kept = [o for o in ent.observations if o not in drop]
-        total += len(ent.observations) - len(kept)
-        ent.observations = kept
-    save_graph(g)
+async def delete_observations(
+    deletions: Annotated[
+        list[ObservationDelete],
+        Field(min_length=1, max_length=MCP_MAX_OBSERVATIONS_PER_CALL),
+    ],
+) -> dict:
+    """Remove specific observations from named entities.
+
+    Errors if any target entity does not exist — matches `add_observations`
+    so the LLM gets the same signal for the same mistake (typo, forgot to
+    create the entity, wrong tenant).
+    """
+    async with _tenant_lock():
+        g = load_graph()
+        by_name = {e.name: e for e in g.entities}
+        total = 0
+        for op in deletions:
+            ent = by_name.get(op.entityName)
+            if ent is None:
+                log.info("delete_observations: unknown entity %r", op.entityName)
+                raise ToolError(
+                    f"entity {op.entityName!r} does not exist — "
+                    "check spelling with read_graph/search_nodes"
+                )
+            drop = set(op.observations)
+            kept = [o for o in ent.observations if o not in drop]
+            total += len(ent.observations) - len(kept)
+            ent.observations = kept
+        save_graph(g)
     log.info("delete_observations: removed=%d", total)
     return {"observationsRemoved": total}
 
 
 @mcp.tool()
-async def delete_relations(relations: list[Relation]) -> dict:
+async def delete_relations(
+    relations: Annotated[
+        list[Relation],
+        Field(min_length=1, max_length=MCP_MAX_RELATIONS_PER_CALL),
+    ],
+) -> dict:
     """Remove specific (from, to, relationType) relations."""
-    g = load_graph()
-    drop = {_rel_key(r) for r in relations}
-    before = len(g.relations)
-    g.relations = [r for r in g.relations if _rel_key(r) not in drop]
-    removed = before - len(g.relations)
-    save_graph(g)
+    async with _tenant_lock():
+        g = load_graph()
+        drop = {_rel_key(r) for r in relations}
+        before = len(g.relations)
+        g.relations = [r for r in g.relations if _rel_key(r) not in drop]
+        removed = before - len(g.relations)
+        save_graph(g)
     log.info("delete_relations: removed=%d", removed)
     return {"relationsRemoved": removed}
 
@@ -363,13 +473,17 @@ async def read_graph() -> Graph:
 
 
 @mcp.tool()
-async def search_nodes(query: str) -> Graph:
+async def search_nodes(
+    query: Annotated[str, Field(min_length=1, max_length=MCP_MAX_QUERY_CHARS)],
+) -> Graph:
     """Substring match over entity name / entityType / observations.
 
     Returns matched entities plus any relations that touch at least one
     matched entity on both ends — mirrors the official server's semantics.
     """
-    q = query.lower()
+    q = query.strip().lower()
+    if not q:
+        raise ToolError("query must contain at least one non-whitespace character")
     g = load_graph()
     hits = [
         e for e in g.entities
@@ -384,7 +498,12 @@ async def search_nodes(query: str) -> Graph:
 
 
 @mcp.tool()
-async def open_nodes(names: list[str]) -> Graph:
+async def open_nodes(
+    names: Annotated[
+        list[_BoundedStr],
+        Field(min_length=1, max_length=MCP_MAX_NAMES_PER_CALL),
+    ],
+) -> Graph:
     """Fetch named entities plus relations that touch at least one of them on both ends."""
     wanted = set(names)
     g = load_graph()

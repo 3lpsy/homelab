@@ -321,6 +321,13 @@ resource "kubernetes_deployment" "collabora" {
   depends_on = [
     kubernetes_manifest.nextcloud_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "collabora_internal" {

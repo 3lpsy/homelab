@@ -37,6 +37,7 @@ import calendar
 import json
 import logging
 import os
+import re
 import secrets
 from contextvars import ContextVar
 from datetime import date, datetime
@@ -350,13 +351,33 @@ async def _get(path: str, params: list[tuple[str, Any]] | None = None) -> Any:
 
 
 def _validate_date_range(start_date: str, end_date: str) -> None:
+    # Parse each side separately so the error names the offending arg.
+    # Pydantic `pattern=` on the tool signature would surface as
+    # "1 validation error for call[...] ... [type=string_pattern_mismatch]
+    # https://errors.pydantic.dev/..." — noisy for small OSS LLMs. Catch
+    # it here and raise a one-line ToolError instead.
     try:
         s = date.fromisoformat(start_date)
+    except ValueError:
+        raise ToolError(f"start_date must be YYYY-MM-DD, got {start_date!r}")
+    try:
         e = date.fromisoformat(end_date)
     except ValueError:
-        raise ToolError("dates must be YYYY-MM-DD")
+        raise ToolError(f"end_date must be YYYY-MM-DD, got {end_date!r}")
     if e < s:
         raise ToolError(f"end_date {end_date} precedes start_date {start_date}")
+
+
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def _validate_month(month: str) -> None:
+    """Enforce YYYY-MM with a valid month number, in a one-line ToolError
+    (same rationale as `_validate_date_range` — avoid pydantic's noisy
+    validation URL in the error surface).
+    """
+    if not _MONTH_RE.match(month):
+        raise ToolError(f"month must be YYYY-MM (e.g. '2026-04'), got {month!r}")
 
 
 def _row_date(row: dict[str, Any]) -> str | None:
@@ -623,8 +644,8 @@ async def get_key_info(
 
 @mcp.tool()
 async def get_spend_logs(
-    start_date: Annotated[str, Field(description="Inclusive start date, YYYY-MM-DD.", pattern=r"^\d{4}-\d{2}-\d{2}$")],
-    end_date: Annotated[str, Field(description="Inclusive end date, YYYY-MM-DD.", pattern=r"^\d{4}-\d{2}-\d{2}$")],
+    start_date: Annotated[str, Field(description="Inclusive start date, YYYY-MM-DD.")],
+    end_date: Annotated[str, Field(description="Inclusive end date, YYYY-MM-DD.")],
     key_hash: Annotated[
         str | None,
         Field(description="Optional LiteLLM key hash. Omit if your allowlist has one key."),
@@ -670,8 +691,8 @@ async def get_spend_logs(
 
 @mcp.tool()
 async def get_daily_summary(
-    start_date: Annotated[str, Field(description="Inclusive start date, YYYY-MM-DD.", pattern=r"^\d{4}-\d{2}-\d{2}$")],
-    end_date: Annotated[str, Field(description="Inclusive end date, YYYY-MM-DD.", pattern=r"^\d{4}-\d{2}-\d{2}$")],
+    start_date: Annotated[str, Field(description="Inclusive start date, YYYY-MM-DD.")],
+    end_date: Annotated[str, Field(description="Inclusive end date, YYYY-MM-DD.")],
     key_hash: Annotated[
         str | None,
         Field(description="Optional LiteLLM key hash. Omit if your allowlist has one key."),
@@ -704,7 +725,7 @@ async def get_daily_summary(
 
 @mcp.tool()
 async def get_monthly_summary(
-    month: Annotated[str, Field(description="Month to summarize, YYYY-MM.", pattern=r"^\d{4}-\d{2}$")],
+    month: Annotated[str, Field(description="Month to summarize, YYYY-MM.")],
     key_hash: Annotated[
         str | None,
         Field(description="Optional LiteLLM key hash. Omit if your allowlist has one key."),
@@ -713,15 +734,11 @@ async def get_monthly_summary(
     """Whole-month totals for a key hash: spend, tokens, requests, plus by-
     model and by-day rollups. Aggregated client-side from paginated spend
     logs."""
+    _validate_month(month)
     kh = _resolve_hash(key_hash)
-    try:
-        year, mon = int(month[:4]), int(month[5:7])
-        if not 1 <= mon <= 12:
-            raise ValueError("month out of range")
-        start = date(year, mon, 1)
-        end = date(year, mon, calendar.monthrange(year, mon)[1])
-    except (ValueError, IndexError):
-        raise ToolError(f"invalid month {month!r} — expected YYYY-MM")
+    year, mon = int(month[:4]), int(month[5:7])
+    start = date(year, mon, 1)
+    end = date(year, mon, calendar.monthrange(year, mon)[1])
 
     rows, upstream_total, truncated = await _paginate_spend_logs(
         kh, start.isoformat(), end.isoformat(), MCP_MAX_LOGS

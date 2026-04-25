@@ -383,6 +383,39 @@ def test_get_daily_summary_bad_date_range():
         _call(server.get_daily_summary(key_hash=HASH_A, start_date="2026-04-22", end_date="2026-04-01"))
 
 
+@pytest.mark.parametrize("bad_start", ["bogus", "2026-4-01", "2026/04/22", "22-04-2026"])
+def test_get_daily_summary_bad_start_date(bad_start):
+    # Pattern-mismatch errors used to leak pydantic's validation-URL blob;
+    # now they surface as a single-line ToolError that names the arg.
+    with pytest.raises(ToolError) as ei:
+        _call(server.get_daily_summary(
+            key_hash=HASH_A, start_date=bad_start, end_date="2026-04-22",
+        ))
+    msg = str(ei.value)
+    assert "start_date must be YYYY-MM-DD" in msg
+    assert bad_start in msg
+    assert "pydantic.dev" not in msg
+
+
+def test_get_daily_summary_bad_end_date():
+    with pytest.raises(ToolError) as ei:
+        _call(server.get_daily_summary(
+            key_hash=HASH_A, start_date="2026-04-01", end_date="nope",
+        ))
+    msg = str(ei.value)
+    assert "end_date must be YYYY-MM-DD" in msg
+    assert "nope" in msg
+
+
+def test_get_spend_logs_bad_start_date():
+    # Same clean-error treatment on get_spend_logs.
+    with pytest.raises(ToolError) as ei:
+        _call(server.get_spend_logs(
+            key_hash=HASH_A, start_date="junk", end_date="2026-04-22",
+        ))
+    assert "start_date must be YYYY-MM-DD" in str(ei.value)
+
+
 # --- get_monthly_summary --------------------------------------------------
 
 
@@ -427,10 +460,19 @@ def test_get_monthly_summary_leap_february(monkeypatch):
     assert res.end_date == "2024-02-29"
 
 
-def test_get_monthly_summary_bad_month(monkeypatch):
+@pytest.mark.parametrize("bad", ["2026-13", "2026-00", "bogus", "2026", "2026-4", "26-04"])
+def test_get_monthly_summary_bad_month(monkeypatch, bad):
+    # Bad month values produce a single-line ToolError — no pydantic
+    # validation-error blob with an "https://errors.pydantic.dev/..." URL.
     _patch_client(monkeypatch, lambda _r: _v2_page([]))
-    with pytest.raises(ToolError, match="invalid month"):
-        _call(server.get_monthly_summary(key_hash=HASH_A, month="2026-13"))
+    with pytest.raises(ToolError) as ei:
+        _call(server.get_monthly_summary(key_hash=HASH_A, month=bad))
+    msg = str(ei.value)
+    assert "month must be YYYY-MM" in msg
+    assert bad in msg
+    # No leaked pydantic internals.
+    assert "pydantic.dev" not in msg
+    assert "string_pattern_mismatch" not in msg
 
 
 def test_get_monthly_summary_empty(monkeypatch):

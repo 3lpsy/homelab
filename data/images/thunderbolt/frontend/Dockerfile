@@ -39,10 +39,11 @@ RUN sed -i "s/credentials: 'omit'/credentials: 'include'/g" \
 # PowerSync never asks for a token and sync hangs at "Initial sync timed out".
 # Drop the guard — the fetch() to /powersync/token runs same-origin so the
 # session cookie is attached automatically and the backend auth macro accepts
-# either auth method.
-RUN sed -i '/const hadToken = Boolean(getAuthToken())/d; /if (!hadToken) {/,/^      }$/d' \
+# either auth method. Keep `const hadToken` in place: downstream telemetry
+# (`had_token: hadToken`) still references it.
+RUN sed -i '/if (!hadToken) {/,/^      }$/d' \
       src/db/powersync/connector.ts \
- && ! grep -q 'hadToken' src/db/powersync/connector.ts
+ && ! grep -q 'if (!hadToken)' src/db/powersync/connector.ts
 
 RUN bun install --frozen-lockfile
 RUN bunx vite build && find dist -name '*.map' -delete

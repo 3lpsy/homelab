@@ -190,6 +190,13 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
     kubernetes_manifest.thunderbolt_secret_provider,
     kubernetes_deployment.thunderbolt_postgres,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "thunderbolt_keycloak" {

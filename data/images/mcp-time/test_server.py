@@ -67,6 +67,61 @@ def test_get_current_time_empty_string_falls_back_to_default():
     assert res.timezone == "America/Chicago"
 
 
+def test_get_current_time_whitespace_falls_back_to_default():
+    # Whitespace-only should behave the same as empty-string — the previous
+    # implementation errored with "timezone '' is not a valid IANA timezone".
+    res = _call(server.get_current_time(timezone="   "))
+    assert res.timezone == "America/Chicago"
+
+
+# --- fixed-offset legacy alias warning ------------------------------------
+
+
+@pytest.mark.parametrize("tz", ["EST", "MST", "HST"])
+def test_get_current_time_legacy_alias_warns(tz):
+    # tzdata ships a handful of bare abbreviations as fixed-offset zones
+    # (EST, MST, HST — and NOT CST/PST, which are ambiguous and so not
+    # aliased). An LLM that picks these up from user text gets the wrong
+    # result half the year; we resolve them anyway but surface a warning
+    # so the caller self-corrects on the next call. HST in particular is
+    # benign for Hawaii (no DST), but most people typing "HST" don't
+    # know that and we still nudge toward Pacific/Honolulu.
+    res = _call(server.get_current_time(timezone=tz))
+    assert res.timezone == tz
+    assert res.warning is not None
+    assert tz in res.warning
+    assert "America/" in res.warning  # points at the safer replacement form
+
+
+@pytest.mark.parametrize("tz", ["UTC", "GMT", "Zulu"])
+def test_get_current_time_bare_universal_names_no_warning(tz):
+    # UTC / GMT / Zulu are universally understood zero-offset and do not
+    # pretend to track DST — do not pester the LLM.
+    res = _call(server.get_current_time(timezone=tz))
+    assert res.warning is None
+
+
+@pytest.mark.parametrize("tz", [
+    "America/New_York", "Europe/London", "Asia/Kolkata",
+    "Asia/Kathmandu", "Pacific/Honolulu", "America/Phoenix",
+])
+def test_get_current_time_area_location_no_warning(tz):
+    res = _call(server.get_current_time(timezone=tz))
+    assert res.warning is None
+
+
+def test_convert_time_propagates_warning_on_either_side():
+    # A warning on either source or target must reach the caller — the
+    # tool returns both TimeResults, so the LLM sees either.
+    res = _call(server.convert_time(
+        time="14:30",
+        source_timezone="EST",
+        target_timezone="Europe/London",
+    ))
+    assert res.source.warning is not None
+    assert res.target.warning is None
+
+
 # --- convert_time ---------------------------------------------------------
 
 
@@ -160,6 +215,63 @@ def test_convert_time_edge_midnight():
     ))
     src_dt = datetime.fromisoformat(res.source.datetime)
     assert (src_dt.hour, src_dt.minute, src_dt.second) == (0, 0, 0)
+
+
+# --- _format_hours --------------------------------------------------------
+
+
+@pytest.mark.parametrize("hours,expected", [
+    (0.0, "+0.0"),
+    (5.0, "+5.0"),
+    (-5.0, "-5.0"),
+    (5.5, "+5.5"),   # India: UTC+5:30
+    (-3.5, "-3.5"),
+    (5.75, "+5.75"), # Nepal: UTC+5:45
+    (-2.75, "-2.75"),
+])
+def test_format_hours(hours, expected):
+    assert server._format_hours(hours) == expected
+
+
+# --- input length caps ----------------------------------------------------
+
+
+def test_tz_max_length_enforced_via_tool_schema():
+    # TzParam carries Field(max_length=64). Validate that the constraint
+    # survives into the MCP tool inputSchema so clients reject long strings
+    # before they reach ZoneInfo.
+    tool = asyncio.run(server.mcp.get_tool("get_current_time"))
+    tz_schema = tool.parameters["properties"]["timezone"]
+    # FastMCP flattens a Union[str, None] into {"anyOf": [...]} — the
+    # string branch carries the max_length; pydantic may also promote it
+    # to the outer schema depending on version.
+    max_len = tz_schema.get("maxLength")
+    if max_len is None:
+        # anyOf form — pull from the string branch.
+        for branch in tz_schema.get("anyOf", []):
+            if branch.get("type") == "string":
+                max_len = branch["maxLength"]
+                break
+    assert max_len == 64
+
+
+def test_time_max_length_enforced_via_tool_schema():
+    tool = asyncio.run(server.mcp.get_tool("convert_time"))
+    sch = tool.parameters["properties"]["time"]
+    assert sch["maxLength"] == 8
+    assert sch["minLength"] == 1
+
+
+# --- instructions wiring --------------------------------------------------
+
+
+def test_instructions_present_on_server():
+    inst = getattr(server.mcp, "instructions", None) or ""
+    assert inst.strip()
+    assert "IANA" in inst
+    assert "HH:MM" in inst
+    # Default tz must appear so an OSS LLM knows what "omitted" means here.
+    assert server.MCP_DEFAULT_TIMEZONE in inst
 
 
 # --- _zone helper ---------------------------------------------------------

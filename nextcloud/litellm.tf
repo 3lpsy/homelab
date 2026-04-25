@@ -128,6 +128,13 @@ resource "kubernetes_deployment" "litellm_postgres" {
   depends_on = [
     kubernetes_manifest.litellm_secret_provider
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "litellm_postgres" {
@@ -264,6 +271,11 @@ resource "kubernetes_deployment" "litellm" {
                 key  = "deepinfra_api_key"
               }
             }
+          }
+
+          env {
+            name  = "LITELLM_LOG"
+            value = "WARNING"
           }
 
           volume_mount {
@@ -452,6 +464,13 @@ resource "kubernetes_deployment" "litellm" {
     kubernetes_manifest.litellm_secret_provider,
     kubernetes_deployment.litellm_postgres,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "litellm" {

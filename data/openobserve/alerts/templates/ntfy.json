@@ -1,0 +1,5 @@
+{
+  "name": "ntfy",
+  "body": "{alert_name} fired on {stream_name} ({stream_type}). Rows: {alert_count}. Condition met at {alert_start_time}. Open: {alert_url}",
+  "title": "OO: {alert_name}"
+}

@@ -27,11 +27,13 @@ resource "kubernetes_daemonset" "otel_collector" {
           name = kubernetes_secret.otel_registry_pull_secret.metadata[0].name
         }
 
-        # systemd-journal gid on the K3s host. Grants /var/log/journal read
-        # without running the collector as root.
+        # Root is required to read /var/log/pods/*/*/*.log on K3s (root:root
+        # 0640 by default, no group that a non-root user could join). Standard
+        # approach used by Fluent Bit, Vector, Promtail, etc. Keep
+        # supplementalGroups=190 (systemd-journal) for defense-in-depth.
         security_context {
-          run_as_user          = 10001
-          run_as_group         = 10001
+          run_as_user          = 0
+          run_as_group         = 0
           supplemental_groups  = [190]
         }
 
@@ -168,5 +170,6 @@ resource "kubernetes_daemonset" "otel_collector" {
   depends_on = [
     kubernetes_manifest.otel_collector_secret_provider,
     kubernetes_deployment.openobserve,
+    kubernetes_manifest.openobserve_bootstrap_job,
   ]
 }

@@ -1,0 +1,23 @@
+{
+  "name": "pod-crashloop-signal",
+  "stream_type": "logs",
+  "stream_name": "pods",
+  "is_real_time": false,
+  "query_condition": {
+    "query_type": "sql",
+    "sql": "SELECT count(*) AS total FROM \"pods\" WHERE body LIKE '%panic:%' OR body LIKE '%FATAL%' OR body LIKE '%OOMKilled%' OR body LIKE '%CrashLoopBackOff%' OR body LIKE '%segmentation fault%'"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 10,
+    "frequency": 5,
+    "frequency_type": "minutes",
+    "silence": 30
+  },
+  "destinations": ["ntfy"],
+  "description": "Kubernetes crash/panic/OOM signals in pod logs (>=10 in 5m).",
+  "enabled": true,
+  "row_template": "",
+  "tz_offset": 0
+}

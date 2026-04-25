@@ -18,6 +18,8 @@ Vault role, and TLS cert where applicable.
 | `searxng` | SearXNG (with embedded Valkey sidecar), searxng-ranker daemon |
 | `litellm` | LiteLLM, litellm-postgres |
 | `thunderbolt` | Keycloak, Postgres, Mongo, PowerSync, backend, frontend |
+| `homeassist` | Home Assistant, Mosquitto MQTT broker, Zigbee2MQTT |
+| `frigate` | Frigate NVR |
 | `mcp` | `mcp-shared` nginx gateway plus `mcp-filesystem`, `mcp-memory`, `mcp-prometheus`, `mcp-k8s` (with auth-gate sidecar), `mcp-litellm`, `mcp-searxng`, `mcp-time` |
 | `exitnode` | One Deployment per WireGuard config, each a WireGuard client + tinyproxy sidecar |
 | `builder` | Rootless BuildKit Jobs that build custom images and push to the Registry |
@@ -39,7 +41,11 @@ Secrets come from Vault through the Secrets Store CSI Driver.
 | SearXNG | Meta-search | Embedded Valkey sidecar for per-request cache; ranker daemon rewrites engine config on a rolling schedule |
 | LiteLLM | LLM proxy | Backed by its own Postgres for spend tracking; keys managed via LiteLLM's admin UI |
 | Thunderbolt | Custom app stack | Keycloak OIDC (Postgres-backed), single-node Mongo replica set, PowerSync, Node.js backend on 8000, static Nginx frontend |
-| Grafana, Ntfy | Monitoring surfaces | Deployed in the `monitoring` deployment, not here |
+| Home Assistant | Home automation | Pod-network HA Container; init containers seed `configuration.yaml`, the admin user (via `hass --script auth`), and `.storage/onboarding` + `core.config` to skip the web wizard. ESPHome BT proxies live on the LAN, not here |
+| Mosquitto | MQTT broker for HA | Co-located in the `homeassist` namespace; init container builds `mosquitto_passwd` from Vault-managed `ha` and `z2m` passwords on every pod start |
+| Zigbee2MQTT | Zigbee bridge | Same namespace as HA; reuses the HA Tailscale auth secret. USB coordinator passthrough is gated on `homeassist_z2m_usb_device_path` — empty until the dongle is wired in. Nginx sidecar adds htpasswd auth (Z2M has no native UI auth) |
+| Frigate | NVR / camera review | AMD VAAPI hwaccel decode via `/dev/dri` host_path; `/dev/shm` upsized to 512Mi for ffmpeg frame buffers; init container seeds Frigate's auth DB with the Vault-managed admin password (PBKDF2). Day-1 config has no cameras |
+| Grafana, Ntfy, OpenObserve | Monitoring surfaces | Deployed in the `monitoring` deployment, not here |
 
 ## MCP gateway
 

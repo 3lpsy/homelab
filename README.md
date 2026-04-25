@@ -34,7 +34,7 @@ per-deployment state paths, age-encrypted S3 backup of state, and a
 | `cluster/` | K3s node provisioning: tailnet join, TLS certs, K3s install, host hardening. |
 | `vault/` | Vault StatefulSet on K3s with an auto-unseal sidecar and the Secrets Store CSI stack. |
 | `vault-conf/` | Vault configuration: K8s auth, KV engine, unseal key secret. |
-| `nextcloud/` | All user-facing services plus shared infra (Postgres, Redis, Builder, exit-node proxies, MCP servers). |
+| `nextcloud/` | All user-facing services (incl. Home Assistant + Frigate) plus shared infra (Postgres, Redis, Builder, exit-node proxies, MCP servers). |
 | `monitoring/` | Prometheus, Alertmanager, Grafana, Ntfy, OpenObserve, OTel Collector, node-exporter, kube-state-metrics, Reloader. |
 | `monitoring-conf/` | Grafana dashboards applied via the Grafana provider. |
 
@@ -115,8 +115,12 @@ exposed over Tailscale with Let's Encrypt certs:
   spend tracking
 - Thunderbolt: Keycloak OIDC, single-node MongoDB replica set,
   Postgres, PowerSync, a Node.js backend, and a static Nginx frontend
+- Home Assistant, with a co-located Mosquitto MQTT broker and a
+  Zigbee2MQTT pod (USB coordinator passed through to the K3s node)
+- Frigate, NVR with VAAPI hwaccel decode (AMD render node passthrough)
 - Grafana
 - Ntfy
+- OpenObserve (logs and traces)
 
 MCP servers. All sandboxed per-API-key and exposed through a single
 shared Nginx gateway in the `mcp` namespace:

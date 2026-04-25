@@ -137,6 +137,13 @@ resource "kubernetes_deployment" "mcp_time" {
     kubernetes_manifest.mcp_shared_secret_provider,
     kubernetes_manifest.mcp_time_build,
   ]
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
+      spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
+    ]
+  }
 }
 
 resource "kubernetes_service" "mcp_time" {

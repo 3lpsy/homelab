@@ -280,6 +280,71 @@ def test_get_targets(monkeypatch):
     assert len(res.active) == 1
 
 
+def test_get_targets_slims_discovered_labels_by_default(monkeypatch):
+    # The default response must drop `discoveredLabels` and `globalUrl` —
+    # these two fields alone are ~90% of the payload on k8s clusters and
+    # will overflow OSS-LLM context windows on a single call.
+    upstream = {
+        "status": "success",
+        "data": {
+            "activeTargets": [{
+                "labels": {"job": "node", "instance": "host:9100"},
+                "discoveredLabels": {
+                    "__meta_kubernetes_node_annotation_csi_volume_kubernetes_io_nodeid": "x",
+                    "__meta_kubernetes_node_label_kubernetes_io_os": "linux",
+                },
+                "scrapePool": "node",
+                "scrapeUrl": "http://host:9100/metrics",
+                "globalUrl": "http://host:9100/metrics",
+                "lastError": "",
+                "lastScrape": "2026-04-24T00:00:00Z",
+                "lastScrapeDuration": 0.01,
+                "health": "up",
+                "scrapeInterval": "30s",
+                "scrapeTimeout": "10s",
+            }],
+            "droppedTargets": [{
+                "discoveredLabels": {"__meta_k_foo": "bar"},
+                "labels": {"job": "ignored"},
+            }],
+        },
+    }
+    _patch_client(monkeypatch, lambda _r: httpx.Response(200, json=upstream))
+    res = _call(server.get_targets())
+    assert isinstance(res, server.TargetsResult)
+    assert len(res.active) == 1
+    slim = res.active[0]
+    assert "discoveredLabels" not in slim
+    assert "globalUrl" not in slim
+    # Kept fields round-trip.
+    assert slim["labels"] == {"job": "node", "instance": "host:9100"}
+    assert slim["scrapeUrl"] == "http://host:9100/metrics"
+    assert slim["health"] == "up"
+    # Dropped targets are slimmed too.
+    assert "discoveredLabels" not in res.dropped[0]
+    assert res.dropped[0]["labels"] == {"job": "ignored"}
+
+
+def test_get_targets_include_discovered_preserves_raw(monkeypatch):
+    # Opt-in surfaces the full upstream payload for scrape-config debugging.
+    upstream = {
+        "status": "success",
+        "data": {
+            "activeTargets": [{
+                "labels": {"job": "node"},
+                "discoveredLabels": {"__meta_kubernetes_x": "y"},
+                "globalUrl": "http://host:9100/metrics",
+                "health": "up",
+            }],
+            "droppedTargets": [],
+        },
+    }
+    _patch_client(monkeypatch, lambda _r: httpx.Response(200, json=upstream))
+    res = _call(server.get_targets(include_discovered=True))
+    assert res.active[0]["discoveredLabels"] == {"__meta_kubernetes_x": "y"}
+    assert res.active[0]["globalUrl"] == "http://host:9100/metrics"
+
+
 def test_get_targets_metadata(monkeypatch):
     _patch_client(monkeypatch, lambda _r: httpx.Response(200, json={"status": "success", "data": [{"metric": "up"}]}))
     res = _call(server.get_targets_metadata())

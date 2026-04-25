@@ -73,6 +73,32 @@ variable "radicale_domain" {
   default = "cal"
 }
 
+variable "homeassist_domain" {
+  type    = string
+  default = "homeassist"
+}
+
+variable "homeassist_admin_user" {
+  type    = string
+  default = "admin"
+}
+
+variable "homeassist_time_zone" {
+  type    = string
+  default = "America/Chicago"
+}
+
+variable "homeassist_z2m_domain" {
+  type    = string
+  default = "z2m"
+}
+
+variable "homeassist_z2m_usb_device_path" {
+  description = "Stable hostPath of the Zigbee coordinator's USB serial device on the K3s node. Empty until the dongle is plugged in. Find it with `ls -l /dev/serial/by-id/` and use the full `/dev/serial/by-id/usb-Nabu_Casa_Home_Assistant_Connect_ZBT-2_<serial>-if00` path so it survives reboots and re-enumeration."
+  type        = string
+  default     = ""
+}
+
 variable "registry_users" {
   description = "List of registry usernames"
   type        = list(string)
@@ -87,6 +113,21 @@ variable "registry_domain" {
 variable "immich_domain" {
   type    = string
   default = "immich"
+}
+
+variable "frigate_domain" {
+  type    = string
+  default = "frigate"
+}
+
+variable "frigate_config_size" {
+  type    = string
+  default = "10Gi"
+}
+
+variable "frigate_recordings_size" {
+  type    = string
+  default = "500Gi"
 }
 
 # Container images
@@ -154,6 +195,26 @@ variable "image_registry" {
 variable "image_radicale" {
   type    = string
   default = "ghcr.io/kozea/radicale:latest"
+}
+
+variable "image_homeassist" {
+  type    = string
+  default = "ghcr.io/home-assistant/home-assistant:stable"
+}
+
+variable "image_homeassist_mosquitto" {
+  type    = string
+  default = "eclipse-mosquitto:2"
+}
+
+variable "image_homeassist_z2m" {
+  type    = string
+  default = "koenkk/zigbee2mqtt:latest"
+}
+
+variable "image_frigate" {
+  type    = string
+  default = "ghcr.io/blakeblackshear/frigate:stable"
 }
 
 variable "image_python" {
@@ -416,6 +477,8 @@ variable "mcp_k8s_allowed_namespaces" {
     # there are no workloads here, so read grants are benign.
     "default",
     "exitnode",
+    "frigate",
+    "homeassist",
     "kube-system",
     "litellm",
     "mcp",

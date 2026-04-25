@@ -1,6 +1,12 @@
 # BuildKit job for the searxng-ranker image. Mirrors nextcloud/mcp-searxng-jobs.tf
 # and nextcloud/exitnode-tinyproxy-jobs.tf. Job name is suffixed with sha256 of
 # the Dockerfile — new Job (= rebuild) only when Dockerfile changes.
+#
+# No `ttlSecondsAfterFinished`: a TTL means K8s deletes the completed Job an
+# hour later, after which `kubernetes_manifest` sees the resource as missing
+# and recreates it on the next `apply` — re-running the build for nothing.
+# Letting the Job persist costs basically zero (it's a completed object with
+# no running pods); `kubectl delete job -n builder <name>` if you want it gone.
 
 resource "kubernetes_config_map" "searxng_ranker_build_context" {
   metadata {
@@ -28,7 +34,6 @@ resource "kubernetes_manifest" "searxng_ranker_build" {
     }
     spec = {
       backoffLimit = 2
-      ttlSecondsAfterFinished = 3600
       template = {
         metadata = {
           labels = {

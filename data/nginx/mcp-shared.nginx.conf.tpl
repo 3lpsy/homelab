@@ -15,7 +15,7 @@ http {
     default            1;
     "~*kube-probe/"    0;
   }
-  access_log /var/log/nginx/access.log redacted if=$loggable;
+  access_log /dev/stdout redacted if=$loggable;
 
   # nginx's error_log captures the full upstream URI on 502/connect-failed,
   # which defeats the access_log redaction above when a backend drops. Raise

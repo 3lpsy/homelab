@@ -35,6 +35,16 @@ the Headscale EC2.
   `../data/otel/collector-config.yaml.tpl`.
 - **OpenObserve** -- log and trace store. Receives forwarded data
   from the OTel Collector. Exposed over Tailscale with Nginx TLS.
+  Two one-shot Jobs back the install:
+  - `openobserve-bootstrap.tf` mints dedicated `ingester` and
+    `provisioner` service accounts via the root creds, captures the
+    generated passwords, and writes them back to Vault. Reaches Vault
+    through a Tailscale sidecar on the external FQDN because the
+    `vault` namespace's NetworkPolicy admits only `vault-csi`.
+  - `openobserve-provisioner.tf` loads dashboards, alerts, alert
+    templates, and alert destinations from `../data/openobserve/` on
+    every artifact change. Saved views are deliberately not
+    provisioned (their POST body is an opaque UI-produced blob).
 - **Reloader** -- watches Secrets and ConfigMaps and triggers rolling
   restarts on dependent Deployments when they change, so rotated TLS
   certs and secrets propagate without manual intervention.
@@ -75,7 +85,10 @@ concern:
 
 `node-exporter`, `kube-state-metrics`, and `reloader` are small enough
 to be single-file. `headscale-host-otel.tf` stands alone because it
-runs against the Headscale EC2, not the cluster.
+runs against the Headscale EC2, not the cluster. OpenObserve also has
+two extra files beyond the four standard suffixes:
+`openobserve-bootstrap.tf` (service-account bootstrap Job) and
+`openobserve-provisioner.tf` (dashboards / alerts provisioner Job).
 
 ## Deployment pattern
 

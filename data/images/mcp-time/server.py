@@ -73,6 +73,13 @@ class TimeResult(BaseModel):
     datetime: str
     day_of_week: str
     is_dst: bool
+    # Populated when the caller passed a fixed-offset legacy alias like
+    # "EST" / "CST" / "PST" instead of a real Area/Location zone. These
+    # aliases exist in tzdata but are DST-unaware, so an LLM that picked
+    # them up from user text ("convert 2pm EST to …") gets the wrong
+    # result half the year. Surfaced so the LLM can self-correct on the
+    # next call without the server hard-rejecting established workflows.
+    warning: str | None = None
 
 
 class TimeConversionResult(BaseModel):
@@ -95,21 +102,91 @@ def _zone(tz_name: str, label: str) -> ZoneInfo:
         ) from e
 
 
+# Bare top-level names in tzdata that are NOT misleading — "UTC" and "GMT"
+# are universally understood zero-offset, and "Zulu" is an alias of UTC.
+# Everything else without a "/" (EST, CST, MST, PST, HST, EET, CET, ...)
+# is a legacy alias. Some of those European ones DO track DST, but the
+# Area/Location form is still the safer recommendation for an LLM that
+# may not know which is which.
+_BARE_ZONE_OK = frozenset({"UTC", "GMT", "Zulu"})
+
+
+def _zone_warning(tz_name: str) -> str | None:
+    """Return a warning string for misleading zone names, else None.
+
+    Fires when the caller hands over a bare abbreviation like "EST" — they
+    resolve in zoneinfo but silently drop DST, so a 14:30-EST → UTC
+    conversion in April is an hour off from what the user actually meant.
+    """
+    if "/" in tz_name:
+        return None
+    if tz_name in _BARE_ZONE_OK:
+        return None
+    return (
+        f"zone {tz_name!r} is a fixed-offset legacy alias without full DST "
+        "support — it will not shift for summer/winter time. For DST-aware "
+        "behavior use an Area/Location zone like 'America/New_York', "
+        "'Europe/London', 'Asia/Kolkata'."
+    )
+
+
+def _format_hours(hours: float) -> str:
+    """Render a signed hour offset with the shortest decimal form that
+    represents it exactly, always keeping at least one digit after the dot
+    so clients can parse with a single regex.
+
+    "+5.0", "-5.0", "+5.5", "+5.75" — never "+5" or "+5.50".
+    """
+    one = f"{hours:+.1f}"
+    # Keep 1-decimal form if it round-trips exactly (covers whole hours,
+    # and :30 offsets like India). Otherwise drop to 2 decimals for :45
+    # offsets (Nepal, Chatham). No real IANA zone has finer than :15.
+    if float(one) == hours:
+        return one
+    return f"{hours:+.2f}"
+
+
 def _time_result(tz_name: str, dt: datetime) -> TimeResult:
     return TimeResult(
         timezone=tz_name,
         datetime=dt.isoformat(timespec="seconds"),
         day_of_week=dt.strftime("%A"),
         is_dst=bool(dt.dst()),
+        warning=_zone_warning(tz_name),
     )
 
 
-mcp = FastMCP("time")
+_INSTRUCTIONS = f"""\
+Wall-clock time helpers. No server-side state — every call is a pure
+function of the host clock + IANA tzdata.
+
+Tools:
+  - `get_current_time(timezone)`: current time in the given zone.
+  - `convert_time(time, source_timezone, target_timezone)`: convert an
+    `HH:MM` (24-hour) time from one zone to another using TODAY'S date
+    in the source zone.
+
+Conventions:
+  - Timezones are IANA names: "America/New_York", "Europe/London", "UTC",
+    "Asia/Kolkata", "Asia/Kathmandu", ... NOT abbreviations like "EST",
+    "PST", or UTC offsets like "+05:30".
+  - Time strings are 24-hour "HH:MM" — "09:05", "17:30", "00:00". NOT
+    "9am", "5:30 PM", or seconds/milliseconds.
+  - Omit a timezone argument (or pass "") to use the server default:
+    {MCP_DEFAULT_TIMEZONE!r}.
+
+Outputs include `timezone`, `datetime` (ISO 8601 with offset), `day_of_week`
+(English), and `is_dst`. `convert_time` also returns `time_difference`
+in the form "+5.0h", "+5.5h", "+5.75h".
+"""
+
+mcp = FastMCP("time", instructions=_INSTRUCTIONS)
 
 
 TzParam = Annotated[
     str | None,
     Field(
+        max_length=64,
         description=(
             "IANA timezone name (e.g. 'America/New_York', 'Europe/London', "
             f"'UTC'). Omit to use the server default ({MCP_DEFAULT_TIMEZONE})."
@@ -118,10 +195,20 @@ TzParam = Annotated[
 ]
 
 
+def _resolve_tz(raw: str | None) -> str:
+    """Pick the timezone name: caller-supplied if non-blank, else the server
+    default. Treats empty-string and whitespace-only the same — both are
+    what HTTP transports often send for 'omitted'."""
+    if raw is None:
+        return MCP_DEFAULT_TIMEZONE
+    stripped = raw.strip()
+    return stripped or MCP_DEFAULT_TIMEZONE
+
+
 @mcp.tool()
 async def get_current_time(timezone: TzParam = None) -> TimeResult:
     """Current wall-clock time in the given IANA timezone."""
-    tz_name = (timezone or MCP_DEFAULT_TIMEZONE).strip()
+    tz_name = _resolve_tz(timezone)
     tz = _zone(tz_name, "timezone")
     now = datetime.now(tz)
     log.info("get_current_time: tz=%s", tz_name)
@@ -134,6 +221,7 @@ async def convert_time(
         str,
         Field(
             min_length=1,
+            max_length=8,
             description="Time to convert in 24-hour HH:MM format (e.g. '14:30').",
         ),
     ],
@@ -141,8 +229,8 @@ async def convert_time(
     target_timezone: TzParam = None,
 ) -> TimeConversionResult:
     """Convert HH:MM (today's date in source tz) between IANA timezones."""
-    src_name = (source_timezone or MCP_DEFAULT_TIMEZONE).strip()
-    tgt_name = (target_timezone or MCP_DEFAULT_TIMEZONE).strip()
+    src_name = _resolve_tz(source_timezone)
+    tgt_name = _resolve_tz(target_timezone)
     src = _zone(src_name, "source_timezone")
     tgt = _zone(tgt_name, "target_timezone")
 
@@ -162,11 +250,7 @@ async def convert_time(
     src_off = source_time.utcoffset() or timedelta()
     tgt_off = target_time.utcoffset() or timedelta()
     hours = (tgt_off - src_off).total_seconds() / 3600
-    if hours.is_integer():
-        diff = f"{hours:+.1f}h"
-    else:
-        # Fractional offsets like Nepal (UTC+5:45) or India (UTC+5:30).
-        diff = f"{hours:+.2f}".rstrip("0").rstrip(".") + "h"
+    diff = f"{_format_hours(hours)}h"
 
     log.info("convert_time: %s %s -> %s (%s)", time, src_name, tgt_name, diff)
     return TimeConversionResult(

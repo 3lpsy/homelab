@@ -11,11 +11,16 @@ http {
     '' close;
   }
 
-  map $http_user_agent $loggable {
-    default            1;
-    "~*kube-probe/"    0;
+  # Combined-input map: drop access-log lines for kube-probe health checks
+  # AND for SPA static asset GETs (Vue.js bundles under /web/assets and
+  # /web/src/assets). Real API requests under /api/ still log normally.
+  map "$http_user_agent|$request_uri" $loggable {
+    default                       1;
+    "~*kube-probe/"               0;
+    "~\|/web/assets/"             0;
+    "~\|/web/src/assets/"         0;
   }
-  access_log /var/log/nginx/access.log combined if=$loggable;
+  access_log /dev/stdout combined if=$loggable;
   error_log /dev/stderr crit;
 
   # OTLP/HTTP payloads can be sizable; don't clip
