@@ -36,3 +36,19 @@ groups:
         annotations:
           summary: "Node {{ $labels.instance }} memory pressure"
           description: "Available memory below 5% of total for 5m."
+
+  - name: tls-rotator
+    interval: 60s
+    rules:
+      # tls-rotator continues past per-cert failures and exits non-zero at
+      # the end. Job becomes Failed, kube-state-metrics flips this metric.
+      # The CronJob has backoffLimit=1 so the metric rises only after both
+      # attempts fail — i.e. a real persistent issue worth paging on.
+      - alert: TLSRotatorJobFailed
+        expr: kube_job_failed{namespace="tls-rotator"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "tls-rotator job {{ $labels.job_name }} failed"
+          description: "One or more cert rotations failed. kubectl logs -n tls-rotator -l app=tls-rotator for which cert(s) and why. Certs renew on a 30d threshold so cushion is ~30 daily attempts before any cert actually expires."

@@ -92,6 +92,11 @@ resource "vault_kv_secret_v2" "homeassist_tls" {
     fullchain_pem = module.homeassist-tls.fullchain_pem
     privkey_pem   = module.homeassist-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_kv_secret_v2" "homeassist_config" {

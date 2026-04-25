@@ -53,6 +53,11 @@ resource "vault_kv_secret_v2" "immich_tls" {
     fullchain_pem = module.immich-tls.fullchain_pem
     privkey_pem   = module.immich-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "kubernetes_manifest" "immich_secret_provider" {

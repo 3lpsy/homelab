@@ -100,6 +100,11 @@ resource "vault_kv_secret_v2" "searxng_tls" {
     fullchain_pem = module.searxng-tls.fullchain_pem
     privkey_pem   = module.searxng-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_policy" "searxng" {

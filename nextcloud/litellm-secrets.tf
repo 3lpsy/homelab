@@ -152,6 +152,11 @@ resource "vault_kv_secret_v2" "litellm_tls" {
     fullchain_pem = module.litellm-tls.fullchain_pem
     privkey_pem   = module.litellm-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_policy" "litellm" {

@@ -536,6 +536,37 @@ variable "image_keycloak" {
   default = "quay.io/keycloak/keycloak:26.0"
 }
 
+# Domain subdomains for services owned by the `monitoring` deployment. The
+# tls-rotator worker (nextcloud deployment) needs to know each cert's FQDN to
+# pass to lego, so these are duplicated here. Defaults must match
+# monitoring/variables.tf or rotation will issue certs for the wrong CN.
+variable "grafana_domain" {
+  type    = string
+  default = "grafana"
+}
+
+variable "ntfy_domain" {
+  type    = string
+  default = "ntfy"
+}
+
+variable "openobserve_domain" {
+  type    = string
+  default = "openobserve"
+}
+
+variable "tls_rotator_renew_threshold_days" {
+  description = "Renew any cert with fewer than this many days until expiry. Let's Encrypt issues 90-day certs; 30 leaves a healthy retry window."
+  type        = number
+  default     = 30
+}
+
+variable "tls_rotator_schedule" {
+  description = "Cron schedule for the tls-rotator CronJob. Daily, off-peak."
+  type        = string
+  default     = "0 4 * * *"
+}
+
 variable "image_powersync" {
   type    = string
   default = "journeyapps/powersync-service:latest"

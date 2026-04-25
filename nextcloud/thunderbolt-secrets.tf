@@ -195,6 +195,11 @@ resource "vault_kv_secret_v2" "thunderbolt_tls" {
     fullchain_pem = module.thunderbolt-tls.fullchain_pem
     privkey_pem   = module.thunderbolt-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_policy" "thunderbolt" {

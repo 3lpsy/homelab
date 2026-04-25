@@ -56,7 +56,8 @@ resource "kubernetes_manifest" "thunderbolt_frontend_build" {
     }
     spec = {
       backoffLimit = 2
-      ttlSecondsAfterFinished = 3600
+      # No ttlSecondsAfterFinished: K8s would GC the Job and kubernetes_manifest
+      # would re-create it on next apply, triggering a needless rebuild.
       template = {
         metadata = {
           labels = {
@@ -221,7 +222,8 @@ resource "kubernetes_manifest" "thunderbolt_backend_build" {
     }
     spec = {
       backoffLimit = 2
-      ttlSecondsAfterFinished = 3600
+      # No ttlSecondsAfterFinished: K8s would GC the Job and kubernetes_manifest
+      # would re-create it on next apply, triggering a needless rebuild.
       template = {
         metadata = {
           labels = {

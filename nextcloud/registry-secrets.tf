@@ -118,6 +118,11 @@ resource "vault_kv_secret_v2" "registry_tls" {
     fullchain_pem = module.registry-tls.fullchain_pem
     privkey_pem   = module.registry-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_policy" "registry" {

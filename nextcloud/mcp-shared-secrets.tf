@@ -17,6 +17,11 @@ resource "vault_kv_secret_v2" "mcp_shared_tls" {
     fullchain_pem = module.mcp-shared-tls.fullchain_pem
     privkey_pem   = module.mcp-shared-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 # Shared SPC — used by the mcp-shared pod (TLS for nginx) and, starting in

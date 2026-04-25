@@ -32,7 +32,8 @@ resource "kubernetes_manifest" "exitnode_tinyproxy_build" {
     }
     spec = {
       backoffLimit = 2
-      ttlSecondsAfterFinished = 3600
+      # No ttlSecondsAfterFinished: K8s would GC the Job and kubernetes_manifest
+      # would re-create it on next apply, triggering a needless rebuild.
       template = {
         metadata = {
           labels = {

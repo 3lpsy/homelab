@@ -1,38 +1,44 @@
-resource "kubernetes_config_map" "mcp_time_build_context" {
+# BuildKit job for the tls-rotator image. Mirrors mcp-time-jobs.tf:
+# Dockerfile + rotate.py both go in the build-context ConfigMap; the Job's
+# name is suffixed with sha256 of both file contents so a Dockerfile *or*
+# script change triggers a rebuild. No `ttlSecondsAfterFinished` — same
+# reasoning as searxng-ranker-jobs.tf (avoid recreate-on-next-apply).
+
+resource "kubernetes_config_map" "tls_rotator_build_context" {
   metadata {
-    name      = "mcp-time-build-context"
+    name      = "tls-rotator-build-context"
     namespace = kubernetes_namespace.builder.metadata[0].name
   }
 
   data = {
-    "Dockerfile" = file("${path.module}/../data/images/mcp-time/Dockerfile")
-    "server.py"  = file("${path.module}/../data/images/mcp-time/server.py")
+    "Dockerfile" = file("${path.module}/../data/images/tls-rotator/Dockerfile")
+    "rotate.py"  = file("${path.module}/../data/images/tls-rotator/rotate.py")
   }
 }
 
 locals {
-  mcp_time_dockerfile_hash = substr(sha256(
-    "${file("${path.module}/../data/images/mcp-time/Dockerfile")}${file("${path.module}/../data/images/mcp-time/server.py")}"
+  tls_rotator_image = "${local.thunderbolt_registry}/tls-rotator:latest"
+
+  tls_rotator_dockerfile_hash = substr(sha256(
+    "${file("${path.module}/../data/images/tls-rotator/Dockerfile")}${file("${path.module}/../data/images/tls-rotator/rotate.py")}"
   ), 0, 8)
-  mcp_time_build_job_name = "mcp-time-build-${local.mcp_time_dockerfile_hash}"
+  tls_rotator_build_job_name = "tls-rotator-build-${local.tls_rotator_dockerfile_hash}"
 }
 
-resource "kubernetes_manifest" "mcp_time_build" {
+resource "kubernetes_manifest" "tls_rotator_build" {
   manifest = {
     apiVersion = "batch/v1"
     kind       = "Job"
     metadata = {
-      name      = local.mcp_time_build_job_name
+      name      = local.tls_rotator_build_job_name
       namespace = kubernetes_namespace.builder.metadata[0].name
     }
     spec = {
       backoffLimit = 2
-      # No ttlSecondsAfterFinished: K8s would GC the Job and kubernetes_manifest
-      # would re-create it on next apply, triggering a needless rebuild.
       template = {
         metadata = {
           labels = {
-            app = "mcp-time-build"
+            app = "tls-rotator-build"
           }
           annotations = {
             "container.apparmor.security.beta.kubernetes.io/buildkit" = "unconfined"
@@ -49,7 +55,7 @@ resource "kubernetes_manifest" "mcp_time_build" {
               restartPolicy = "Always"
               env = [
                 { name = "TS_STATE_DIR", value = "/var/lib/tailscale" },
-                { name = "TS_KUBE_SECRET", value = "mcp-time-builder-tailscale-state" },
+                { name = "TS_KUBE_SECRET", value = "tls-rotator-builder-tailscale-state" },
                 { name = "TS_USERSPACE", value = "false" },
                 {
                   name = "TS_AUTHKEY"
@@ -60,7 +66,7 @@ resource "kubernetes_manifest" "mcp_time_build" {
                     }
                   }
                 },
-                { name = "TS_HOSTNAME", value = "mcp-time-builder" },
+                { name = "TS_HOSTNAME", value = "tls-rotator-builder" },
                 { name = "TS_EXTRA_ARGS", value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}" },
               ]
               securityContext = {
@@ -90,7 +96,7 @@ resource "kubernetes_manifest" "mcp_time_build" {
                 "--frontend=dockerfile.v0",
                 "--local=context=/workspace",
                 "--local=dockerfile=/workspace",
-                "--output=type=image,name=${local.thunderbolt_registry}/mcp-time:latest,push=true",
+                "--output=type=image,name=${local.tls_rotator_image},push=true",
               ]
               env = [
                 { name = "BUILDKITD_FLAGS", value = "--oci-worker-no-process-sandbox" },
@@ -117,7 +123,7 @@ resource "kubernetes_manifest" "mcp_time_build" {
             {
               name = "context"
               configMap = {
-                name = kubernetes_config_map.mcp_time_build_context.metadata[0].name
+                name = kubernetes_config_map.tls_rotator_build_context.metadata[0].name
               }
             },
             {
@@ -170,6 +176,6 @@ resource "kubernetes_manifest" "mcp_time_build" {
     kubernetes_role_binding.builder_tailscale,
     kubernetes_secret.builder_registry_pull_secret,
     kubernetes_secret.builder_tailscale_auth,
-    kubernetes_config_map.mcp_time_build_context,
+    kubernetes_config_map.tls_rotator_build_context,
   ]
 }
