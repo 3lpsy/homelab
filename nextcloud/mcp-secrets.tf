@@ -1,13 +1,21 @@
+resource "kubernetes_secret" "mcp_tailscale_state" {
+  for_each = toset([for n in local.mcp_server_names : "${n}-tailscale-state"])
+
+  metadata {
+    name      = each.value
+    namespace = kubernetes_namespace.mcp.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "mcp_tailscale" {
   metadata {
     name      = "mcp-tailscale"
     namespace = kubernetes_namespace.mcp.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

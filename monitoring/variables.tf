@@ -156,7 +156,7 @@ variable "image_python" {
 
 variable "image_openobserve" {
   type    = string
-  default = "public.ecr.aws/zinclabs/openobserve:latest"
+  default = "openobserve/openobserve:latest"
 }
 
 variable "image_otel_collector" {
@@ -198,4 +198,14 @@ variable "openobserve_org" {
 
 variable "ssh_priv_key_path" {
   type = string
+}
+
+variable "k8s_pod_cidr" {
+  type    = string
+  default = "10.42.0.0/16"
+}
+
+variable "k8s_service_cidr" {
+  type    = string
+  default = "10.43.0.0/16"
 }

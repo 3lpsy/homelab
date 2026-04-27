@@ -44,6 +44,59 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
           }
         }
 
+        # Render the realm import JSON from a placeholder template to an
+        # emptyDir, substituting OIDC client secret + seed user password
+        # from env vars (sourced from the Vault-CSI-synced thunderbolt-secrets).
+        # Keeps both credentials out of the keycloak-realm ConfigMap so the
+        # ConfigMap is safe to ship in Velero backup tarballs.
+        init_container {
+          name  = "render-realm"
+          image = var.image_busybox
+          command = ["sh", "/scripts/render-realm.sh"]
+
+          env {
+            name = "OIDC_CLIENT_SECRET"
+            value_from {
+              secret_key_ref {
+                name = "thunderbolt-secrets"
+                key  = "oidc_client_secret"
+              }
+            }
+          }
+          env {
+            name = "SEED_USER_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = "thunderbolt-secrets"
+                key  = "seed_user_password"
+              }
+            }
+          }
+          env {
+            name  = "ADMIN_EMAIL"
+            value = local.thunderbolt_admin_email
+          }
+          env {
+            name  = "PUBLIC_URL"
+            value = local.thunderbolt_public_url
+          }
+
+          volume_mount {
+            name       = "keycloak-realm-template"
+            mount_path = "/template"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "keycloak-realm-rendered"
+            mount_path = "/rendered"
+          }
+          volume_mount {
+            name       = "keycloak-render-script"
+            mount_path = "/scripts"
+            read_only  = true
+          }
+        }
+
         container {
           name  = "keycloak"
           image = var.image_keycloak
@@ -133,7 +186,7 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
           }
 
           volume_mount {
-            name       = "keycloak-realm"
+            name       = "keycloak-realm-rendered"
             mount_path = "/opt/keycloak/data/import"
             read_only  = true
           }
@@ -167,10 +220,21 @@ resource "kubernetes_deployment" "thunderbolt_keycloak" {
         }
 
         volume {
-          name = "keycloak-realm"
+          name = "keycloak-realm-template"
           config_map {
             name = kubernetes_config_map.thunderbolt_keycloak_realm.metadata[0].name
           }
+        }
+        volume {
+          name = "keycloak-render-script"
+          config_map {
+            name         = kubernetes_config_map.thunderbolt_keycloak_render_script.metadata[0].name
+            default_mode = "0755"
+          }
+        }
+        volume {
+          name = "keycloak-realm-rendered"
+          empty_dir {}
         }
         volume {
           name = "secrets-store"

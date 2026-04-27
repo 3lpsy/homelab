@@ -12,16 +12,26 @@ resource "kubernetes_service_account" "frigate" {
   automount_service_account_token = false
 }
 
+# Pre-create the Tailscale sidecar's state Secret so the Role only needs
+# get/update/patch (resource-scoped) and not a namespace-wide `create`.
+# Tailscale's kube-store calls Get first; if the Secret exists it skips
+# the Create path entirely.
+resource "kubernetes_secret" "frigate_tailscale_state" {
+  metadata {
+    name      = "frigate-tailscale-state"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "frigate_tailscale" {
   metadata {
     name      = "frigate-tailscale"
     namespace = kubernetes_namespace.frigate.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

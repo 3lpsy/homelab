@@ -7,6 +7,7 @@ Run with:
   uv run --with pytest --with httpx --with starlette --with uvicorn \
          pytest test_auth_gate.py
 """
+
 import asyncio
 import logging
 import os
@@ -15,12 +16,10 @@ os.environ["MCP_API_KEYS"] = "key-a,key-b"
 os.environ["UPSTREAM_URL"] = "http://upstream.invalid:8080"
 os.environ.setdefault("LOG_LEVEL", "error")
 
-import httpx  # noqa: E402
-import pytest  # noqa: E402
-from starlette.requests import Request  # noqa: E402
-
-import auth_gate  # noqa: E402
-
+import auth_gate
+import httpx
+import pytest
+from starlette.requests import Request
 
 # --- helpers --------------------------------------------------------------
 
@@ -73,7 +72,8 @@ def _set_upstream(handler):
 
 def _run_auth(scope, inner=None):
     """Drive AuthMiddleware once and return sent ASGI messages. Mirrors the
-    helper from mcp-time/test_server.py so the auth tests stay parallel."""
+    helper from mcp-time/test_server.py so the auth tests stay parallel.
+    """
     sent: list[dict] = []
 
     async def _send(msg):
@@ -83,6 +83,7 @@ def _run_auth(scope, inner=None):
         return {"type": "http.request", "body": b"", "more_body": False}
 
     if inner is None:
+
         async def inner(scope, receive, send):
             await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b"ok"})
@@ -96,67 +97,77 @@ def _run_auth(scope, inner=None):
 
 
 def test_auth_rejects_missing_bearer():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp",
-        "query_string": b"",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "query_string": b"",
+            "headers": [],
+            "client": ("1.2.3.4", 1234),
+        }
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 401
 
 
 def test_auth_rejects_wrong_bearer():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp",
-        "query_string": b"",
-        "headers": [(b"authorization", b"Bearer not-a-real-key")],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "query_string": b"",
+            "headers": [(b"authorization", b"Bearer not-a-real-key")],
+            "client": ("1.2.3.4", 1234),
+        }
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 401
 
 
 def test_auth_accepts_valid_bearer():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp",
-        "query_string": b"",
-        "headers": [(b"authorization", b"Bearer key-a")],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "query_string": b"",
+            "headers": [(b"authorization", b"Bearer key-a")],
+            "client": ("1.2.3.4", 1234),
+        }
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
 
 def test_auth_accepts_query_param_key():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp",
-        "query_string": b"api_key=key-b",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "query_string": b"api_key=key-b",
+            "headers": [],
+            "client": ("1.2.3.4", 1234),
+        }
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
 
 def test_auth_allows_options_unauthenticated():
     # CORS preflights must bypass auth or browsers can't even probe the server.
-    sent = _run_auth({
-        "type": "http",
-        "method": "OPTIONS",
-        "path": "/mcp",
-        "query_string": b"",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "OPTIONS",
+            "path": "/mcp",
+            "query_string": b"",
+            "headers": [],
+            "client": ("1.2.3.4", 1234),
+        }
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
@@ -179,14 +190,16 @@ def test_auth_constant_time_comparison_used():
     # Sanity check: the AuthMiddleware uses secrets.compare_digest, which
     # rejects wrong-length tokens without ValueError. A pre-rewrite version
     # used == and would short-circuit on length differences.
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp",
-        "query_string": b"",
-        "headers": [(b"authorization", b"Bearer x")],  # wrong length
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/mcp",
+            "query_string": b"",
+            "headers": [(b"authorization", b"Bearer x")],  # wrong length
+            "client": ("1.2.3.4", 1234),
+        }
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 401
 
@@ -445,6 +458,7 @@ def test_proxy_rejects_oversized_body_before_upstream():
 
 def test_proxy_accepts_body_at_exactly_cap():
     """Body of exactly MCP_MAX_BODY_BYTES passes through."""
+
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=req.content)
 
@@ -461,7 +475,9 @@ def test_proxy_accepts_body_at_exactly_cap():
 
 def test_proxy_error_text_does_not_leak_upstream_url():
     """After the M1 scrub, 502/504 JSON bodies must not embed the upstream
-    URL — str(httpx exception) would otherwise include 'upstream.invalid:8080'."""
+    URL — str(httpx exception) would otherwise include 'upstream.invalid:8080'.
+    """
+
     def handler(req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Name or service not known: upstream.invalid", request=req)
 
@@ -475,13 +491,16 @@ def test_proxy_error_text_does_not_leak_upstream_url():
 
 def test_healthz_bypasses_auth():
     """Health route answers 200 without any bearer."""
-    sent = _run_auth({
-        "type": "http",
-        "method": "GET",
-        "path": "/healthz",
-        "query_string": b"",
-        "headers": [],  # no Authorization, no api_key
-    }, inner=None)  # _run_auth default inner returns 200 ok
+    sent = _run_auth(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/healthz",
+            "query_string": b"",
+            "headers": [],  # no Authorization, no api_key
+        },
+        inner=None,
+    )  # _run_auth default inner returns 200 ok
     statuses = [m["status"] for m in sent if m["type"] == "http.response.start"]
     assert statuses == [200]
 
@@ -547,7 +566,7 @@ def test_proxy_passes_4xx_from_upstream_unchanged():
     body = _call(_drain(resp))
     assert resp.status_code == 403
     assert b'"error_type"' not in body  # not our envelope
-    assert b'forbidden' in body
+    assert b"forbidden" in body
 
 
 # --- env validation -------------------------------------------------------
@@ -583,7 +602,7 @@ def test_env_int_falls_back_to_default(monkeypatch):
 def test_api_keys_parsed_from_env():
     # Empty-string entries and whitespace are dropped; module-level set is
     # populated from MCP_API_KEYS at import time.
-    assert auth_gate.API_KEYS == {"key-a", "key-b"}
+    assert {"key-a", "key-b"} == auth_gate.API_KEYS
 
 
 def test_hop_by_hop_includes_authorization():
@@ -596,8 +615,7 @@ def test_hop_by_hop_strips_browser_context_headers():
     # Regression guard: upstream binary has DNS-rebinding/CSRF protection
     # keyed on Origin AND Sec-Fetch-Site. Forwarding any of these gets the
     # browser caller a 403 "cross-origin request detected".
-    for h in ("origin", "referer", "sec-fetch-site", "sec-fetch-mode",
-              "sec-fetch-dest", "sec-fetch-user"):
+    for h in ("origin", "referer", "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "sec-fetch-user"):
         assert h in auth_gate._HOP_BY_HOP, h
 
 
@@ -613,8 +631,8 @@ def test_proxy_strips_browser_context_headers_outbound():
         method="POST",
         path="/mcp",
         headers={
-            "origin": "https://thunderbolt.hs.fgsci.com",
-            "referer": "https://thunderbolt.hs.fgsci.com/chat",
+            "origin": "https://thunderbolt.magic.domain",
+            "referer": "https://thunderbolt.magic.domain/chat",
             "sec-fetch-site": "cross-site",
             "sec-fetch-mode": "cors",
             "sec-fetch-dest": "empty",
@@ -625,16 +643,20 @@ def test_proxy_strips_browser_context_headers_outbound():
     _call(auth_gate.proxy(req))
 
     seen = {k.lower() for k in captured[0].headers}
-    for stripped in ("origin", "referer", "sec-fetch-site", "sec-fetch-mode",
-                     "sec-fetch-dest", "sec-fetch-user"):
+    for stripped in ("origin", "referer", "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "sec-fetch-user"):
         assert stripped not in seen, stripped
     assert captured[0].headers["content-type"] == "application/json"
 
 
 def test_hop_by_hop_includes_rfc7230_set():
     expected = {
-        "connection", "keep-alive", "proxy-authenticate",
-        "proxy-authorization", "te", "trailer",
-        "transfer-encoding", "upgrade",
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
     }
     assert expected.issubset(auth_gate._HOP_BY_HOP)

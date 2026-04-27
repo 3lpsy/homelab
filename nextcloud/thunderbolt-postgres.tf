@@ -123,7 +123,8 @@ resource "kubernetes_deployment" "thunderbolt_postgres" {
         volume {
           name = "postgres-init"
           config_map {
-            name = kubernetes_config_map.thunderbolt_postgres_init.metadata[0].name
+            name         = kubernetes_config_map.thunderbolt_postgres_init.metadata[0].name
+            default_mode = "0755"
           }
         }
         volume {

@@ -55,6 +55,7 @@ module "cluster-provision" {
   ssh_priv_key              = trimspace(file(var.ssh_priv_key_path))
   nomad_host_name           = var.node_host_name
   headscale_magic_subdomain = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
-  registry_domain           = data.terraform_remote_state.homelab.outputs.tailnet_user_map["registry_server_user"]
+  registry_domain           = data.terraform_remote_state.homelab.outputs.tailnet_user_name_map["registry_server_user"]
+  registry_proxy_domain     = data.terraform_remote_state.homelab.outputs.tailnet_user_name_map["registry_proxy_server_user"]
   depends_on                = [module.node-provision-dep]
 }

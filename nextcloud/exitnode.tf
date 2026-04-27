@@ -85,6 +85,20 @@ resource "kubernetes_deployment" "exitnode" {
             privileged = true
           }
 
+          # Crypto runs in-kernel; the userspace process just sleeps after
+          # `wg-quick up`. RSS is negligible — these limits exist purely to
+          # bound a runaway wg-quick / sysctl loop.
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "32Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "128Mi"
+            }
+          }
+
           volume_mount {
             name       = "wg-secret"
             mount_path = "/wg-secret"

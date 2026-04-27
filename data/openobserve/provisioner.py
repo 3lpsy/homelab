@@ -16,8 +16,10 @@ alerts whose target stream doesn't exist yet — those retry on next apply).
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import string
 import sys
 import time
 import urllib.error
@@ -34,6 +36,20 @@ HEADERS = {
     "Authorization": f"Basic {OO_AUTH}",
     "Content-Type": "application/json",
 }
+
+
+def derive_ntfy_basic_b64() -> None:
+    """Compute NTFY_BASIC_B64 from NTFY_USER + NTFY_PASSWORD env, populate
+    os.environ. Destination JSON templates reference $${NTFY_BASIC_B64} as a
+    literal placeholder that load_jsons() expands at runtime, so the
+    base64'd credential never lands in the ConfigMap on disk.
+    """
+    user = os.environ.get("NTFY_USER")
+    password = os.environ.get("NTFY_PASSWORD")
+    if user and password:
+        os.environ["NTFY_BASIC_B64"] = base64.b64encode(
+            f"{user}:{password}".encode()
+        ).decode()
 
 
 def request(method: str, path: str, body: dict | None = None) -> tuple[int, dict | list | None]:
@@ -68,14 +84,17 @@ def wait_ready(max_wait: int = 180) -> None:
     sys.exit(1)
 
 
-def load_jsons(subdir: str) -> list[tuple[str, dict]]:
+def load_jsons(subdir: str, substitute_env: bool = False) -> list[tuple[str, dict]]:
     d = CONFIG_DIR / subdir
     if not d.is_dir():
         return []
     out = []
     for p in sorted(d.glob("*.json")):
         try:
-            out.append((p.stem, json.loads(p.read_text())))
+            raw = p.read_text()
+            if substitute_env:
+                raw = string.Template(raw).safe_substitute(os.environ)
+            out.append((p.stem, json.loads(raw)))
         except Exception as e:
             print(f"ERROR parsing {p}: {e}", file=sys.stderr)
             raise
@@ -247,6 +266,7 @@ def upsert_alert(name: str, body: dict) -> tuple[bool, bool]:
 
 def main() -> int:
     wait_ready()
+    derive_ntfy_basic_b64()
     failures = 0
     skipped = 0
 
@@ -257,7 +277,7 @@ def main() -> int:
         )
         failures += 0 if ok else 1
 
-    for name, body in load_jsons("destinations"):
+    for name, body in load_jsons("destinations", substitute_env=True):
         ok = upsert_named(
             "destination", name, body,
             collection_path=f"/api/{OO_ORG}/alerts/destinations",

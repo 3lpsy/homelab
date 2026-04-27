@@ -269,6 +269,17 @@ resource "kubernetes_job" "nextcloud_configure_collabora" {
             value = "redis"
           }
 
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "256Mi"
+            }
+            limits = {
+              cpu    = "500m"
+              memory = "512Mi"
+            }
+          }
+
           volume_mount {
             name       = "nextcloud-data"
             mount_path = "/var/www/html"
@@ -389,6 +400,17 @@ resource "kubernetes_job" "nextcloud_configure_previews" {
           env {
             name  = "REDIS_HOST"
             value = "redis"
+          }
+
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "256Mi"
+            }
+            limits = {
+              cpu    = "500m"
+              memory = "512Mi"
+            }
           }
 
           volume_mount {

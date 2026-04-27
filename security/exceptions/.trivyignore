@@ -1,0 +1,9 @@
+# Trivy ignore file — list of vuln / misconfig / secret rule IDs to suppress.
+# One ID per line. Comments start with `#`.
+#
+# Add an entry only after triaging the finding via upstream docs / source.
+# Mirror the rationale in security/SECURITY.md (Trivy exceptions table).
+#
+# Examples:
+#   CVE-2023-12345   # accepted: only triggers in non-default config
+#   AVD-KSV-0014     # accepted: see SECURITY.md row

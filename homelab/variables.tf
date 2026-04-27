@@ -45,6 +45,7 @@ variable "tailnet_users" {
     nomad_server_user       = "orchard"
     mobile_user             = "mobile"
     registry_server_user    = "registry"
+    registry_proxy_server_user = "registry-proxy"
     grafana_server_user     = "grafana"
     prometheus_user         = "prometheus"
     openwrt_user            = "openwrt"

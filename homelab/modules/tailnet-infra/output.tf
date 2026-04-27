@@ -27,6 +27,11 @@ output "headscale_host_preauth_key" {
 
 
 output "user_map" {
-  description = "Map of role keys to their created user IDs"
+  description = "Map of role keys to their created user IDs (numeric). Use for headscale_pre_auth_key.user and other resources that take an ID."
   value       = { for k, u in headscale_user.users : k => u.id }
+}
+
+output "user_name_map" {
+  description = "Map of role keys to their tailnet usernames. Use this when building tailnet hostnames (e.g. <name>.<magic_subdomain>)."
+  value       = { for k, u in headscale_user.users : k => u.name }
 }

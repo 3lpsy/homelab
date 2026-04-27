@@ -22,7 +22,7 @@ receivers:
         http_config:
           basic_auth:
             username: ${ntfy_username}
-            password: '${ntfy_password}'
+            password_file: /etc/alertmanager-secrets/ntfy_password
 
 time_intervals:
   - name: overnight

@@ -6,16 +6,22 @@ resource "kubernetes_service_account" "homeassist_z2m" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "homeassist_z2m_tailscale_state" {
+  metadata {
+    name      = "homeassist-z2m-tailscale-state"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "homeassist_z2m_tailscale" {
   metadata {
     name      = "homeassist-z2m-tailscale"
     namespace = kubernetes_namespace.homeassist.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

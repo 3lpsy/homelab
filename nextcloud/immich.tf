@@ -214,12 +214,6 @@ resource "kubernetes_deployment" "immich" {
           }
 
           volume_mount {
-            name       = "localtime"
-            mount_path = "/etc/localtime"
-            read_only  = true
-          }
-
-          volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
             read_only  = true
@@ -261,13 +255,6 @@ resource "kubernetes_deployment" "immich" {
           name = "immich-upload"
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim.immich_upload.metadata[0].name
-          }
-        }
-        volume {
-          name = "localtime"
-          host_path {
-            path = "/etc/localtime"
-            type = "File"
           }
         }
         volume {

@@ -5,7 +5,7 @@
   "skip_tls_verify": true,
   "template": "ntfy",
   "headers": {
-    "Authorization": "Basic ${ntfy_basic_b64}",
+    "Authorization": "Basic $${NTFY_BASIC_B64}",
     "Content-Type": "text/plain",
     "Title": "OpenObserve alert",
     "Priority": "${ntfy_priority}",

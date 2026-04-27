@@ -110,6 +110,11 @@ variable "registry_domain" {
   default = "registry"
 }
 
+variable "registry_proxy_domain" {
+  type    = string
+  default = "registry-proxy"
+}
+
 variable "immich_domain" {
   type    = string
   default = "immich"

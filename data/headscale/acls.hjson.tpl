@@ -25,6 +25,8 @@
     "group:frigate-clients": ["${frigate_server_user}@", "${personal_user}@", "${mobile_user}@"],
     "group:frigate-server": ["${frigate_server_user}@"],
     "group:registry-clients": ["${registry_server_user}@", "${nomad_server_user}@", "${personal_user}@", "${builder_user}@"],
+    "group:registry-proxy-server": ["${registry_proxy_server_user}@"],
+    "group:registry-proxy-clients": ["${nomad_server_user}@", "${personal_user}@", "${builder_user}@"],
     "group:grafana-clients": ["${grafana_server_user}@", "${mobile_user}@", "${personal_user}@"],
     "group:grafana-server": ["${grafana_server_user}@"],
     "group:openwrt": ["${openwrt_user}@"],
@@ -109,6 +111,9 @@
 
     // registry clients access to registry server
     { "action": "accept", "src": ["group:registry-clients"], "dst": ["group:registry-server:443"] },
+
+    // registry-proxy clients (k3s node, admin, builder) access the proxy
+    { "action": "accept", "src": ["group:registry-proxy-clients"], "dst": ["group:registry-proxy-server:443"] },
 
     // grafana clients access to registry server
     { "action": "accept", "src": ["group:grafana-clients"], "dst": ["group:grafana-server:443"] },

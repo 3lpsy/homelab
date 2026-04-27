@@ -12,16 +12,22 @@ resource "kubernetes_service_account" "pihole" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "pihole_tailscale_state" {
+  metadata {
+    name      = "pihole-tailscale-state"
+    namespace = kubernetes_namespace.pihole.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "pihole_tailscale" {
   metadata {
     name      = "pihole-tailscale"
     namespace = kubernetes_namespace.pihole.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

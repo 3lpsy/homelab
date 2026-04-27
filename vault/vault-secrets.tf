@@ -26,16 +26,22 @@ resource "kubernetes_service_account" "vault" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "tailscale_state" {
+  metadata {
+    name      = "tailscale-state"
+    namespace = kubernetes_namespace.vault.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "tailscale" {
   metadata {
     name      = "tailscale"
     namespace = kubernetes_namespace.vault.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {
@@ -146,51 +152,5 @@ resource "kubernetes_secret" "vault_unseal_keys" {
   }
 }
 
-resource "kubernetes_network_policy" "vault" {
-  depends_on = [kubernetes_stateful_set.vault]
-
-  metadata {
-    name      = "vault-network-policy"
-    namespace = kubernetes_namespace.vault.metadata[0].name
-  }
-
-  spec {
-    pod_selector {
-      match_labels = {
-        app = "vault"
-      }
-    }
-
-    policy_types = ["Ingress", "Egress"]
-
-    ingress {
-      from {
-        namespace_selector {
-          match_labels = {
-            "kubernetes.io/metadata.name" = "vault-csi"
-          }
-        }
-      }
-      ports {
-        protocol = "TCP"
-        port     = "8200"
-      }
-    }
-
-    ingress {
-      from {
-        namespace_selector {
-          match_labels = {
-            "kubernetes.io/metadata.name" = "vault"
-          }
-        }
-      }
-      ports {
-        protocol = "TCP"
-        port     = "8200"
-      }
-    }
-
-    egress {}
-  }
-}
+# Vault NetworkPolicies moved to vault-network.tf (default-deny + cross-ns
+# allow pattern used cluster-wide).

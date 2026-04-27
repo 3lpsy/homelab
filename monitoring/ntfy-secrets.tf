@@ -12,16 +12,22 @@ resource "kubernetes_service_account" "ntfy" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "ntfy_tailscale_state" {
+  metadata {
+    name      = "ntfy-tailscale-state"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "ntfy_tailscale" {
   metadata {
     name      = "ntfy-tailscale"
     namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {
@@ -96,6 +102,11 @@ resource "vault_kv_secret_v2" "ntfy_tls" {
     fullchain_pem = module.ntfy-tls.fullchain_pem
     privkey_pem   = module.ntfy-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_policy" "ntfy" {
@@ -132,32 +143,51 @@ resource "kubernetes_manifest" "ntfy_secret_provider" {
           secretName = "ntfy-tls"
           type       = "kubernetes.io/tls"
           data = [
-            {
-              objectName = "tls_crt"
-              key        = "tls.crt"
-            },
-            {
-              objectName = "tls_key"
-              key        = "tls.key"
-            }
+            { objectName = "tls_crt", key = "tls.crt" },
+            { objectName = "tls_key", key = "tls.key" },
           ]
-        }
+        },
+        # Synced for Reloader to watch — pod restarts on rotation, then the
+        # seed-users init container re-applies passwords via `ntfy user add`.
+        # The init container reads passwords from the CSI volume directly
+        # (not this k8s Secret), so no consumer change is needed.
+        {
+          secretName = "ntfy-user-passwords"
+          type       = "Opaque"
+          data = [
+            for user in keys(var.ntfy_users) :
+            { objectName = "password_${user}", key = "password_${user}" }
+          ]
+        },
       ]
       parameters = {
         vaultAddress = "http://vault.vault.svc.cluster.local:8200"
         roleName     = "ntfy"
-        objects = yamlencode([
-          {
-            objectName = "tls_crt"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/tls"
-            secretKey  = "fullchain_pem"
-          },
-          {
-            objectName = "tls_key"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/tls"
-            secretKey  = "privkey_pem"
-          }
-        ])
+        # User passwords mount as files at /mnt/secrets/password_<user>.
+        # The seed-users init container reads them and seeds the SQLite
+        # auth-file via `ntfy user add`, so credentials never land in any
+        # ConfigMap (and therefore never in Velero backup tarballs).
+        objects = yamlencode(concat(
+          [
+            {
+              objectName = "tls_crt"
+              secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/tls"
+              secretKey  = "fullchain_pem"
+            },
+            {
+              objectName = "tls_key"
+              secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/tls"
+              secretKey  = "privkey_pem"
+            },
+          ],
+          [
+            for user in keys(var.ntfy_users) : {
+              objectName = "password_${user}"
+              secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/config"
+              secretKey  = "password_${user}"
+            }
+          ],
+        ))
       }
     }
   }
@@ -165,6 +195,7 @@ resource "kubernetes_manifest" "ntfy_secret_provider" {
   depends_on = [
     kubernetes_namespace.monitoring,
     vault_kubernetes_auth_backend_role.ntfy,
+    vault_kv_secret_v2.ntfy_config,
     vault_kv_secret_v2.ntfy_tls,
     vault_policy.ntfy
   ]

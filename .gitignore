@@ -1,3 +1,4 @@
+docs/
 *.pem
 *.pem.pub
 apikey.txt
@@ -6,8 +7,8 @@ apikey.txt
 *.key
 *.restored
 *.lock.hcl
-
-
+.gitleaksignore
+security/trivy.yaml
 !data/.gitkeep
 !data/.env.example
 !data/backups/.gitkeep
@@ -44,7 +45,9 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-
+security/reports
+security/.trivy-cache/
+security/.trivy-cache
 .pytest_cache
 __pycache__
 # Experiment with AI
@@ -61,6 +64,7 @@ opencode.jsonc
 
 # Ignore transient lock info files created by terraform apply
 .terraform.tfstate.lock.info
+test/
 test.sh
 
 # Include override files you do wish to add to version control using negated pattern

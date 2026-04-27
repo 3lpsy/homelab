@@ -3,6 +3,11 @@ resource "kubernetes_config_map" "ntfy_server_config" {
     name      = "ntfy-server-config"
     namespace = kubernetes_namespace.monitoring.metadata[0].name
   }
+  # auth-users / auth-access are NOT rendered here. They previously embedded
+  # bcrypt hashes + the full user/role enumeration, which would land in
+  # plaintext in Velero backup tarballs. Users are now seeded into the
+  # SQLite auth-file (on PVC) by the seed-users init container at startup,
+  # using passwords mounted via Vault CSI.
   data = {
     "server.yml" = yamlencode({
       "base-url"            = "https://${var.ntfy_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
@@ -17,19 +22,19 @@ resource "kubernetes_config_map" "ntfy_server_config" {
       "enable-login"        = true
       "log-level"           = "info"
       "log-format"          = "json"
-      "auth-users" = [
-        for user, role in var.ntfy_users :
-        "${user}:${bcrypt(random_password.ntfy_user_passwords[user].result)}:${role}"
-      ]
-      "auth-access" = [
-        for user, role in var.ntfy_users :
-        "${user}:*:rw" if role == "user"
-      ]
     })
   }
+}
 
-  lifecycle {
-    ignore_changes = [data]
+resource "kubernetes_config_map" "ntfy_seed_script" {
+  metadata {
+    name      = "ntfy-seed-script"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  data = {
+    "seed-users.sh" = templatefile("${path.module}/../data/ntfy/seed-users.sh.tpl", {
+      users = var.ntfy_users
+    })
   }
 }
 

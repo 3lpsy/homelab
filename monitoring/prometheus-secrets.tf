@@ -42,16 +42,22 @@ resource "kubernetes_cluster_role_binding" "prometheus" {
   }
 }
 
+resource "kubernetes_secret" "prometheus_tailscale_state" {
+  metadata {
+    name      = "prometheus-tailscale-state"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "prometheus_tailscale" {
   metadata {
     name      = "prometheus-tailscale"
     namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {
@@ -96,4 +102,68 @@ resource "kubernetes_secret" "prometheus_tailscale_auth" {
   data = {
     TS_AUTHKEY = headscale_pre_auth_key.prometheus_server.key
   }
+}
+
+# Alertmanager reads its ntfy basic-auth password from a file mounted via
+# Vault CSI. The password lives in Vault at ntfy/config (key
+# password_prometheus, written by ntfy-secrets.tf). Reloader rotates the
+# pod when the synced k8s Secret changes.
+resource "vault_policy" "prometheus_alertmanager" {
+  name = "prometheus-alertmanager-policy"
+
+  policy = <<EOT
+path "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/config" {
+  capabilities = ["read"]
+}
+EOT
+}
+
+resource "vault_kubernetes_auth_backend_role" "prometheus_alertmanager" {
+  backend                          = "kubernetes"
+  role_name                        = "prometheus-alertmanager"
+  bound_service_account_names      = ["prometheus"]
+  bound_service_account_namespaces = ["monitoring"]
+  token_policies                   = [vault_policy.prometheus_alertmanager.name]
+  token_ttl                        = 86400
+}
+
+resource "kubernetes_manifest" "prometheus_alertmanager_secret_provider" {
+  manifest = {
+    apiVersion = "secrets-store.csi.x-k8s.io/v1"
+    kind       = "SecretProviderClass"
+    metadata = {
+      name      = "vault-prometheus-alertmanager"
+      namespace = kubernetes_namespace.monitoring.metadata[0].name
+    }
+    spec = {
+      provider = "vault"
+      secretObjects = [
+        {
+          secretName = "prometheus-alertmanager-ntfy-auth"
+          type       = "Opaque"
+          data = [
+            { objectName = "ntfy_password", key = "ntfy_password" },
+          ]
+        },
+      ]
+      parameters = {
+        vaultAddress = "http://vault.vault.svc.cluster.local:8200"
+        roleName     = "prometheus-alertmanager"
+        objects = yamlencode([
+          {
+            objectName = "ntfy_password"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/ntfy/config"
+            secretKey  = "password_prometheus"
+          },
+        ])
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_namespace.monitoring,
+    vault_kubernetes_auth_backend_role.prometheus_alertmanager,
+    vault_kv_secret_v2.ntfy_config,
+    vault_policy.prometheus_alertmanager,
+  ]
 }

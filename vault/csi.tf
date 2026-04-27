@@ -53,6 +53,43 @@ resource "helm_release" "vault_csi_provider" {
     value = "/etc/kubernetes/secrets-store-csi-providers"
   }
 
+  # Resource bounds for the vault-csi-provider DaemonSet pods. Idle ~10m CPU /
+  # ~30Mi RSS; spikes briefly per CSI mount. Limits cap a runaway provider
+  # from starving the node. The pod has two containers (vault-csi-provider +
+  # vault-agent sidecar) — both need explicit resources set independently.
+  set {
+    name  = "csi.resources.requests.cpu"
+    value = "20m"
+  }
+  set {
+    name  = "csi.resources.requests.memory"
+    value = "64Mi"
+  }
+  set {
+    name  = "csi.resources.limits.cpu"
+    value = "200m"
+  }
+  set {
+    name  = "csi.resources.limits.memory"
+    value = "256Mi"
+  }
+  set {
+    name  = "csi.agent.resources.requests.cpu"
+    value = "20m"
+  }
+  set {
+    name  = "csi.agent.resources.requests.memory"
+    value = "64Mi"
+  }
+  set {
+    name  = "csi.agent.resources.limits.cpu"
+    value = "200m"
+  }
+  set {
+    name  = "csi.agent.resources.limits.memory"
+    value = "128Mi"
+  }
+
   depends_on = [
     helm_release.secrets_store_csi_driver,
     kubernetes_namespace.vault

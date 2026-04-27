@@ -62,18 +62,26 @@ resource "kubernetes_service_account" "openobserve_bootstrap" {
   automount_service_account_token = true
 }
 
-# RBAC for the Tailscale sidecar: the sidecar persists its node state in a
-# k8s Secret so the same tailnet identity survives pod restarts.
+# Pre-create state Secret + Role for the Tailscale sidecar. The sidecar
+# persists its node state in this k8s Secret so the same tailnet identity
+# survives pod restarts; pre-creation lets the Role drop the namespace-wide
+# `create` grant.
+resource "kubernetes_secret" "openobserve_bootstrap_tailscale_state" {
+  metadata {
+    name      = "openobserve-bootstrap-tailscale-state"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "openobserve_bootstrap_tailscale" {
   metadata {
     name      = "openobserve-bootstrap-tailscale"
     namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {
@@ -213,8 +221,12 @@ resource "kubernetes_manifest" "openobserve_bootstrap_job" {
       namespace = kubernetes_namespace.monitoring.metadata[0].name
     }
     spec = {
-      backoffLimit            = 3
-      ttlSecondsAfterFinished = 3600
+      backoffLimit = 3
+      # No ttlSecondsAfterFinished: Job name is content-keyed by sha256 of
+      # bootstrap-accounts.py. Letting completed Jobs stick around means TF
+      # re-applies are no-ops; cleanup happens automatically on script change
+      # (new name → new Job → old one orphaned, prune by hand if it ever
+      # accumulates beyond 1-2 entries).
       template = {
         metadata = {
           labels = {

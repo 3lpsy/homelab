@@ -18,7 +18,8 @@ resource "kubernetes_deployment" "ntfy" {
         labels = { app = "ntfy" }
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.ntfy_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "ntfy-tls"
+          "seed-script-hash"                    = sha1(kubernetes_config_map.ntfy_seed_script.data["seed-users.sh"])
+          "secret.reloader.stakater.com/reload" = "ntfy-tls,ntfy-user-passwords"
         }
       }
 
@@ -39,6 +40,49 @@ resource "kubernetes_deployment" "ntfy" {
           volume_mount {
             name       = "ntfy-cache"
             mount_path = "/var/cache/ntfy"
+          }
+        }
+
+        # Seed users into the SQLite auth-file from passwords mounted via
+        # Vault CSI. Runs after fix-permissions, before the main ntfy
+        # container starts, so the auth DB is ready when ntfy serves.
+        init_container {
+          name  = "seed-users"
+          image = var.image_ntfy
+          command = ["sh", "/scripts/seed-users.sh"]
+
+          security_context {
+            run_as_user  = 1000
+            run_as_group = 1000
+          }
+
+          volume_mount {
+            name       = "ntfy-config"
+            mount_path = "/etc/ntfy"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "ntfy-data"
+            mount_path = "/var/lib/ntfy"
+          }
+          volume_mount {
+            name       = "ntfy-cache"
+            mount_path = "/var/cache/ntfy"
+          }
+          volume_mount {
+            name       = "ntfy-seed-script"
+            mount_path = "/scripts"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+
+          resources {
+            requests = { cpu = "10m", memory = "32Mi" }
+            limits   = { cpu = "200m", memory = "128Mi" }
           }
         }
 
@@ -108,6 +152,13 @@ resource "kubernetes_deployment" "ntfy" {
         volume {
           name = "ntfy-cache"
           empty_dir {}
+        }
+        volume {
+          name = "ntfy-seed-script"
+          config_map {
+            name         = kubernetes_config_map.ntfy_seed_script.metadata[0].name
+            default_mode = "0755"
+          }
         }
 
         # Nginx

@@ -14,16 +14,24 @@ resource "kubernetes_service_account" "nextcloud" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "tailscale_state" {
+  for_each = toset(["tailscale-state", "collabora-tailscale-state", "immich-tailscale-state"])
+
+  metadata {
+    name      = each.value
+    namespace = kubernetes_namespace.nextcloud.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "tailscale" {
   metadata {
     name      = "tailscale"
     namespace = kubernetes_namespace.nextcloud.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

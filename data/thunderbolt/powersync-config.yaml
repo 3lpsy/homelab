@@ -6,7 +6,7 @@ logger:
 replication:
   connections:
     - type: postgresql
-      uri: postgresql://powersync_role:${powersync_role_password}@thunderbolt-postgres:5432/thunderbolt
+      uri: !env PS_DATABASE_URI
       sslmode: disable
 
 storage:
@@ -39,8 +39,8 @@ client_auth:
   jwks:
     keys:
       - kty: oct
-        k: ${powersync_jwt_secret_b64}
+        k: !env PS_JWT_KEY_B64
         alg: HS256
-        kid: ${powersync_jwt_kid}
+        kid: thunderbolt-powersync
   telemetry:
     disable_telemetry_sharing: true

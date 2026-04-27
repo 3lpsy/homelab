@@ -1,0 +1,521 @@
+[
+  {
+    "name": "collabora-kit-jail-caps",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "nextcloud",
+          "kind": "Deployment",
+          "name": "collabora"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0057" }
+    ]
+  },
+
+  {
+    "name": "c-0012-tailscale-sidecar-env-name-fp",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "kind": "Deployment" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "StatefulSet" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0012" }
+    ]
+  },
+
+  {
+    "name": "c-0012-builder-build-context-source",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "builder",
+          "kind": "ConfigMap"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0012" }
+    ]
+  },
+
+  {
+    "name": "c-0012-vault-config-tls-key-file",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "vault",
+          "kind": "ConfigMap",
+          "name": "vault-config"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0012" }
+    ]
+  },
+
+  {
+    "name": "c-0012-thunderbolt-powersync-config",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "thunderbolt",
+          "kind": "ConfigMap",
+          "name": "thunderbolt-powersync-config"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0012" }
+    ]
+  },
+
+  {
+    "name": "c-0187-builtin-cluster-admin-binding",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "kind": "ClusterRoleBinding",
+          "name": "cluster-admin"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0187" }
+    ]
+  },
+
+  {
+    "name": "c-0262-builtin-public-info-viewer",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "kind": "ClusterRoleBinding",
+          "name": "system:public-info-viewer"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0262" }
+    ]
+  },
+
+  {
+    "name": "c-0270-c-0271-k3s-builtin-no-limits",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Deployment", "name": "coredns" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Deployment", "name": "local-path-provisioner" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Deployment", "name": "metrics-server" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0270" },
+      { "controlID": "C-0271" }
+    ]
+  },
+
+  {
+    "name": "c-0048-c-0045-hostpath-stable-resources",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Deployment",  "name": "collabora" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Deployment",  "name": "immich" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Deployment",  "name": "nextcloud" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "grafana" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "ntfy" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "openobserve" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "prometheus" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "litellm",     "kind": "Deployment",  "name": "litellm" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Deployment",  "name": "mcp-litellm" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Deployment",  "name": "mcp-searxng" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Deployment",  "name": "mcp-shared" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "pihole",      "kind": "Deployment",  "name": "pihole" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "radicale",    "kind": "Deployment",  "name": "radicale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry",    "kind": "Deployment",  "name": "registry" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "searxng",     "kind": "Deployment",  "name": "searxng" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "Deployment",  "name": "thunderbolt" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "Deployment",  "name": "thunderbolt-backend" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "Deployment",  "name": "homeassist" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "Deployment",  "name": "homeassist-z2m" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "frigate",     "kind": "Deployment",  "name": "frigate" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-ca-921" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-az-162" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-ca-636" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-ca-967" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-co-450" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-dc-137" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-fl-340" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-il-207" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-tx-276" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-wa-235" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault",       "kind": "StatefulSet", "name": "vault" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "DaemonSet",   "name": "node-exporter" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "DaemonSet",   "name": "otel-collector" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "DaemonSet",   "name": "csi-secrets-store-secrets-store-csi-driver" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "DaemonSet",   "name": "vault-csi-csi-provider" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "CronJob",     "name": "tls-rotator" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0048" },
+      { "controlID": "C-0045" }
+    ]
+  },
+
+  {
+    "name": "c-0048-c-0045-hostpath-builder-ephemeral",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "builder",    "kind": "Job" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "builder",    "kind": "Pod" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring", "kind": "Job" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0048" },
+      { "controlID": "C-0045" }
+    ]
+  },
+
+  {
+    "name": "c-0046-net-admin-tailscale-and-wireguard",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Deployment",  "name": "collabora" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Deployment",  "name": "immich" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Deployment",  "name": "nextcloud" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "grafana" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "ntfy" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "openobserve" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Deployment",  "name": "prometheus" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "litellm",     "kind": "Deployment",  "name": "litellm" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Deployment",  "name": "mcp-litellm" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Deployment",  "name": "mcp-searxng" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Deployment",  "name": "mcp-shared" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "pihole",      "kind": "Deployment",  "name": "pihole" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "radicale",    "kind": "Deployment",  "name": "radicale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry",    "kind": "Deployment",  "name": "registry" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "searxng",     "kind": "Deployment",  "name": "searxng" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "Deployment",  "name": "thunderbolt" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "Deployment",  "name": "thunderbolt-backend" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "Deployment",  "name": "homeassist" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "Deployment",  "name": "homeassist-z2m" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "frigate",     "kind": "Deployment",  "name": "frigate" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault",       "kind": "StatefulSet", "name": "vault" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-ca-921" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-az-162" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-ca-636" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-ca-967" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-co-450" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-dc-137" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-fl-340" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-il-207" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-tx-276" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-wa-235" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0046" }
+    ]
+  },
+
+  {
+    "name": "c-0057-exit-node-wireguard-and-csi-driver",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-ca-921" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-az-162" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-ca-636" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-ca-967" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-co-450" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-dc-137" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-fl-340" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-il-207" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-tx-276" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment", "name": "exitnode-us-wa-235" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "DaemonSet",  "name": "csi-secrets-store-secrets-store-csi-driver" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0057" }
+    ]
+  },
+
+  {
+    "name": "c-0038-c-0041-node-exporter-host-namespaces",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "monitoring",
+          "kind": "DaemonSet",
+          "name": "node-exporter"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0038" },
+      { "controlID": "C-0041" }
+    ]
+  },
+
+  {
+    "name": "c-0015-reloader-watches-all-secrets",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "kind": "ClusterRole",
+          "name": "reloader"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0015" }
+    ]
+  },
+
+  {
+    "name": "c-0015-kube-state-metrics",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "kind": "ClusterRole",
+          "name": "kube-state-metrics"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0015" }
+    ]
+  },
+
+  {
+    "name": "c-0015-csi-secrets-store-syncing",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "secretprovidersyncing-role" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "secretproviderrotation-role" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0015" }
+    ]
+  },
+
+  {
+    "name": "c-0015-tailscale-per-namespace-roles",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault",       "kind": "Role", "name": "tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "Role", "name": "tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Role", "name": "grafana-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Role", "name": "prometheus-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Role", "name": "openobserve-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Role", "name": "openobserve-bootstrap-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "Role", "name": "ntfy-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Role", "name": "exitnode-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "frigate",     "kind": "Role", "name": "frigate-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "Role", "name": "homeassist-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "Role", "name": "homeassist-z2m-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "litellm",     "kind": "Role", "name": "litellm-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "pihole",      "kind": "Role", "name": "pihole-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "radicale",    "kind": "Role", "name": "radicale-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry",    "kind": "Role", "name": "registry-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "searxng",     "kind": "Role", "name": "searxng-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "Role", "name": "thunderbolt-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "Role", "name": "tls-rotator-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Role", "name": "mcp-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "builder",     "kind": "Role", "name": "builder-tailscale" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0015" }
+    ]
+  },
+
+  {
+    "name": "c-0015-builtin-k8s-controllers",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Role", "name": "system:controller:bootstrap-signer" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Role", "name": "system:controller:token-cleaner" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "system:controller:generic-garbage-collector" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "system:controller:namespace-controller" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "system:controller:resourcequota-controller" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "system:kube-controller-manager" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "cluster-admin" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0015" }
+    ]
+  },
+
+  {
+    "name": "c-0015-vault-csi-provider-role",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "vault-csi",
+          "kind": "Role",
+          "name": "vault-csi-csi-provider-role"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0015" }
+    ]
+  },
+
+  {
+    "name": "c-0030-c-0260-kube-system-no-netpol",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Deployment", "name": "coredns" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Deployment", "name": "local-path-provisioner" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "Deployment", "name": "metrics-server" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "DaemonSet",  "name": "csi-secrets-store-secrets-store-csi-driver" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0030" },
+      { "controlID": "C-0260" }
+    ]
+  },
+
+  {
+    "name": "c-0054-kube-system-no-netpol",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "kind": "Namespace", "name": "kube-system" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0054" }
+    ]
+  },
+
+  {
+    "name": "c-0037-coredns-poisoning-builtin-controllers",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "system:controller:generic-garbage-collector" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "system:controller:root-ca-cert-publisher" } },
+      { "designatorType": "Attributes", "attributes": { "kind": "ClusterRole", "name": "cluster-admin" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0037" }
+    ]
+  },
+
+  {
+    "name": "c-0044-node-exporter-host-port",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "monitoring",
+          "kind": "DaemonSet",
+          "name": "node-exporter"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0044" }
+    ]
+  },
+
+  {
+    "name": "c-0053-kube-system-builtin-service-accounts",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      {
+        "designatorType": "Attributes",
+        "attributes": {
+          "namespace": "kube-system",
+          "kind": "ServiceAccount"
+        }
+      }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0053" }
+    ]
+  },
+
+  {
+    "name": "c-0053-user-workload-service-accounts",
+    "policyType": "postureExceptionPolicy",
+    "actions": ["alertOnly"],
+    "resources": [
+      { "designatorType": "Attributes", "attributes": { "namespace": "builder",     "kind": "ServiceAccount", "name": "builder" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "ServiceAccount", "name": "exitnode" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "frigate",     "kind": "ServiceAccount", "name": "frigate" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "ServiceAccount", "name": "homeassist" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "homeassist",  "kind": "ServiceAccount", "name": "homeassist-z2m" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "litellm",     "kind": "ServiceAccount", "name": "litellm" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "ServiceAccount", "name": "mcp" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "ServiceAccount", "name": "mcp-k8s" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "grafana" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "kube-state-metrics" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "ntfy" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "openobserve" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "openobserve-bootstrap" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "otel-collector" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "prometheus" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "reloader" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "nextcloud",   "kind": "ServiceAccount", "name": "nextcloud" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "pihole",      "kind": "ServiceAccount", "name": "pihole" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "radicale",    "kind": "ServiceAccount", "name": "radicale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry",    "kind": "ServiceAccount", "name": "registry" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "searxng",     "kind": "ServiceAccount", "name": "searxng" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "searxng",     "kind": "ServiceAccount", "name": "searxng-ranker" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "ServiceAccount", "name": "thunderbolt" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "ServiceAccount", "name": "tls-rotator" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault",       "kind": "ServiceAccount", "name": "vault" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "ServiceAccount", "name": "vault-csi" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "ServiceAccount", "name": "vault-csi-csi-provider" } }
+    ],
+    "posturePolicies": [
+      { "controlID": "C-0053" }
+    ]
+  }
+]

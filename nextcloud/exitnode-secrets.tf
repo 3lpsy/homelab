@@ -12,16 +12,24 @@ resource "kubernetes_service_account" "exitnode" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "exitnode_tailscale_state" {
+  for_each = toset([for name in keys(local.exitnode_names) : "exitnode-${name}-state"])
+
+  metadata {
+    name      = each.value
+    namespace = kubernetes_namespace.exitnode.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "exitnode_tailscale" {
   metadata {
     name      = "exitnode-tailscale"
     namespace = kubernetes_namespace.exitnode.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

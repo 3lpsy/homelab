@@ -21,7 +21,8 @@ resource "kubernetes_deployment" "thunderbolt_powersync" {
           app = "thunderbolt-powersync"
         }
         annotations = {
-          "config-hash" = sha1(kubernetes_config_map.thunderbolt_powersync_config.data["config.yaml"])
+          "config-hash"                         = sha1(kubernetes_config_map.thunderbolt_powersync_config.data["config.yaml"])
+          "secret.reloader.stakater.com/reload" = "thunderbolt-secrets"
         }
       }
 
@@ -38,7 +39,24 @@ resource "kubernetes_deployment" "thunderbolt_powersync" {
             name  = "POWERSYNC_CONFIG_PATH"
             value = "/config/config.yaml"
           }
-
+          env {
+            name = "PS_DATABASE_URI"
+            value_from {
+              secret_key_ref {
+                name = "thunderbolt-secrets"
+                key  = "powersync_database_url"
+              }
+            }
+          }
+          env {
+            name = "PS_JWT_KEY_B64"
+            value_from {
+              secret_key_ref {
+                name = "thunderbolt-secrets"
+                key  = "powersync_jwt_secret_b64"
+              }
+            }
+          }
 
           port {
             container_port = 8080

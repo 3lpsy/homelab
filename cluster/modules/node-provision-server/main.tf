@@ -84,6 +84,10 @@ resource "null_resource" "k3s_prep_firewalld" {
 
 
 resource "null_resource" "k3s_install" {
+  triggers = {
+    install_args = "${var.k3s_version}-disable-traefik-servicelb"
+  }
+
   connection {
     type        = "ssh"
     host        = var.host
@@ -93,13 +97,41 @@ resource "null_resource" "k3s_install" {
   }
   provisioner "remote-exec" {
     inline = [
-      # Install K3s, change advertise addr if adding nodes over tailscale, maybe node-ip too
+      # Install K3s, change advertise addr if adding nodes over tailscale, maybe node-ip too.
+      # INSTALL_K3S_FORCE_RESTART makes re-runs honor changed flags on an existing node.
       "TAILSCALE_IP=$(tailscale ip -4)",
-      "curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 640 --node-ip $TAILSCALE_IP  --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain}  --flannel-backend=wireguard-native",
+      "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=${var.k3s_version} INSTALL_K3S_FORCE_RESTART=true sh -s - server --write-kubeconfig-mode 640 --node-ip $TAILSCALE_IP --bind-address $TAILSCALE_IP --tls-san ${var.nomad_host_name}.${var.headscale_magic_subdomain} --node-name ${var.nomad_host_name}.${var.headscale_magic_subdomain} --flannel-backend=wireguard-native --disable=traefik --disable=servicelb",
       "sudo chown root:provisioner /etc/rancher/k3s/k3s.yaml"
     ]
   }
   depends_on = [null_resource.k3s_prep_firewalld]
+}
+
+# Sentinel files prevent the k3s helm-controller from re-deploying the bundled
+# traefik HelmCharts on subsequent restarts. Combined with --disable=traefik
+# above, this fully removes the install-Job ServiceAccounts and their
+# cluster-admin ClusterRoleBindings (Kubescape C-0187, C-0015).
+resource "null_resource" "k3s_skip_bundled_charts" {
+  triggers = {
+    charts = "traefik-traefik-crd"
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo touch /var/lib/rancher/k3s/server/manifests/traefik.yaml.skip",
+      "sudo touch /var/lib/rancher/k3s/server/manifests/traefik-crd.yaml.skip"
+    ]
+  }
+
+  depends_on = [null_resource.k3s_install]
 }
 
 resource "null_resource" "post_k3s_install" {
@@ -123,6 +155,13 @@ resource "null_resource" "post_k3s_install" {
 }
 
 resource "null_resource" "k3s_registry_config" {
+  # Re-run when the rendered registries.yaml content would change.
+  triggers = {
+    registry_domain       = var.registry_domain
+    registry_proxy_domain = var.registry_proxy_domain
+    magic_subdomain       = var.headscale_magic_subdomain
+  }
+
   connection {
     type        = "ssh"
     host        = var.host
@@ -139,6 +178,10 @@ mirrors:
   "${var.registry_domain}.${var.headscale_magic_subdomain}":
     endpoint:
       - "https://${var.registry_domain}.${var.headscale_magic_subdomain}"
+  "docker.io":
+    endpoint:
+      - "https://${var.registry_proxy_domain}.${var.headscale_magic_subdomain}"
+      - "https://registry-1.docker.io"
 EOF
       EOT
       ,

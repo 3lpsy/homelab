@@ -21,17 +21,23 @@ resource "kubernetes_service_account" "tls_rotator" {
   automount_service_account_token = true
 }
 
+resource "kubernetes_secret" "tls_rotator_tailscale_state" {
+  metadata {
+    name      = "tls-rotator-tailscale-state"
+    namespace = kubernetes_namespace.tls_rotator.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 # RBAC for the Tailscale sidecar's persistent state secret.
 resource "kubernetes_role" "tls_rotator_tailscale" {
   metadata {
     name      = "tls-rotator-tailscale"
     namespace = kubernetes_namespace.tls_rotator.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

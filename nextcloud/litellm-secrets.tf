@@ -13,16 +13,22 @@ resource "kubernetes_service_account" "litellm" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "litellm_tailscale_state" {
+  metadata {
+    name      = "litellm-tailscale-state"
+    namespace = kubernetes_namespace.litellm.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "litellm_tailscale" {
   metadata {
     name      = "litellm-tailscale"
     namespace = kubernetes_namespace.litellm.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

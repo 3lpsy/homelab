@@ -1,0 +1,36 @@
+# Gitleaks config — extends the built-in ruleset, adds path-level
+# allowlist entries so files we know contain no real secrets in any
+# scan mode (`detect`, `dir`, `git`) are skipped wholesale.
+#
+# Paths are Go regexes matched against the file path relative to the
+# scan root. Triple-quoted strings to dodge backslash escaping.
+#
+# Use `gitleaks dir . --config=.gitleaks.toml` for filesystem scans.
+# Findings-level suppressions (per-fingerprint) live in `.gitleaksignore`.
+
+title = "homelab gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "homelab path allowlist"
+paths = [
+  # Trivy DB cache — large binary blob, not source.
+  '''^security/\.trivy-cache/''',
+
+  # Scan reports — Kubescape / Trivy output may legitimately contain
+  # high-entropy strings (image SHAs, tokens redacted from manifests).
+  '''^security/reports/''',
+
+  # Local env files — `.env`, `.env.opencode`, `.env.<anything>` at any
+  # depth. Always gitignored, but `gitleaks dir` doesn't honour
+  # `.gitignore` — this is the only way to skip them in filesystem
+  # mode.
+  '''(^|/)\.env(\..*)?$''',
+
+  # Local pricing helper — gitignored, occasionally has high-entropy
+  # model identifiers (e.g. `llama4maverick17b`) that trip the
+  # generic-api-key rule.
+  '''(^|/)pricing\.py$''',
+]

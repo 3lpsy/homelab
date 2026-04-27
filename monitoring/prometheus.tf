@@ -19,10 +19,11 @@ resource "kubernetes_deployment" "prometheus" {
       metadata {
         labels = { app = "prometheus" }
         annotations = {
-          "prometheus-config-hash"   = sha1(kubernetes_config_map.prometheus_config.data["prometheus.yml"])
-          "alert-rules-hash"         = sha1(kubernetes_config_map.prometheus_config.data["alert-rules.yml"])
-          "alertmanager-config-hash" = sha1(kubernetes_config_map.alertmanager_config.data["alertmanager.yml"])
-          "ntfy-bridge-script-hash"  = sha1(kubernetes_config_map.ntfy_bridge_script.data["ntfy-bridge.py"])
+          "prometheus-config-hash"              = sha1(kubernetes_config_map.prometheus_config.data["prometheus.yml"])
+          "alert-rules-hash"                    = sha1(kubernetes_config_map.prometheus_config.data["alert-rules.yml"])
+          "alertmanager-config-hash"            = sha1(kubernetes_config_map.alertmanager_config.data["alertmanager.yml"])
+          "ntfy-bridge-script-hash"             = sha1(kubernetes_config_map.ntfy_bridge_script.data["ntfy-bridge.py"])
+          "secret.reloader.stakater.com/reload" = "prometheus-alertmanager-ntfy-auth"
         }
       }
 
@@ -123,6 +124,11 @@ resource "kubernetes_deployment" "prometheus" {
             name       = "alertmanager-config"
             mount_path = "/etc/alertmanager"
           }
+          volume_mount {
+            name       = "alertmanager-secrets"
+            mount_path = "/etc/alertmanager-secrets"
+            read_only  = true
+          }
 
           resources {
             requests = { cpu = "50m", memory = "64Mi" }
@@ -152,6 +158,16 @@ resource "kubernetes_deployment" "prometheus" {
           name = "alertmanager-config"
           config_map {
             name = kubernetes_config_map.alertmanager_config.metadata[0].name
+          }
+        }
+        volume {
+          name = "alertmanager-secrets"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = kubernetes_manifest.prometheus_alertmanager_secret_provider.manifest.metadata.name
+            }
           }
         }
 

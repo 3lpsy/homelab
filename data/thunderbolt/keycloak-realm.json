@@ -15,8 +15,8 @@
       "clientId": "thunderbolt-app",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "${oidc_client_secret}",
-      "redirectUris": ["${public_url}/*", "tauri://localhost/*", "http://tauri.localhost/*", "http://localhost:*/*"],
+      "secret": "${OIDC_CLIENT_SECRET}",
+      "redirectUris": ["${PUBLIC_URL}/*", "tauri://localhost/*", "http://tauri.localhost/*", "http://localhost:*/*"],
       "webOrigins": ["+"],
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
@@ -27,8 +27,8 @@
   ],
   "users": [
     {
-      "username": "${admin_email}",
-      "email": "${admin_email}",
+      "username": "${ADMIN_EMAIL}",
+      "email": "${ADMIN_EMAIL}",
       "firstName": "Admin",
       "lastName": "User",
       "enabled": true,
@@ -36,7 +36,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "${seed_user_password}",
+          "value": "${SEED_USER_PASSWORD}",
           "temporary": false
         }
       ]

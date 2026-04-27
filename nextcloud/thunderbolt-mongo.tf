@@ -123,6 +123,17 @@ resource "kubernetes_job" "thunderbolt_mongo_rs_init" {
             "bash", "-c",
             "until mongosh --host thunderbolt-mongo:27017 --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1; do echo waiting for mongo; sleep 2; done; mongosh --host thunderbolt-mongo:27017 --eval 'try{rs.status().ok&&quit(0)}catch{}rs.initiate({_id:\"rs0\",version:1,members:[{_id:0,host:\"thunderbolt-mongo:27017\"}]})'"
           ]
+
+          resources {
+            requests = {
+              cpu    = "20m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "200m"
+              memory = "256Mi"
+            }
+          }
         }
       }
     }

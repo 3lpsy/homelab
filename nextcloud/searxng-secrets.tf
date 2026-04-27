@@ -12,16 +12,22 @@ resource "kubernetes_service_account" "searxng" {
   automount_service_account_token = true
 }
 
+resource "kubernetes_secret" "searxng_tailscale_state" {
+  metadata {
+    name      = "searxng-tailscale-state"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "searxng_tailscale" {
   metadata {
     name      = "searxng-tailscale"
     namespace = kubernetes_namespace.searxng.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {

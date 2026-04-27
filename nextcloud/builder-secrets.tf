@@ -12,6 +12,40 @@ resource "kubernetes_service_account" "builder" {
   automount_service_account_token = true
 }
 
+locals {
+  builder_tailscale_state_secrets = [
+    "mcp-searxng-builder-tailscale-state",
+    "mcp-filesystem-builder-tailscale-state",
+    "mcp-memory-builder-tailscale-state",
+    "mcp-prometheus-builder-tailscale-state",
+    "mcp-time-builder-tailscale-state",
+    "mcp-litellm-builder-tailscale-state",
+    "mcp-k8s-builder-tailscale-state",
+    "mcp-k8s-auth-gate-builder-tailscale-state",
+    "thunderbolt-frontend-builder-tailscale-state",
+    "thunderbolt-backend-builder-tailscale-state",
+    "nextcloud-builder-tailscale-state",
+    "exitnode-tinyproxy-builder-tailscale-state",
+    "searxng-ranker-builder-tailscale-state",
+    "otel-collector-builder-tailscale-state",
+    "tls-rotator-builder-tailscale-state",
+  ]
+}
+
+resource "kubernetes_secret" "builder_tailscale_state" {
+  for_each = toset(local.builder_tailscale_state_secrets)
+
+  metadata {
+    name      = each.value
+    namespace = kubernetes_namespace.builder.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "builder_tailscale" {
   metadata {
     name      = "builder-tailscale"
@@ -19,32 +53,10 @@ resource "kubernetes_role" "builder_tailscale" {
   }
 
   rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    resource_names = [
-      "mcp-searxng-builder-tailscale-state",
-      "mcp-filesystem-builder-tailscale-state",
-      "mcp-memory-builder-tailscale-state",
-      "mcp-prometheus-builder-tailscale-state",
-      "mcp-time-builder-tailscale-state",
-      "mcp-litellm-builder-tailscale-state",
-      "mcp-k8s-builder-tailscale-state",
-      "mcp-k8s-auth-gate-builder-tailscale-state",
-      "thunderbolt-frontend-builder-tailscale-state",
-      "thunderbolt-backend-builder-tailscale-state",
-      "nextcloud-builder-tailscale-state",
-      "exitnode-tinyproxy-builder-tailscale-state",
-      "searxng-ranker-builder-tailscale-state",
-      "otel-collector-builder-tailscale-state",
-      "tls-rotator-builder-tailscale-state",
-    ]
-    verbs = ["get", "update", "patch"]
+    api_groups     = [""]
+    resources      = ["secrets"]
+    resource_names = local.builder_tailscale_state_secrets
+    verbs          = ["get", "update", "patch"]
   }
 }
 

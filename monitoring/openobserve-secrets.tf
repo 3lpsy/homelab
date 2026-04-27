@@ -6,16 +6,22 @@ resource "kubernetes_service_account" "openobserve" {
   automount_service_account_token = false
 }
 
+resource "kubernetes_secret" "openobserve_tailscale_state" {
+  metadata {
+    name      = "openobserve-tailscale-state"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
 resource "kubernetes_role" "openobserve_tailscale" {
   metadata {
     name      = "openobserve-tailscale"
     namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-
-  rule {
-    api_groups = [""]
-    resources  = ["secrets"]
-    verbs      = ["create"]
   }
 
   rule {
@@ -103,6 +109,11 @@ resource "vault_kv_secret_v2" "openobserve_tls" {
     fullchain_pem = module.openobserve-tls.fullchain_pem
     privkey_pem   = module.openobserve-tls.privkey_pem
   })
+
+  # tls-rotator (nextcloud/tls-rotator.tf) owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
 }
 
 resource "vault_policy" "openobserve" {
