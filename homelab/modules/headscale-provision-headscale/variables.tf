@@ -24,6 +24,3 @@ variable "headscale_port" {
   type    = string
   default = "8443"
 }
-variable "backup_bucket_name" {
-  type = string
-}

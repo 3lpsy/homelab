@@ -114,85 +114,11 @@ resource "null_resource" "journald" {
 }
 
 
-# ED25519 key
-resource "tls_private_key" "encryption_key" {
-  algorithm = "ED25519"
-}
-
-resource "null_resource" "encryption_key" {
-  connection {
-    type        = "ssh"
-    host        = var.server_ip
-    user        = var.ssh_user
-    private_key = trimspace(file(var.ssh_priv_key_path))
-    timeout     = "1m"
-  }
-
-  provisioner "file" {
-    content     = tls_private_key.encryption_key.public_key_openssh
-    destination = "/home/${var.ssh_user}/encryption_key.pub"
-  }
-  provisioner "remote-exec" {
-    inline = [
-      "sudo mv /home/${var.ssh_user}/encryption_key.pub /etc/headscale/encryption_key.pub",
-      "sudo chown root:headscale /etc/headscale/encryption_key.pub"
-    ]
-  }
-}
-
-resource "null_resource" "backup_script" {
-  connection {
-    type        = "ssh"
-    host        = var.server_ip
-    user        = var.ssh_user
-    private_key = trimspace(file(var.ssh_priv_key_path))
-    timeout     = "1m"
-  }
-
-  provisioner "file" {
-    content = templatefile("${path.root}/../data/headscale/backup-headscale.sh.tpl", {
-      ssh_pub_key_path   = "/etc/headscale/encryption_key.pub",
-      backup_bucket_name = var.backup_bucket_name
-    })
-    destination = "/home/${var.ssh_user}/backup-headscale.sh"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "sudo mv /home/${var.ssh_user}/backup-headscale.sh /usr/local/bin/backup-headscale.sh",
-      "sudo chown root:headscale /usr/local/bin/backup-headscale.sh",
-      "sudo chmod 644 /usr/local/bin/backup-headscale.sh",
-      "sudo chmod g+x /usr/local/bin/backup-headscale.sh"
-    ]
-  }
-  depends_on = [null_resource.encryption_key]
-}
-
-resource "null_resource" "backup_cron" {
-  connection {
-    type        = "ssh"
-    host        = var.server_ip
-    user        = var.ssh_user
-    private_key = trimspace(file(var.ssh_priv_key_path))
-    timeout     = "1m"
-  }
-
-  provisioner "file" {
-    content     = file("${path.root}/../data/headscale/backup-headscale-cron.tpl")
-    destination = "/home/${var.ssh_user}/backup-headscale-cron"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "sudo mv /home/${var.ssh_user}/backup-headscale-cron /etc/cron.d/backup-headscale-cron",
-      "sudo chown root:root /etc/cron.d/backup-headscale-cron",
-      "sudo chmod 644 /etc/cron.d/backup-headscale-cron",
-      "sudo touch /var/log/backup-headscale.log",
-      "sudo chown headscale:headscale /var/log/backup-headscale.log"
-    ]
-  }
-  depends_on = [null_resource.backup_script]
-}
+# Legacy age-encrypted SQLite backup (tls_private_key.encryption_key,
+# null_resource.encryption_key/backup_script/backup_cron) was removed in
+# favour of a generic kopia client wired up in homelab/main.tf via
+# module.headscale-provision-kopia. The kopia client covers /etc,
+# /var/lib/headscale, and /root and ships daily snapshots to S3.
 
 resource "null_resource" "create_api_key" {
   connection {
@@ -208,7 +134,7 @@ resource "null_resource" "create_api_key" {
       "/usr/local/bin/headscale apikey create | tr -d '\"' > /tmp/headscale.key"
     ]
   }
-  depends_on = [null_resource.backup_script]
+  depends_on = [null_resource.headscale_service]
 }
 
 resource "null_resource" "download_api_key" {
@@ -240,5 +166,5 @@ resource "null_resource" "delete_api_key_remote" {
       "rm /tmp/headscale.key"
     ]
   }
-  depends_on = [null_resource.backup_script]
+  depends_on = [null_resource.headscale_service]
 }

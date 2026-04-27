@@ -45,3 +45,34 @@ resource "kubernetes_network_policy" "exitnode_from_searxng" {
     }
   }
 }
+
+# Ingress from registry-dockerio ns on :8888. The Distribution registry pulls
+# from registry-1.docker.io through the rotator (HTTPS_PROXY env on the
+# registry-dockerio container) so docker.io's per-IP anon rate limit doesn't
+# bottleneck the whole cluster. Future sibling mirrors (registry-quayio etc.)
+# don't need this — only the docker.io mirror is rate-limit-prone.
+resource "kubernetes_network_policy" "exitnode_from_registry_dockerio" {
+  metadata {
+    name      = "exitnode-from-registry-dockerio"
+    namespace = kubernetes_namespace.exitnode.metadata[0].name
+  }
+
+  spec {
+    pod_selector {}
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.registry_dockerio.metadata[0].name
+          }
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "8888"
+      }
+    }
+  }
+}

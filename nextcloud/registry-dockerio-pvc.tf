@@ -1,10 +1,10 @@
-resource "kubernetes_persistent_volume_claim" "registry_proxy_data" {
+resource "kubernetes_persistent_volume_claim" "registry_dockerio_data" {
   lifecycle {
     prevent_destroy = true
   }
   metadata {
-    name      = "registry-proxy-data"
-    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+    name      = "registry-dockerio-data"
+    namespace = kubernetes_namespace.registry_dockerio.metadata[0].name
   }
   spec {
     access_modes       = ["ReadWriteOnce"]

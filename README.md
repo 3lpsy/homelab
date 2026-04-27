@@ -96,7 +96,7 @@ First run requires two manual interruptions:
 ./terraform.sh all plan
 ./terraform.sh changes            # plan every deployment, show only diffs
 ./terraform.sh encrypt            # age-encrypt every local tfstate
-./terraform.sh backup             # encrypt, then upload encrypted blobs to S3
+./terraform.sh tf-backup          # encrypt, then upload encrypted blobs to S3
 ```
 
 ## Service inventory
@@ -147,7 +147,7 @@ Shared infrastructure in the `nextcloud` deployment:
   itself.
 - State files live at
   `$HOME/Playground/private/envs/homelab/<deployment>/terraform.tfstate`.
-  `./terraform.sh backup` age-encrypts each state using
+  `./terraform.sh tf-backup` age-encrypts each state using
   `data/ssh.pem` as the recipient and uploads the encrypted blobs to
   S3. The decrypt, pull, and restore counterparts are commented out
   in `terraform.sh` on purpose.

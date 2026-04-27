@@ -19,6 +19,10 @@ resource "kubernetes_deployment" "pihole" {
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.pihole_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "pihole-secrets,pihole-tls"
+          # Admin password and upstream DNS settings come from FTLCONF env
+          # vars (Vault CSI on pod start). Query log + gravity blocklist DB
+          # rebuild on first start. Nothing in this PVC is irreplaceable.
+          "backup.velero.io/backup-volumes-excludes" = "pihole-data"
         }
       }
 

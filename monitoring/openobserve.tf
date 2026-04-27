@@ -24,6 +24,10 @@ resource "kubernetes_deployment" "openobserve" {
           "openobserve-nginx-hash" = sha1(kubernetes_config_map.openobserve_nginx.data["nginx.conf"])
           # Stakater Reloader still handles Vault CSI secret rotations.
           "secret.reloader.stakater.com/reload" = "openobserve-secrets,openobserve-tls"
+          # Logs are high-churn ingest with built-in retention; restoring a
+          # stale log corpus is rarely useful. Skip FSB on the data volume —
+          # OpenObserve starts on an empty store and ingests fresh data.
+          "backup.velero.io/backup-volumes-excludes" = "openobserve-data"
         }
       }
 

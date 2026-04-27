@@ -20,6 +20,9 @@ resource "kubernetes_deployment" "frigate" {
           "config-hash"                         = sha1(kubernetes_config_map.frigate_config.data["config.yml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.frigate_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "frigate-tls,frigate-secrets"
+          # Recordings are large + ephemeral by design; events DB is rebuilt on
+          # restore as cameras start producing new footage. Excluded from FSB.
+          "backup.velero.io/backup-volumes-excludes" = "frigate-recordings,frigate-config"
         }
       }
 

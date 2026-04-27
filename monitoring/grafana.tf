@@ -21,6 +21,10 @@ resource "kubernetes_deployment" "grafana" {
           "dashboards-hash"                     = sha1(kubernetes_config_map.grafana_dashboard_provisioning.data["dashboards.yaml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.grafana_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "grafana-secrets,grafana-tls"
+          # Dashboards + datasources are provisioned by monitoring-conf via
+          # the Grafana provider; only Grafana's session/user state lives in
+          # this PVC. Lost on restore = users re-login, no real loss.
+          "backup.velero.io/backup-volumes-excludes" = "grafana-data"
         }
       }
 

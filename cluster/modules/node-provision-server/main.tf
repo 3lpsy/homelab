@@ -157,9 +157,9 @@ resource "null_resource" "post_k3s_install" {
 resource "null_resource" "k3s_registry_config" {
   # Re-run when the rendered registries.yaml content would change.
   triggers = {
-    registry_domain       = var.registry_domain
-    registry_proxy_domain = var.registry_proxy_domain
-    magic_subdomain       = var.headscale_magic_subdomain
+    registry_domain          = var.registry_domain
+    registry_dockerio_domain = var.registry_dockerio_domain
+    magic_subdomain          = var.headscale_magic_subdomain
   }
 
   connection {
@@ -180,7 +180,7 @@ mirrors:
       - "https://${var.registry_domain}.${var.headscale_magic_subdomain}"
   "docker.io":
     endpoint:
-      - "https://${var.registry_proxy_domain}.${var.headscale_magic_subdomain}"
+      - "https://${var.registry_dockerio_domain}.${var.headscale_magic_subdomain}"
       - "https://registry-1.docker.io"
 EOF
       EOT

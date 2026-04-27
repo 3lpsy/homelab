@@ -110,9 +110,14 @@ variable "registry_domain" {
   default = "registry"
 }
 
-variable "registry_proxy_domain" {
-  type    = string
-  default = "registry-proxy"
+variable "registry_dockerio_domain" {
+  type = string
+  # Public hostname (under headscale_subdomain.headscale_magic_domain) for the
+  # docker.io pull-through cache. Renamed from registry-proxy to leave room
+  # for sibling mirrors (registry-quayio, registry-ghcr, ...). All mirrors
+  # share the headscale "registry-proxy" user identity for ACL purposes; only
+  # the per-pod TS_HOSTNAME differs.
+  default = "registry-dockerio"
 }
 
 variable "immich_domain" {
@@ -492,12 +497,24 @@ variable "mcp_k8s_allowed_namespaces" {
     "pihole",
     "radicale",
     "registry",
+    "registry-dockerio",
     "searxng",
     "thunderbolt",
+    "velero",
     # `vault` intentionally omitted — vault logs can include unseal /
     # key-material context; no MCP bearer should be able to read them.
     # Use `kubectl logs -n vault` out-of-band for vault debugging.
   ]
+}
+
+variable "image_haproxy" {
+  type = string
+  # Pulled from AWS Public ECR's mirror of Docker Official Images instead of
+  # docker.io directly — the rotator fronts the docker.io mirror, so it can't
+  # boot when its own image is the one rate-limited there. ECR public is
+  # rate-limit-free for unauthenticated pulls. Equivalent to
+  # docker.io/library/haproxy:2.9-alpine.
+  default = "public.ecr.aws/docker/library/haproxy:2.9-alpine"
 }
 
 variable "searxng_domain" {

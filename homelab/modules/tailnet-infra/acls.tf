@@ -116,7 +116,9 @@ locals {
     { action = "accept", src = ["group:personal", "group:mobile"], dst = ["group:frigate-server:443"] },
   ]
 
-  # Container registry + registry-proxy.
+  # Container registry + the docker.io / future sibling-mirror cache pods,
+  # all of which run as the shared `registry_proxy_server_user` headscale
+  # identity (one ACL group, many distinct TS_HOSTNAMEs).
   acls_registry = [
     {
       action = "accept"

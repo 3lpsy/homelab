@@ -6,7 +6,7 @@ set -euo pipefail
 MIN_STATE_BYTES=${MIN_STATE_BYTES:-1024}
 
 # How many *pre-command* local snapshots to keep per deployment before pruning.
-# S3 history is separate (see backup()).
+# S3 history is separate (see tf_backup()).
 SNAPSHOT_KEEP=${SNAPSHOT_KEEP:-20}
 
 # Let SIGINT propagate naturally to the foreground terraform child; terraform
@@ -113,11 +113,18 @@ prune_snapshots() {
 }
 
 snapshot_state() {
-    # Pre-command encrypted snapshot, local only (S3 is backup()'s job).
+    # Pre-command encrypted snapshot, local only (S3 is tf_backup()'s job).
     # Fails loudly — caller should abort the command if snapshot can't happen.
+    # First apply for a brand-new deployment is the one exception: no state
+    # file yet AND no terraform.tfstate.backup means there's literally nothing
+    # to lose, so skip with a visible note instead of aborting.
     local dep="$1"
     local label="$2"
     local state_file="$STATE_DIRS/$dep/terraform.tfstate"
+    if [[ ! -f "$state_file" && ! -f "${state_file}.backup" ]]; then
+        echo "Skip snapshot: no state at $state_file (first apply for $dep — nothing to lose)"
+        return 0
+    fi
     sanity_check_state "$state_file" || return 1
     local out="${state_file}.${label}.$(ts).age"
     echo "Snapshot -> $out"
@@ -166,11 +173,11 @@ if [[ ! -d "${STATE_DIRS:-}" ]]; then
     exit 1
 fi
 
-DEPLOYMENTS="homelab cluster vault vault-conf nextcloud monitoring monitoring-conf"
+DEPLOYMENTS="homelab cluster vault vault-conf nextcloud monitoring monitoring-conf backup"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <deployment|all|subcommand> [args...]"
-    echo "Subcommands: changes | encrypt | decrypt | pull | restore | backup | selftest"
+    echo "Subcommands: changes | encrypt | decrypt | pull | restore | tf-backup | selftest"
     exit 1
 fi
 
@@ -183,13 +190,15 @@ if [[ "$DEPLOYMENT_DIR" != "all" \
    && "$DEPLOYMENT_DIR" != "decrypt" \
    && "$DEPLOYMENT_DIR" != "pull" \
    && "$DEPLOYMENT_DIR" != "restore" \
-   && "$DEPLOYMENT_DIR" != "backup" \
+   && "$DEPLOYMENT_DIR" != "tf-backup" \
    && ! -d "$DEPLOYMENT_DIR" ]]; then
     echo "Could not find environment folder: $DEPLOYMENT_DIR"
     exit 1
 fi
 
-# ---- backup / restore functions -------------------------------------------
+# ---- state-backup / restore functions -------------------------------------
+# `tf_backup` ships encrypted state to S3. Renamed from `backup` to avoid a
+# subcommand collision with the `backup/` deployment directory (Velero).
 
 function encrypt() {
     for dep in $DEPLOYMENTS; do
@@ -247,7 +256,7 @@ function restore() {
     decrypt
 }
 
-function backup() {
+function tf_backup() {
     # Re-encrypt from live state (with sanity checks) then push to both a
     # rolling S3 key and a timestamped history key, so S3 retains a versioned
     # tail even without bucket versioning enabled.
@@ -312,10 +321,10 @@ case "$DEPLOYMENT_DIR" in
         restore
         exit 0
         ;;
-    "backup")
+    "tf-backup")
         export AWS_ACCESS_KEY_ID=$TF_VAR_aws_access_key
         export AWS_SECRET_ACCESS_KEY=$TF_VAR_aws_secret_key
-        backup
+        tf_backup
         exit 0
         ;;
 esac

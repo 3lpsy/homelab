@@ -19,6 +19,10 @@ resource "kubernetes_deployment" "registry" {
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "registry-htpasswd,registry-tls"
+          # Image layers are rebuildable from Dockerfiles in data/images/* via
+          # the BuildKit jobs in the builder namespace; backing them up via
+          # Velero FSB would double tens of GB for no recovery value.
+          "backup.velero.io/backup-volumes-excludes" = "registry-data"
         }
       }
 

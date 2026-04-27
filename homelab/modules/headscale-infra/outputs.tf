@@ -17,3 +17,6 @@ output "gateway_id" {
 output "backup_bucket_name" {
   value = aws_s3_bucket.main.bucket
 }
+output "backup_bucket_arn" {
+  value = aws_s3_bucket.main.arn
+}

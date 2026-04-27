@@ -10,17 +10,20 @@ detectors:
 
 record:
   enabled: true
+  retain:
+    days: 5
+    mode: motion
   alerts:
     retain:
-      days: 14
+      days: 5
   detections:
     retain:
-      days: 7
+      days: 5
 
 snapshots:
   enabled: true
   retain:
-    default: 14
+    default: 5
 
 # Two auth layers by design:
 #   1. Tailnet ACL (group:frigate-clients -> group:frigate-server:443)

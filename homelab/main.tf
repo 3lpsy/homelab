@@ -102,7 +102,26 @@ module "headscale-provision-headscale" {
   headscale_magic_domain  = "${var.headscale_subdomain}.${var.headscale_magic_domain}"
   headscale_key_path      = var.headscale_key_path
   depends_on              = [module.headscale-infra-tls, module.headscale-provision-dep]
-  backup_bucket_name      = module.headscale-infra.backup_bucket_name
+}
+
+# Replaces the legacy age+S3 backup of /var/lib/headscale/db.sqlite. Captures
+# /etc, /var/lib/headscale, and /root with daily kopia snapshots into the
+# host-headscale/ prefix of the shared backup bucket.
+module "headscale-provision-kopia" {
+  source                = "./../templates/provision-kopia"
+  server_ip             = module.headscale-infra.public_ip
+  ssh_user              = module.headscale-infra.ssh_user
+  ssh_priv_key          = trimspace(file(var.ssh_priv_key_path))
+  bucket_name           = module.headscale-infra.backup_bucket_name
+  bucket_region         = var.aws_region
+  prefix                = local.backup_clients["headscale"]
+  aws_access_key_id     = aws_iam_access_key.backup["headscale"].id
+  aws_secret_access_key = aws_iam_access_key.backup["headscale"].secret
+  repo_password         = random_password.backup_repo["headscale"].result
+  backup_paths          = ["/etc", "/var/lib/headscale"]
+  exclude_globs         = []
+  on_calendar           = "daily"
+  depends_on            = [module.headscale-provision-headscale]
 }
 
 data "local_file" "api_key" {

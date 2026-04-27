@@ -27,6 +27,20 @@ variable "headscale_subdomain" {
 variable "homelab_bucket_name" {
   type = string
 }
+# Name used in the bucket prefix for Velero (cluster-${cluster_name}/velero/).
+# Must match cluster.var.node_host_name — both deployments derive prefixes from it.
+variable "cluster_name" {
+  type    = string
+  default = "delphi"
+}
+# Parent prefix for every kopia/velero repo inside the shared backup bucket.
+# Isolates them from terraform.sh state files (s3://$BUCKET/$dep/...) and the
+# legacy headscale/<ts>.age blobs that already live at the bucket root.
+# Trailing slash required.
+variable "backup_prefix_root" {
+  type    = string
+  default = "backup/repos/"
+}
 variable "registration_email_address" {
   type = string
 }

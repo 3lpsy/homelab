@@ -24,6 +24,10 @@ resource "kubernetes_deployment" "prometheus" {
           "alertmanager-config-hash"            = sha1(kubernetes_config_map.alertmanager_config.data["alertmanager.yml"])
           "ntfy-bridge-script-hash"             = sha1(kubernetes_config_map.ntfy_bridge_script.data["ntfy-bridge.py"])
           "secret.reloader.stakater.com/reload" = "prometheus-alertmanager-ntfy-auth"
+          # TSDB blocks are high-churn time-series; restoring stale metrics is
+          # rarely useful and the volume bloats Velero. Skip FSB on the data
+          # volume — Prometheus rebuilds an empty TSDB on restart.
+          "backup.velero.io/backup-volumes-excludes" = "prometheus-data"
         }
       }
 
