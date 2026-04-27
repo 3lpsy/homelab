@@ -27,7 +27,3 @@ variable "headscale_port" {
 variable "backup_bucket_name" {
   type = string
 }
-variable "tailnet_users" {
-  description = "Map of role keys to headscale usernames"
-  type        = map(string)
-}

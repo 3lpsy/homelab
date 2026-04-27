@@ -103,8 +103,6 @@ module "headscale-provision-headscale" {
   headscale_key_path      = var.headscale_key_path
   depends_on              = [module.headscale-infra-tls, module.headscale-provision-dep]
   backup_bucket_name      = module.headscale-infra.backup_bucket_name
-  tailnet_users           = var.tailnet_users
-
 }
 
 data "local_file" "api_key" {

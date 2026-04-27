@@ -46,7 +46,7 @@ run_scan() {
     -v "$PWD/trivy.yaml:/etc/trivy/trivy.yaml:ro,Z" \
     -v "$PWD/reports:/out:Z" \
     "$IMG" \
-      --config /etc/trivy/trivy.yaml \
+      --config /etc/trivy/trivy.yaml -d \
     k8s \
       --scanners "$SCANNERS" \
       --severity "$SEVERITY" \

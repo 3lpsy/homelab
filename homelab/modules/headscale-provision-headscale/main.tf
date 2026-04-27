@@ -14,7 +14,6 @@ resource "null_resource" "headscale_config" {
       server_port   = var.headscale_port
       magic_domain  = var.headscale_magic_domain
     }))
-    acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", var.tailnet_users))
   }
 
   provisioner "file" {
@@ -26,16 +25,8 @@ resource "null_resource" "headscale_config" {
     destination = "/home/${var.ssh_user}/config.yaml"
   }
 
-  provisioner "file" {
-    content     = templatefile("${path.root}/../data/headscale/acls.hjson.tpl", var.tailnet_users)
-    destination = "/home/${var.ssh_user}/acls.hjson"
-  }
-
   provisioner "remote-exec" {
     inline = [
-      "sudo mv /home/${var.ssh_user}/acls.hjson /etc/headscale/acls.hjson",
-      "sudo chown root:headscale /etc/headscale/acls.hjson",
-      "sudo chmod 644 /etc/headscale/acls.hjson",
       "sudo mkdir -p /etc/headscale",
       "sudo mv /home/${var.ssh_user}/config.yaml /etc/headscale/config.yaml",
       "sudo chown root:root /etc/headscale/config.yaml",
@@ -86,7 +77,6 @@ resource "null_resource" "headscale_restart" {
       server_port   = var.headscale_port
       magic_domain  = var.headscale_magic_domain
     }))
-    acls = md5(templatefile("${path.root}/../data/headscale/acls.hjson.tpl", var.tailnet_users))
   }
 
   provisioner "remote-exec" {

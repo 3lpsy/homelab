@@ -72,10 +72,9 @@ log:
 policy:
   # The mode can be "file" or "database" that defines
   # where the ACL policies are stored and read from.
-  mode: file
-  # If the mode is set to "file", the path to a
-  # HuJSON file containing ACL policies.
-  path: "/etc/headscale/acls.hjson"
+  # ACLs managed by the awlsring/headscale Terraform provider's
+  # headscale_policy resource (requires mode: database).
+  mode: database
 
 ## DNS
 dns:
