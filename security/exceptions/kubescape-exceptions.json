@@ -178,7 +178,8 @@
       { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "DaemonSet",   "name": "otel-collector" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "kube-system", "kind": "DaemonSet",   "name": "csi-secrets-store-secrets-store-csi-driver" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "DaemonSet",   "name": "vault-csi-csi-provider" } },
-      { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "CronJob",     "name": "tls-rotator" } }
+      { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "CronJob",     "name": "tls-rotator" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry-proxy", "kind": "Deployment", "name": "registry-proxy" } }
     ],
     "posturePolicies": [
       { "controlID": "C-0048" },
@@ -236,7 +237,8 @@
       { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-fl-340" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-il-207" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-tx-276" } },
-      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-wa-235" } }
+      { "designatorType": "Attributes", "attributes": { "namespace": "exitnode",    "kind": "Deployment",  "name": "exitnode-us-wa-235" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry-proxy", "kind": "Deployment", "name": "registry-proxy" } }
     ],
     "posturePolicies": [
       { "controlID": "C-0046" }
@@ -358,7 +360,8 @@
       { "designatorType": "Attributes", "attributes": { "namespace": "thunderbolt", "kind": "Role", "name": "thunderbolt-tailscale" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "Role", "name": "tls-rotator-tailscale" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "mcp",         "kind": "Role", "name": "mcp-tailscale" } },
-      { "designatorType": "Attributes", "attributes": { "namespace": "builder",     "kind": "Role", "name": "builder-tailscale" } }
+      { "designatorType": "Attributes", "attributes": { "namespace": "builder",     "kind": "Role", "name": "builder-tailscale" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry-proxy", "kind": "Role", "name": "registry-proxy-tailscale" } }
     ],
     "posturePolicies": [
       { "controlID": "C-0015" }
@@ -512,7 +515,9 @@
       { "designatorType": "Attributes", "attributes": { "namespace": "tls-rotator", "kind": "ServiceAccount", "name": "tls-rotator" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "vault",       "kind": "ServiceAccount", "name": "vault" } },
       { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "ServiceAccount", "name": "vault-csi" } },
-      { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "ServiceAccount", "name": "vault-csi-csi-provider" } }
+      { "designatorType": "Attributes", "attributes": { "namespace": "vault-csi",   "kind": "ServiceAccount", "name": "vault-csi-csi-provider" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "monitoring",  "kind": "ServiceAccount", "name": "openobserve-provisioner" } },
+      { "designatorType": "Attributes", "attributes": { "namespace": "registry-proxy", "kind": "ServiceAccount", "name": "registry-proxy" } }
     ],
     "posturePolicies": [
       { "controlID": "C-0053" }
