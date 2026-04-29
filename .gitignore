@@ -50,6 +50,8 @@ security/.trivy-cache/
 security/.trivy-cache
 .pytest_cache
 __pycache__
+.venv/
+uv.lock
 # Experiment with AI
 .claude/
 memory
