@@ -206,7 +206,15 @@ Wire format note: Relation JSON keys are `from`, `to`, `relationType` —
 use `from`, not `from_`.
 """
 
+async def _healthz(_request) -> JSONResponse:
+    """Liveness + readiness probe target. No auth, no upstream calls."""
+    return JSONResponse({"ok": True})
+
+
 mcp = FastMCP("memory", instructions=_INSTRUCTIONS)
+
+
+mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 def _hash(v: str) -> str:
@@ -534,6 +542,12 @@ class AuthMiddleware:
 
         method = scope["method"]
         if method == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        # Unauthenticated health probe — kubelet won't send a bearer, and
+        # we don't bind a contextvar here so tools can't run anyway.
+        if scope["path"] == "/healthz":
             await self.app(scope, receive, send)
             return
 

@@ -34,8 +34,7 @@ per-deployment state paths, age-encrypted S3 backup of state, and a
 | `cluster/` | K3s node provisioning: tailnet join, TLS certs, K3s install, host hardening. |
 | `vault/` | Vault StatefulSet on K3s with an auto-unseal sidecar and the Secrets Store CSI stack. |
 | `vault-conf/` | Vault configuration: K8s auth, KV engine, unseal key secret. |
-| `nextcloud/` | All user-facing services (incl. Home Assistant + Frigate) plus shared infra (Postgres, Redis, Builder, exit-node proxies, MCP servers). |
-| `monitoring/` | Prometheus, Alertmanager, Grafana, Ntfy, OpenObserve, OTel Collector, node-exporter, kube-state-metrics, Reloader. |
+| `services/` | All Kubernetes workloads: user-facing services (incl. Home Assistant + Frigate), shared infra (Postgres, Redis, Builder, exit-node proxies, MCP servers), and the monitoring stack (Prometheus, Alertmanager, Grafana, Ntfy, OpenObserve, OTel Collector, node-exporter, kube-state-metrics, Reloader). |
 | `monitoring-conf/` | Grafana dashboards applied via the Grafana provider. |
 
 Service-level details live in each deployment's own `README.md`.
@@ -47,7 +46,7 @@ so the first apply has to run in order. Later applies can target a
 single deployment.
 
 ```
-homelab -> cluster -> vault -> vault-conf -> nextcloud -> monitoring -> monitoring-conf
+homelab -> cluster -> vault -> vault-conf -> services -> monitoring-conf
 ```
 
 First run requires two manual interruptions:
@@ -128,7 +127,7 @@ shared Nginx gateway in the `mcp` namespace:
 - `mcp-filesystem`, `mcp-memory`, `mcp-prometheus`, `mcp-k8s`,
   `mcp-litellm`, `mcp-searxng`, `mcp-time`
 
-Shared infrastructure in the `nextcloud` deployment:
+Shared infrastructure in the `services` deployment:
 
 - Postgres (used by Nextcloud and Radicale)
 - Redis (Nextcloud session and cache state)

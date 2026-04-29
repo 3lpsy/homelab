@@ -173,7 +173,7 @@ if [[ ! -d "${STATE_DIRS:-}" ]]; then
     exit 1
 fi
 
-DEPLOYMENTS="homelab cluster vault vault-conf nextcloud monitoring monitoring-conf"
+DEPLOYMENTS="homelab cluster vault vault-conf services monitoring-conf"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <deployment|all|subcommand> [args...]"

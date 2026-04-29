@@ -944,6 +944,13 @@ def test_http_accepts_query_param_key(live_server):
     assert r.status_code != 401
 
 
+def test_http_healthz_no_auth(live_server):
+    # Kubelet probe — no bearer, must succeed.
+    r = httpx.get(f"{live_server}/healthz", timeout=5)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
 def test_mcp_end_to_end_tool_call(live_server):
     # Full MCP handshake + tool call over real HTTP. This is the load-bearing
     # test for the middleware fix: if the api-key contextvar does not reach

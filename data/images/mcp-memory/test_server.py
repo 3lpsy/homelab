@@ -416,6 +416,34 @@ def test_auth_accepts_valid_bearer_and_binds_contextvar():
     assert server._api_key_ctx.get() in ("", None)
 
 
+def test_auth_allows_healthz_unauthenticated():
+    # Kubelet probe — no bearer, must bypass auth.
+    sent: list[dict] = []
+
+    async def _send(msg):
+        sent.append(msg)
+
+    async def _recv():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    mw = server.AuthMiddleware(inner)
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/healthz",
+        "query_string": b"",
+        "headers": [],
+        "client": ("10.0.0.1", 1234),
+    }
+    asyncio.run(mw(scope, _recv, _send))
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 200
+
+
 # --- per-request caps --------------------------------------------------------
 
 

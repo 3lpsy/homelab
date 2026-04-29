@@ -72,7 +72,7 @@ module "cluster-provision" {
   # remains "registry-proxy" so additional mirrors (registry-quayio, etc.) can
   # share the same headscale identity / ACL group while taking distinct
   # TS_HOSTNAMEs. This literal must match var.registry_dockerio_domain in the
-  # nextcloud deployment.
+  # services deployment.
   registry_dockerio_domain  = "registry-dockerio"
   registry_ghcrio_domain    = "registry-ghcrio"
   depends_on                = [module.node-provision-dep]

@@ -180,7 +180,15 @@ Outputs include `timezone`, `datetime` (ISO 8601 with offset), `day_of_week`
 in the form "+5.0h", "+5.5h", "+5.75h".
 """
 
+async def _healthz(_request) -> JSONResponse:
+    """Liveness + readiness probe target. No auth, no upstream calls."""
+    return JSONResponse({"ok": True})
+
+
 mcp = FastMCP("time", instructions=_INSTRUCTIONS)
+
+
+mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 TzParam = Annotated[
@@ -281,6 +289,11 @@ class AuthMiddleware:
 
         method = scope["method"]
         if method == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        # Unauthenticated health probe — kubelet won't send a bearer.
+        if scope["path"] == "/healthz":
             await self.app(scope, receive, send)
             return
 

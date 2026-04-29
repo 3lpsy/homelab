@@ -380,6 +380,20 @@ def test_auth_allows_options_unauthenticated():
     assert start["status"] == 200
 
 
+def test_auth_allows_healthz_unauthenticated():
+    # Kubelet probe — no bearer, must bypass auth.
+    sent = _run_auth({
+        "type": "http",
+        "method": "GET",
+        "path": "/healthz",
+        "query_string": b"",
+        "headers": [],
+        "client": ("10.0.0.1", 1234),
+    })
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 200
+
+
 def test_auth_closes_websocket():
     sent: list[dict] = []
 

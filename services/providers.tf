@@ -1,0 +1,23 @@
+provider "kubernetes" {
+  config_path = pathexpand(var.kubeconfig_path)
+}
+
+provider "vault" {
+  address = "https://vault.${var.headscale_subdomain}.${var.headscale_magic_domain}:8201"
+  token   = var.vault_root_token # Store this in a variable or use VAULT_TOKEN env var
+}
+
+provider "headscale" {
+  endpoint = "https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+  api_key  = var.headscale_api_key
+}
+
+provider "acme" {
+  server_url = var.acme_server_url
+}
+
+provider "aws" {
+  region     = var.aws_region
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
+}

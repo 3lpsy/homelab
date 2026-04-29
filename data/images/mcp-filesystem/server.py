@@ -121,9 +121,17 @@ DESTRUCTIVE: `destroy_session` wipes every file in the session. Only call
 when the user explicitly asks to wipe it.
 """
 
+async def _healthz(_request) -> JSONResponse:
+    """Liveness + readiness probe target. No auth, no upstream calls."""
+    return JSONResponse({"ok": True})
+
+
 # FastMCP v2: transport (host/port/path) is configured at run/http_app time,
 # not on the constructor. Constructor takes only the server name + options.
 mcp = FastMCP("filesystem", instructions=_INSTRUCTIONS)
+
+
+mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 def _hash(v: str) -> str:
@@ -812,6 +820,12 @@ class AuthMiddleware:
         # CORS preflight: no auth, no context.
         method = scope["method"]
         if method == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        # Unauthenticated health probe — kubelet won't send a bearer, and
+        # we don't bind a contextvar here so tools can't run anyway.
+        if scope["path"] == "/healthz":
             await self.app(scope, receive, send)
             return
 
