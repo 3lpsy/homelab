@@ -10,14 +10,18 @@
 #      back to Vault. Reloader (monitoring deployment) sees the synced K8s
 #      secret change and rolls the consuming Deployment.
 #
-# Vault writes go over Tailscale to vault's external FQDN on 8201 because
-# Vault's NetworkPolicy only admits the vault-csi namespace on 8200.
+# Vault writes go to vault's TLS listener on 8201 — Vault's NetworkPolicy
+# only admits the vault-csi namespace on 8200. The Job pod uses
+# host_aliases to pin `vault.<hs>.<magic>` to the vault Service ClusterIP
+# (vault deployment exposes it as `vault_cluster_ip` via remote-state) so
+# SNI carries the FQDN and the existing TLS cert validates without going
+# through a Tailscale sidecar.
 #
 # CronJob fires daily on `var.tls_rotator_schedule`. Trigger an out-of-band
 # run with `kubectl create job --from=cronjob/tls-rotator -n tls-rotator <name>`.
 
 locals {
-  # Single source of truth: the 16 service certs the worker rotates.
+  # Single source of truth: the 20 service certs the worker rotates.
   # Adding a service = add one entry here AND add `ignore_changes = [data_json]`
   # to the existing vault_kv_secret_v2.<svc>_tls resource.
   # `vault_path` matches the `name` of the existing vault_kv_secret_v2.<svc>_tls
@@ -29,6 +33,11 @@ locals {
     { name = "immich", domain = "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "nextcloud/immich-tls" },
     { name = "registry", domain = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "registry/tls" },
     { name = "radicale", domain = "${var.radicale_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "radicale/tls" },
+    { name = "navidrome", domain = "${var.navidrome_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "navidrome/tls" },
+    { name = "jellyfin", domain = "${var.jellyfin_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "jellyfin/tls" },
+    { name = "registry-dockerio", domain = "${var.registry_dockerio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "registry-dockerio/tls" },
+    { name = "registry-ghcrio", domain = "${var.registry_ghcrio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "registry-ghcrio/tls" },
+    { name = "exitnode-haproxy", domain = "${var.exitnode_haproxy_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "exitnode-haproxy/tls" },
     { name = "frigate", domain = "${var.frigate_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "frigate/tls" },
     { name = "thunderbolt", domain = local.thunderbolt_fqdn, vault_path = "thunderbolt/tls" },
     { name = "mcp-shared", domain = local.mcp_shared_fqdn, vault_path = "mcp/mcp-shared/tls" },
@@ -96,45 +105,10 @@ resource "kubernetes_manifest" "tls_rotator_cronjob" {
                 { name = kubernetes_secret.tls_rotator_registry_pull_secret.metadata[0].name },
               ]
 
-              # Sidecar pattern (K8s 1.29+): tailscale runs alongside the
-              # main container for the Job's lifetime; wait-for-tailscale
-              # gates the rotator on tailnet DNS resolving the Vault FQDN.
-              initContainers = [
+              hostAliases = [
                 {
-                  name          = "tailscale"
-                  image         = var.image_tailscale
-                  restartPolicy = "Always"
-                  env = [
-                    { name = "TS_STATE_DIR", value = "/var/lib/tailscale" },
-                    { name = "TS_KUBE_SECRET", value = "tls-rotator-tailscale-state" },
-                    { name = "TS_USERSPACE", value = "false" },
-                    {
-                      name = "TS_AUTHKEY"
-                      valueFrom = {
-                        secretKeyRef = {
-                          name = kubernetes_secret.tls_rotator_tailscale_auth.metadata[0].name
-                          key  = "TS_AUTHKEY"
-                        }
-                      }
-                    },
-                    { name = "TS_HOSTNAME", value = "tls-rotator" },
-                    { name = "TS_EXTRA_ARGS", value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}" },
-                  ]
-                  securityContext = {
-                    capabilities = { add = ["NET_ADMIN"] }
-                  }
-                  volumeMounts = [
-                    { name = "dev-net-tun", mountPath = "/dev/net/tun" },
-                    { name = "tailscale-state", mountPath = "/var/lib/tailscale" },
-                  ]
-                },
-                {
-                  name    = "wait-for-tailscale"
-                  image   = var.image_busybox
-                  command = [
-                    "sh", "-c",
-                    "until nslookup vault.${var.headscale_subdomain}.${var.headscale_magic_domain}; do echo 'waiting for tailscale dns'; sleep 2; done",
-                  ]
+                  ip = data.terraform_remote_state.vault.outputs.vault_cluster_ip
+                  hostnames = ["vault.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
                 },
               ]
 
@@ -178,14 +152,6 @@ resource "kubernetes_manifest" "tls_rotator_cronjob" {
                   }
                 },
                 { name = "work", emptyDir = {} },
-                {
-                  name = "dev-net-tun"
-                  hostPath = {
-                    path = "/dev/net/tun"
-                    type = "CharDevice"
-                  }
-                },
-                { name = "tailscale-state", emptyDir = {} },
               ]
             }
           }
@@ -205,13 +171,11 @@ resource "kubernetes_manifest" "tls_rotator_cronjob" {
 
   depends_on = [
     kubernetes_namespace.tls_rotator,
-    kubernetes_role_binding.tls_rotator_tailscale,
-    kubernetes_secret.tls_rotator_tailscale_auth,
     kubernetes_secret.tls_rotator_registry_pull_secret,
     kubernetes_config_map.tls_rotator_certs,
     vault_kubernetes_auth_backend_role.tls_rotator,
     vault_kv_secret_v2.tls_rotator_aws,
     vault_kv_secret_v2.tls_rotator_acme_account,
-    kubernetes_manifest.tls_rotator_build,
+    module.tls_rotator_build,
   ]
 }

@@ -18,6 +18,14 @@ frontend exits_in
   bind *:8888
   default_backend exits
 
+# Tailnet-facing TLS-terminating forward-proxy frontend. Clients set
+# HTTPS_PROXY=https://exitnode-haproxy.<tailnet-fqdn>:443 — TLS is decrypted
+# here, then the inner HTTP CONNECT/GET is piped to a random exit pod.
+# Combined PEM is assembled by the cert-init container at pod start.
+frontend exits_in_tls
+  bind *:443 ssl crt /etc/haproxy/certs/combined.pem
+  default_backend exits
+
 backend exits
   # Per-TCP-connection randomization. Subsequent connections roll a fresh
   # selection — sufficient for rate-limit dodging on services like docker.io.

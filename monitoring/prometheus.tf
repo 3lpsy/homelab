@@ -34,6 +34,16 @@ resource "kubernetes_deployment" "prometheus" {
       spec {
         service_account_name = kubernetes_service_account.prometheus.metadata[0].name
 
+        # Pin ntfy.<hs>.<magic> to the ntfy Service ClusterIP so the
+        # ntfy-bridge sibling container's --ntfy-url (the FQDN form)
+        # resolves to the in-cluster nginx :443 instead of going through
+        # the prometheus pod's tailscale sidecar. The sidecar itself
+        # stays — it advertises `prometheus` for inbound admin UI access.
+        host_aliases {
+          ip        = kubernetes_service.ntfy.spec[0].cluster_ip
+          hostnames = ["${var.ntfy_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
+        }
+
         init_container {
           name  = "fix-permissions"
           image = var.image_busybox
@@ -260,6 +270,10 @@ resource "kubernetes_deployment" "prometheus" {
           env {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+          }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
           }
 
           security_context {

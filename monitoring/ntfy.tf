@@ -250,6 +250,10 @@ resource "kubernetes_deployment" "ntfy" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {
@@ -297,5 +301,24 @@ resource "kubernetes_deployment" "ntfy" {
       spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
       spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
     ]
+  }
+}
+
+# nginx sidecar terminates TLS with the ntfy.<hs>.<magic> cert. In-cluster
+# callers (prometheus pod's ntfy-bridge container) reach :443 here via
+# host_aliases so SNI + cert validation continue to work without going
+# through the ntfy pod's tailscale sidecar.
+resource "kubernetes_service" "ntfy" {
+  metadata {
+    name      = "ntfy"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  spec {
+    selector = { app = "ntfy" }
+    port {
+      name        = "https"
+      port        = 443
+      target_port = 443
+    }
   }
 }

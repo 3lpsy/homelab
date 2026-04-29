@@ -6,10 +6,13 @@
 # back to Vault. Collectors + the dashboards/alerts provisioner Job consume
 # those Vault paths instead of the root creds.
 #
-# The Job needs direct Vault access to write service-account creds back. Since
-# the vault namespace's NetworkPolicy only admits the vault-csi namespace on
-# port 8200, the Job instead reaches Vault via a Tailscale sidecar using the
-# reusable `pod_provisioner` tailnet user, hitting the external FQDN on 8201.
+# The Job needs direct Vault access to write service-account creds back.
+# Vault's NetworkPolicy only admits the vault-csi namespace on 8200, so
+# writes go to vault's TLS listener on 8201 via the cluster network. The
+# Job pod uses host_aliases to pin `vault.<hs>.<magic>` to the vault
+# Service ClusterIP (sourced from the vault deployment's remote-state
+# output) so SNI carries the FQDN and the existing TLS cert validates
+# without going through a Tailscale sidecar.
 #
 # Seed Vault KV entries are created with empty placeholders so CSI
 # SecretProviderClasses can mount the paths before the bootstrap Job finishes
@@ -60,75 +63,6 @@ resource "kubernetes_service_account" "openobserve_bootstrap" {
     namespace = kubernetes_namespace.monitoring.metadata[0].name
   }
   automount_service_account_token = true
-}
-
-# Pre-create state Secret + Role for the Tailscale sidecar. The sidecar
-# persists its node state in this k8s Secret so the same tailnet identity
-# survives pod restarts; pre-creation lets the Role drop the namespace-wide
-# `create` grant.
-resource "kubernetes_secret" "openobserve_bootstrap_tailscale_state" {
-  metadata {
-    name      = "openobserve-bootstrap-tailscale-state"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  type = "Opaque"
-
-  lifecycle {
-    ignore_changes = [data, type]
-  }
-}
-
-resource "kubernetes_role" "openobserve_bootstrap_tailscale" {
-  metadata {
-    name      = "openobserve-bootstrap-tailscale"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-
-  rule {
-    api_groups     = [""]
-    resources      = ["secrets"]
-    resource_names = ["openobserve-bootstrap-tailscale-state"]
-    verbs          = ["get", "update", "patch"]
-  }
-}
-
-resource "kubernetes_role_binding" "openobserve_bootstrap_tailscale" {
-  metadata {
-    name      = "openobserve-bootstrap-tailscale"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-
-  role_ref {
-    api_group = "rbac.authorization.k8s.io"
-    kind      = "Role"
-    name      = kubernetes_role.openobserve_bootstrap_tailscale.metadata[0].name
-  }
-
-  subject {
-    kind      = "ServiceAccount"
-    name      = kubernetes_service_account.openobserve_bootstrap.metadata[0].name
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-}
-
-# Reusable pre-auth key under the shared pod_provisioner tailnet user. Used by
-# any in-cluster Job that needs privileged outbound tailnet access (currently
-# just this bootstrap, but generalized for reuse — see ACL group:vault-clients).
-resource "headscale_pre_auth_key" "pod_provisioner" {
-  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.pod_provisioner_user
-  reusable       = true
-  time_to_expire = "3y"
-}
-
-resource "kubernetes_secret" "pod_provisioner_tailscale_auth" {
-  metadata {
-    name      = "pod-provisioner-tailscale-auth"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
-  }
-  type = "Opaque"
-  data = {
-    TS_AUTHKEY = headscale_pre_auth_key.pod_provisioner.key
-  }
 }
 
 resource "vault_policy" "openobserve_bootstrap" {
@@ -206,9 +140,15 @@ resource "kubernetes_config_map" "openobserve_bootstrap_script" {
 }
 
 locals {
-  openobserve_bootstrap_script_hash = substr(sha256(
-    file("${path.module}/../data/openobserve/bootstrap-accounts.py")
-  ), 0, 8)
+  # Sentinel mixed into the Job name hash so that pod-template changes
+  # which don't touch bootstrap-accounts.py still produce a fresh Job
+  # name. Job spec.template is immutable in K8s, so reusing the same
+  # name on a template change errors with "field is immutable".
+  openobserve_bootstrap_pod_spec_sentinel = "host-aliases=v1,no-tailscale"
+  openobserve_bootstrap_script_hash = substr(sha256(join("\n", [
+    file("${path.module}/../data/openobserve/bootstrap-accounts.py"),
+    local.openobserve_bootstrap_pod_spec_sentinel,
+  ])), 0, 8)
   openobserve_bootstrap_job_name = "openobserve-bootstrap-${local.openobserve_bootstrap_script_hash}"
 }
 
@@ -237,49 +177,10 @@ resource "kubernetes_manifest" "openobserve_bootstrap_job" {
           restartPolicy      = "Never"
           serviceAccountName = kubernetes_service_account.openobserve_bootstrap.metadata[0].name
 
-          # K8s 1.29+ sidecar pattern: initContainer with restartPolicy=Always
-          # runs alongside the main container for the Job's lifetime. Second
-          # init-container gates the main container on tailnet DNS resolving
-          # the Vault FQDN, so we never start the bootstrap script before
-          # Tailscale is up.
-          initContainers = [
+          hostAliases = [
             {
-              name          = "tailscale"
-              image         = var.image_tailscale
-              restartPolicy = "Always"
-              env = [
-                { name = "TS_STATE_DIR", value = "/var/lib/tailscale" },
-                { name = "TS_KUBE_SECRET", value = "openobserve-bootstrap-tailscale-state" },
-                { name = "TS_USERSPACE", value = "false" },
-                {
-                  name = "TS_AUTHKEY"
-                  valueFrom = {
-                    secretKeyRef = {
-                      name = kubernetes_secret.pod_provisioner_tailscale_auth.metadata[0].name
-                      key  = "TS_AUTHKEY"
-                    }
-                  }
-                },
-                { name = "TS_HOSTNAME", value = "openobserve-bootstrap" },
-                { name = "TS_EXTRA_ARGS", value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}" },
-              ]
-              securityContext = {
-                capabilities = {
-                  add = ["NET_ADMIN"]
-                }
-              }
-              volumeMounts = [
-                { name = "dev-net-tun", mountPath = "/dev/net/tun" },
-                { name = "tailscale-state", mountPath = "/var/lib/tailscale" },
-              ]
-            },
-            {
-              name    = "wait-for-tailscale"
-              image   = var.image_busybox
-              command = [
-                "sh", "-c",
-                "until nslookup ${local.vault_tailnet_fqdn}; do echo 'waiting for tailscale dns'; sleep 2; done",
-              ]
+              ip        = data.terraform_remote_state.vault.outputs.vault_cluster_ip
+              hostnames = [local.vault_tailnet_fqdn]
             },
           ]
 
@@ -334,17 +235,6 @@ resource "kubernetes_manifest" "openobserve_bootstrap_job" {
                 }
               }
             },
-            {
-              name = "dev-net-tun"
-              hostPath = {
-                path = "/dev/net/tun"
-                type = "CharDevice"
-              }
-            },
-            {
-              name     = "tailscale-state"
-              emptyDir = {}
-            },
           ]
         }
       }
@@ -374,8 +264,6 @@ resource "kubernetes_manifest" "openobserve_bootstrap_job" {
     kubernetes_deployment.openobserve,
     kubernetes_manifest.openobserve_bootstrap_secret_provider,
     kubernetes_config_map.openobserve_bootstrap_script,
-    kubernetes_role_binding.openobserve_bootstrap_tailscale,
-    kubernetes_secret.pod_provisioner_tailscale_auth,
     vault_kv_secret_v2.openobserve_service_account,
   ]
 }

@@ -313,6 +313,10 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {

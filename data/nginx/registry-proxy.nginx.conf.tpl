@@ -2,9 +2,6 @@ events {
   worker_connections 1024;
 }
 http {
-  # Drop query args from access log — registry uploads pack `_state=<long
-  # signed blob>&digest=<sha>` into every PUT/POST which bloats the log and
-  # isn't useful for ops.
   log_format redacted '$remote_addr - $remote_user [$time_local] '
                       '"$request_method $uri $server_protocol" $status $body_bytes_sent '
                       '"$http_referer" "$http_user_agent"';
@@ -17,7 +14,7 @@ http {
   error_log /dev/stderr crit;
 
   upstream registry {
-    server localhost:5000;
+    server localhost:${upstream_port};
   }
 
   client_max_body_size 0;
@@ -44,9 +41,6 @@ http {
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
-      # No auth_basic here — Headscale ACL (group:registry-proxy-clients)
-      # is the only access gate. Distribution itself runs in proxy mode
-      # which structurally rejects writes, so there's no push surface.
     }
 
     location = / {

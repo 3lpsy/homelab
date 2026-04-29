@@ -3,10 +3,12 @@
 # own prefix. Per-prefix isolation = per-host blast radius if a key leaks.
 #
 # Clients:
-#   desktop   -> host-desktop/                 (kopia, set up out-of-band)
-#   delphi    -> host-delphi/                  (kopia, provisioned by cluster)
-#   headscale -> host-headscale/               (kopia, provisioned by homelab)
-#   velero    -> cluster-${cluster_name}/velero/  (Velero BSL prefix in backup deployment)
+#   desktop   -> host-desktop/    (kopia, set up out-of-band)
+#   delphi    -> host-delphi/     (kopia, provisioned by cluster — covers
+#                                  /etc, /root, AND /var/lib/rancher/k3s/storage
+#                                  i.e. local-path PVC contents, all encrypted
+#                                  client-side via kopia)
+#   headscale -> host-headscale/  (kopia, provisioned by homelab)
 #
 # Repo passwords are random_password resources, output as sensitive values, and
 # read by host provisioners over SSH (see templates/provision-kopia). They are
@@ -20,7 +22,6 @@ locals {
     desktop   = "${var.backup_prefix_root}host-desktop/"
     delphi    = "${var.backup_prefix_root}host-delphi/"
     headscale = "${var.backup_prefix_root}host-headscale/"
-    velero    = "${var.backup_prefix_root}cluster-${var.cluster_name}/velero/"
   }
 }
 
@@ -44,7 +45,7 @@ resource "aws_s3_bucket_public_access_block" "backup" {
   restrict_public_buckets = true
 }
 
-# Server-side AES256. Belt and suspenders only — kopia/Velero already encrypt
+# Server-side AES256. Belt and suspenders only — kopia already encrypts
 # client-side; this just blunts S3-API-level mistakes (e.g. an accidentally
 # public object).
 resource "aws_s3_bucket_server_side_encryption_configuration" "backup" {

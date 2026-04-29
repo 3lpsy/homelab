@@ -1,13 +1,13 @@
 # NetworkPolicies for the `registry` namespace.
 #
-# The Registry is reached two ways today:
+# The Registry is reached two ways:
 #   - Kubelet image pulls — via the host's Tailscale interface
 #     (`registry.MAGIC_DOMAIN` resolves through systemd-resolved →
 #     tailscale0). Host-LOCAL source bypasses NetworkPolicy structurally,
 #     so no rule needed.
-#   - BuildKit Jobs in `builder` ns — push images via tailnet today; once
-#     the deferred CoreDNS rewrite collapses to ClusterIP, this allow is
-#     load-bearing.
+#   - BuildKit Jobs in `builder` ns — push images via the cluster
+#     network. Job pods use host_aliases pinning `registry.<hs>.<magic>`
+#     to the registry Service ClusterIP; this allow is load-bearing.
 
 module "registry_netpol_baseline" {
   source = "./../templates/netpol-baseline"
@@ -47,3 +47,4 @@ resource "kubernetes_network_policy" "registry_from_builder" {
     }
   }
 }
+

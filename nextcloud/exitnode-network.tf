@@ -46,14 +46,13 @@ resource "kubernetes_network_policy" "exitnode_from_searxng" {
   }
 }
 
-# Ingress from registry-dockerio ns on :8888. The Distribution registry pulls
-# from registry-1.docker.io through the rotator (HTTPS_PROXY env on the
-# registry-dockerio container) so docker.io's per-IP anon rate limit doesn't
-# bottleneck the whole cluster. Future sibling mirrors (registry-quayio etc.)
-# don't need this — only the docker.io mirror is rate-limit-prone.
-resource "kubernetes_network_policy" "exitnode_from_registry_dockerio" {
+# Ingress from registry-proxy ns on :8888. The combined pull-through cache
+# pod (Distribution proxies for docker.io + ghcr.io) routes upstream pulls
+# through the rotator (HTTPS_PROXY env on each registry-* container) so
+# the per-IP anon rate limit on docker.io doesn't bottleneck the cluster.
+resource "kubernetes_network_policy" "exitnode_from_registry_proxy" {
   metadata {
-    name      = "exitnode-from-registry-dockerio"
+    name      = "exitnode-from-registry-proxy"
     namespace = kubernetes_namespace.exitnode.metadata[0].name
   }
 
@@ -65,7 +64,7 @@ resource "kubernetes_network_policy" "exitnode_from_registry_dockerio" {
       from {
         namespace_selector {
           match_labels = {
-            "kubernetes.io/metadata.name" = kubernetes_namespace.registry_dockerio.metadata[0].name
+            "kubernetes.io/metadata.name" = kubernetes_namespace.registry_proxy.metadata[0].name
           }
         }
       }

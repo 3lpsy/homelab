@@ -24,7 +24,7 @@ resource "kubernetes_deployment" "thunderbolt" {
           # Rolls the pod whenever the frontend build Job's name changes
           # (i.e. whenever any input file or the git ref changes → new image)
           # so `:latest` is actually re-pulled.
-          "build-job" = local.thunderbolt_frontend_build_job_name
+          "build-job" = module.thunderbolt_frontend_build.job_name
           # Rolls on outer TLS/proxy nginx config changes.
           "nginx-config-hash"                   = sha1(kubernetes_config_map.thunderbolt_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "thunderbolt-tls"
@@ -143,6 +143,10 @@ resource "kubernetes_deployment" "thunderbolt" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {
@@ -211,7 +215,7 @@ resource "kubernetes_deployment" "thunderbolt" {
   depends_on = [
     kubernetes_manifest.thunderbolt_secret_provider,
     kubernetes_deployment.thunderbolt_backend,
-    kubernetes_manifest.thunderbolt_frontend_build,
+    module.thunderbolt_frontend_build,
   ]
 
   lifecycle {

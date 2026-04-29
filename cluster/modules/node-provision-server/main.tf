@@ -159,6 +159,7 @@ resource "null_resource" "k3s_registry_config" {
   triggers = {
     registry_domain          = var.registry_domain
     registry_dockerio_domain = var.registry_dockerio_domain
+    registry_ghcrio_domain   = var.registry_ghcrio_domain
     magic_subdomain          = var.headscale_magic_subdomain
   }
 
@@ -182,6 +183,10 @@ mirrors:
     endpoint:
       - "https://${var.registry_dockerio_domain}.${var.headscale_magic_subdomain}"
       - "https://registry-1.docker.io"
+  "ghcr.io":
+    endpoint:
+      - "https://${var.registry_ghcrio_domain}.${var.headscale_magic_subdomain}"
+      - "https://ghcr.io"
 EOF
       EOT
       ,

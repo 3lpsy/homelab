@@ -17,8 +17,9 @@ resource "kubernetes_service_account" "mcp_k8s" {
 # is a `terraform destroy` of one for_each entry.
 #
 # RBAC nuance: `resourceNames` is honoured on `get` but NOT on `list` / `watch`.
-# Since enabled_tools omits pods_list, this Role grants only `get` on pods and
-# pods/log — the upstream tool surface lines up with the RBAC verb set.
+# `list` on pods is namespace-wide within each allowed namespace — bearer
+# holders can enumerate every pod there. Acceptable because get/log/top
+# already span the same set.
 
 resource "kubernetes_role" "mcp_k8s_reader" {
   for_each = toset(var.mcp_k8s_allowed_namespaces)
@@ -31,7 +32,7 @@ resource "kubernetes_role" "mcp_k8s_reader" {
   rule {
     api_groups = [""]
     resources  = ["pods"]
-    verbs      = ["get"]
+    verbs      = ["get", "list"]
   }
 
   rule {
@@ -47,6 +48,32 @@ resource "kubernetes_role" "mcp_k8s_reader" {
     resources  = ["events"]
     verbs      = ["get", "list", "watch"]
   }
+
+  # Make the Role wait until every namespace this deployment owns has been
+  # created. The for_each list is a static set of strings, so terraform
+  # would otherwise plan Role creation in parallel with kubernetes_namespace
+  # creation and fail with "namespaces not found" on a fresh apply
+  # (https://github.com/hashicorp/terraform-provider-kubernetes/issues/1380).
+  # Built-in namespaces (default, kube-system) and namespaces from other
+  # deployments (monitoring) are not in this list — they exist by the time
+  # this deployment runs.
+  depends_on = [
+    kubernetes_namespace.builder,
+    kubernetes_namespace.exitnode,
+    kubernetes_namespace.frigate,
+    kubernetes_namespace.homeassist,
+    kubernetes_namespace.litellm,
+    kubernetes_namespace.mcp,
+    kubernetes_namespace.navidrome,
+    kubernetes_namespace.nextcloud,
+    kubernetes_namespace.pihole,
+    kubernetes_namespace.radicale,
+    kubernetes_namespace.registry,
+    kubernetes_namespace.registry_proxy,
+    kubernetes_namespace.searxng,
+    kubernetes_namespace.thunderbolt,
+    kubernetes_namespace.tls_rotator,
+  ]
 }
 
 # Metrics ClusterRole — cluster-scope because the upstream pods_top tool
@@ -104,4 +131,25 @@ resource "kubernetes_role_binding" "mcp_k8s_reader" {
     name      = kubernetes_service_account.mcp_k8s.metadata[0].name
     namespace = kubernetes_namespace.mcp.metadata[0].name
   }
+
+  # Same dependency rationale as kubernetes_role.mcp_k8s_reader above —
+  # the binding lives in the target namespace and would race namespace
+  # creation otherwise.
+  depends_on = [
+    kubernetes_namespace.builder,
+    kubernetes_namespace.exitnode,
+    kubernetes_namespace.frigate,
+    kubernetes_namespace.homeassist,
+    kubernetes_namespace.litellm,
+    kubernetes_namespace.mcp,
+    kubernetes_namespace.navidrome,
+    kubernetes_namespace.nextcloud,
+    kubernetes_namespace.pihole,
+    kubernetes_namespace.radicale,
+    kubernetes_namespace.registry,
+    kubernetes_namespace.registry_proxy,
+    kubernetes_namespace.searxng,
+    kubernetes_namespace.thunderbolt,
+    kubernetes_namespace.tls_rotator,
+  ]
 }

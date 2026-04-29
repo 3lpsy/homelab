@@ -36,10 +36,8 @@ module "monitoring_netpol_baseline" {
 }
 
 # Cross-namespace egress: monitoring → vault:8201.
-# Used by openobserve-bootstrap to write service-account creds back to Vault.
-# Today that traffic goes via the bootstrap pod's own Tailscale sidecar
-# (NetPol-invisible). Once the deferred CoreDNS rewrite for vault.MAGIC_DOMAIN
-# lands, the bootstrap can use the cluster network directly via this rule.
+# Used by openobserve-bootstrap to write service-account creds back to
+# Vault via host_aliases (FQDN pinned to the vault Service ClusterIP).
 # Mirror of the ingress allow in vault/vault-network.tf.
 resource "kubernetes_network_policy" "monitoring_to_vault" {
   metadata {

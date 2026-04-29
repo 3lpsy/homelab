@@ -27,13 +27,13 @@ variable "headscale_subdomain" {
 variable "homelab_bucket_name" {
   type = string
 }
-# Name used in the bucket prefix for Velero (cluster-${cluster_name}/velero/).
-# Must match cluster.var.node_host_name — both deployments derive prefixes from it.
+# Used as a label in the cluster's backup prefix; must match
+# cluster.var.node_host_name so the two deployments agree on naming.
 variable "cluster_name" {
   type    = string
   default = "delphi"
 }
-# Parent prefix for every kopia/velero repo inside the shared backup bucket.
+# Parent prefix for every kopia repo inside the shared backup bucket.
 # Isolates them from terraform.sh state files (s3://$BUCKET/$dep/...) and the
 # legacy headscale/<ts>.age blobs that already live at the bucket root.
 # Trailing slash required.
@@ -64,6 +64,7 @@ variable "tailnet_users" {
     prometheus_user         = "prometheus"
     openwrt_user            = "openwrt"
     calendar_server_user    = "cal"
+    music_server_user       = "music"
     tablet_user             = "tablet"
     deck_user               = "deck"
     devbox_user             = "devbox"
@@ -78,13 +79,12 @@ variable "tailnet_users" {
     litellm_server_user     = "litellm"
     thunderbolt_server_user = "thunderbolt"
     mcp_user                = "mcp"
-    builder_user            = "builder"
     searxng_server_user     = "searxng"
     log_server_user         = "openobserve"
     headscale_host_user     = "headscale-host"
-    pod_provisioner_user    = "pod-provisioner"
     homeassist_server_user  = "homeassist"
     frigate_server_user     = "frigate"
+    jellyfin_server_user    = "media"
 
   }
 }

@@ -21,7 +21,7 @@ resource "kubernetes_deployment" "mcp_filesystem" {
           app = "mcp-filesystem"
         }
         annotations = {
-          "build-job"                           = local.mcp_filesystem_build_job_name
+          "build-job"                           = module.mcp_filesystem_build.job_name
           "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
@@ -158,7 +158,7 @@ resource "kubernetes_deployment" "mcp_filesystem" {
 
   depends_on = [
     kubernetes_manifest.mcp_shared_secret_provider,
-    kubernetes_manifest.mcp_filesystem_build,
+    module.mcp_filesystem_build,
   ]
 
   lifecycle {

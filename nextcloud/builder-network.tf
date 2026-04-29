@@ -3,13 +3,15 @@
 # BuildKit Jobs need:
 #   - Internet egress for `FROM` pulls in Dockerfiles (docker.io, ghcr.io,
 #     pip/dnf/apt mirrors) — covered by the baseline's internet egress.
-#   - Tailscale to reach `registry.MAGIC_DOMAIN` — also covered by the
-#     baseline's internet egress (Headscale + DERP).
-#   - K8s API for the Tailscale sidecar's TS_KUBE_SECRET — covered.
+#   - Cross-ns egress to `registry/registry:443` (push target) and
+#     `registry-proxy/registry-{dockerio,ghcrio}:443` (pull-through caches
+#     used by buildkitd's mirrors). Allowed below.
 #
-# After the deferred CoreDNS rewrite for `registry.MAGIC_DOMAIN`, BuildKit
-# pods will resolve to the registry's ClusterIP and need an explicit
-# cross-namespace egress allow. Adding it now is harmless.
+# Each Job pod uses host_aliases to map `registry.<hs>.<magic>`,
+# `registry-dockerio.<hs>.<magic>`, and `registry-ghcrio.<hs>.<magic>` to
+# the corresponding Service ClusterIPs (Phase B4 of the egress-only
+# Tailscale sidecar removal). nginx terminates TLS in each registry pod
+# with the matching FQDN cert.
 
 module "builder_netpol_baseline" {
   source = "./../templates/netpol-baseline"
@@ -45,3 +47,34 @@ resource "kubernetes_network_policy" "builder_to_registry" {
     }
   }
 }
+
+# Cross-namespace egress: builder → registry-proxy:443 (image pull-through
+# for `FROM docker.io/...` and `FROM ghcr.io/...` via the buildkitd
+# config-rendered mirrors). Mirror ingress lives in
+# nextcloud/registry-proxy-network.tf.
+resource "kubernetes_network_policy" "builder_to_registry_proxy" {
+  metadata {
+    name      = "builder-to-registry-proxy"
+    namespace = kubernetes_namespace.builder.metadata[0].name
+  }
+
+  spec {
+    pod_selector {}
+    policy_types = ["Egress"]
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.registry_proxy.metadata[0].name
+          }
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "443"
+      }
+    }
+  }
+}
+

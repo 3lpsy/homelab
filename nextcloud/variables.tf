@@ -73,6 +73,16 @@ variable "radicale_domain" {
   default = "cal"
 }
 
+variable "exitnode_haproxy_domain" {
+  type    = string
+  default = "exitnode-haproxy"
+}
+
+variable "navidrome_domain" {
+  type    = string
+  default = "music"
+}
+
 variable "homeassist_domain" {
   type    = string
   default = "homeassist"
@@ -118,6 +128,12 @@ variable "registry_dockerio_domain" {
   # share the headscale "registry-proxy" user identity for ACL purposes; only
   # the per-pod TS_HOSTNAME differs.
   default = "registry-dockerio"
+}
+
+variable "registry_ghcrio_domain" {
+  type        = string
+  description = "Tailnet hostname for the ghcr.io pull-through cache. Sibling of registry_dockerio_domain; shares the registry_proxy_server_user headscale identity / ACL group."
+  default     = "registry-ghcrio"
 }
 
 variable "immich_domain" {
@@ -205,6 +221,53 @@ variable "image_registry" {
 variable "image_radicale" {
   type    = string
   default = "ghcr.io/kozea/radicale:latest"
+}
+
+variable "image_navidrome" {
+  type    = string
+  default = "deluan/navidrome:latest"
+}
+
+variable "navidrome_data_size" {
+  type    = string
+  default = "5Gi"
+}
+
+variable "navidrome_music_size" {
+  type    = string
+  default = "100Gi"
+}
+
+variable "jellyfin_domain" {
+  type    = string
+  default = "jellyfin"
+}
+
+variable "image_jellyfin" {
+  type    = string
+  default = "jellyfin/jellyfin:latest"
+}
+
+variable "jellyfin_config_size" {
+  type    = string
+  default = "5Gi"
+}
+
+variable "jellyfin_cache_size" {
+  type    = string
+  default = "20Gi"
+}
+
+variable "jellyfin_render_gid" {
+  description = "Host GID of the `render` group on the K3s node. Used as a supplemental group on the Jellyfin container so it can open /dev/dri/renderD128 for VAAPI. Discover with `getent group render` on the node. Fedora 41 default is 105."
+  type        = number
+  default     = 105
+}
+
+variable "jellyfin_video_gid" {
+  description = "Host GID of the `video` group on the K3s node. Used as a supplemental group on the Jellyfin container so it can open /dev/dri/card0 (mode 0660 root:video) for VAAPI. Discover with `getent group video` on the node. Fedora 41 default is 39."
+  type        = number
+  default     = 39
 }
 
 variable "image_homeassist" {
@@ -436,12 +499,6 @@ variable "mcp_litellm_log_level" {
   default     = "info"
 }
 
-variable "mcp_litellm_domain" {
-  description = "Tailnet hostname for the mcp-litellm tailscale sidecar. Egress-only; no traffic is destined to this node."
-  type        = string
-  default     = "mcp-litellm-egress"
-}
-
 variable "mcp_litellm_upstream_timeout" {
   description = "httpx timeout (seconds) for upstream LiteLLM calls. /user/daily/activity and /spend/logs can be slow on busy proxies; bump if you see 'LiteLLM timed out' ToolErrors but /key/info returns promptly."
   type        = number
@@ -473,7 +530,7 @@ variable "mcp_time_default_timezone" {
 }
 
 variable "mcp_k8s_log_level" {
-  description = "LOG_LEVEL for the mcp-k8s auth-gate sidecar (debug / info / warning / error). The upstream binary's log level is set in mcp-k8s-config.tf."
+  description = "LOG_LEVEL for the mcp-k8s server (debug / info / warning / error)."
   type        = string
   default     = "info"
 }
@@ -486,6 +543,7 @@ variable "mcp_k8s_allowed_namespaces" {
     # current namespace (events_list with no namespace arg) don't 403 —
     # there are no workloads here, so read grants are benign.
     "default",
+    "builder",
     "exitnode",
     "frigate",
     "homeassist",
@@ -493,14 +551,15 @@ variable "mcp_k8s_allowed_namespaces" {
     "litellm",
     "mcp",
     "monitoring",
+    "navidrome",
     "nextcloud",
     "pihole",
     "radicale",
     "registry",
-    "registry-dockerio",
+    "registry-proxy",
     "searxng",
     "thunderbolt",
-    "velero",
+    "tls-rotator",
     # `vault` intentionally omitted — vault logs can include unseal /
     # key-material context; no MCP bearer should be able to read them.
     # Use `kubectl logs -n vault` out-of-band for vault debugging.
@@ -514,7 +573,9 @@ variable "image_haproxy" {
   # boot when its own image is the one rate-limited there. ECR public is
   # rate-limit-free for unauthenticated pulls. Equivalent to
   # docker.io/library/haproxy:2.9-alpine.
-  default = "public.ecr.aws/docker/library/haproxy:2.9-alpine"
+  # docker.io's official Docker library image (canonical source — public.ecr.aws
+  # mirrors this same upstream). Routes through registry-dockerio cache.
+  default = "haproxy:2.9-alpine"
 }
 
 variable "searxng_domain" {
@@ -525,11 +586,6 @@ variable "searxng_domain" {
 variable "image_searxng" {
   type    = string
   default = "docker.io/searxng/searxng:latest"
-}
-
-variable "mcp_searxng_domain" {
-  type    = string
-  default = "mcp-searxng"
 }
 
 variable "mcp_shared_domain" {
@@ -555,7 +611,9 @@ variable "image_mongo" {
 
 variable "image_keycloak" {
   type    = string
-  default = "quay.io/keycloak/keycloak:26.0"
+  # Keycloak publishes the same image to both quay.io and docker.io —
+  # docker.io routes through registry-dockerio cache.
+  default = "keycloak/keycloak:26.0"
 }
 
 # Domain subdomains for services owned by the `monitoring` deployment. The
@@ -610,16 +668,13 @@ locals {
   mcp_prometheus_image    = "${local.thunderbolt_registry}/mcp-prometheus:latest"
   mcp_time_image          = "${local.thunderbolt_registry}/mcp-time:latest"
   mcp_k8s_image           = "${local.thunderbolt_registry}/mcp-k8s:latest"
-  mcp_k8s_auth_gate_image = "${local.thunderbolt_registry}/mcp-k8s-auth-gate:latest"
   mcp_litellm_image       = "${local.thunderbolt_registry}/mcp-litellm:latest"
 
   mcp_shared_fqdn = "${var.mcp_shared_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
   # Backends the shared nginx proxies to. `upstream_path` is where each
-  # backend mounts its MCP endpoint. All fastmcp servers mount at `/`;
-  # mcp-k8s's auth-gate sidecar rewrites bare `/` to the upstream Go
-  # binary's `/mcp` Streamable HTTP route. So every MCP is addressed
-  # uniformly as `/mcp-<name>/`. upstream_path stays `/` for all.
+  # backend mounts its MCP endpoint. All fastmcp servers mount at `/`,
+  # and every MCP is addressed uniformly as `/mcp-<name>/`.
   mcp_backend_services = {
     "mcp-filesystem" = { upstream_path = "/" }
     "mcp-memory"     = { upstream_path = "/" }

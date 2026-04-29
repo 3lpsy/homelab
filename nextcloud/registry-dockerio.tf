@@ -1,7 +1,141 @@
+# docker.io pull-through cache. Lives in the shared `registry-proxy`
+# namespace alongside registry-ghcrio. Both pods mount the same PVC
+# (registry-proxy-data) at different subPaths so their on-disk content
+# stays isolated.
+
+resource "kubernetes_secret" "registry_dockerio_tailscale_state" {
+  metadata {
+    name      = "registry-dockerio-tailscale-state"
+    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
+resource "headscale_pre_auth_key" "registry_dockerio_server" {
+  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.registry_proxy_server_user
+  reusable       = true
+  time_to_expire = "3y"
+}
+
+resource "kubernetes_secret" "registry_dockerio_tailscale_auth" {
+  metadata {
+    name      = "registry-dockerio-tailscale-auth"
+    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+  }
+  type = "Opaque"
+  data = {
+    TS_AUTHKEY = headscale_pre_auth_key.registry_dockerio_server.key
+  }
+}
+
+module "registry-dockerio-tls" {
+  source                = "./../templates/infra-tls"
+  account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  server_domain         = "${var.registry_dockerio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  providers = { acme = acme }
+}
+
+resource "vault_kv_secret_v2" "registry_dockerio_tls" {
+  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+  name  = "registry-dockerio/tls"
+  data_json = jsonencode({
+    fullchain_pem = module.registry-dockerio-tls.fullchain_pem
+    privkey_pem   = module.registry-dockerio-tls.privkey_pem
+  })
+
+  # tls-rotator owns rotation post-bootstrap.
+  lifecycle {
+    ignore_changes = [data_json]
+  }
+}
+
+resource "kubernetes_manifest" "registry_dockerio_secret_provider" {
+  manifest = {
+    apiVersion = "secrets-store.csi.x-k8s.io/v1"
+    kind       = "SecretProviderClass"
+    metadata = {
+      name      = "vault-registry-dockerio"
+      namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+    }
+    spec = {
+      provider = "vault"
+      secretObjects = [
+        {
+          secretName = "registry-dockerio-tls"
+          type       = "kubernetes.io/tls"
+          data = [
+            { objectName = "tls_crt", key = "tls.crt" },
+            { objectName = "tls_key", key = "tls.key" },
+          ]
+        },
+      ]
+      parameters = {
+        vaultAddress = "http://vault.vault.svc.cluster.local:8200"
+        roleName     = "registry-proxy"
+        objects = yamlencode([
+          {
+            objectName = "tls_crt"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/registry-dockerio/tls"
+            secretKey  = "fullchain_pem"
+          },
+          {
+            objectName = "tls_key"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/registry-dockerio/tls"
+            secretKey  = "privkey_pem"
+          },
+        ])
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_namespace.registry_proxy,
+    vault_kubernetes_auth_backend_role.registry_proxy,
+    vault_kv_secret_v2.registry_dockerio_tls,
+    vault_policy.registry_proxy,
+  ]
+}
+
+resource "kubernetes_config_map" "registry_dockerio_config" {
+  metadata {
+    name      = "registry-dockerio-config"
+    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+  }
+  data = {
+    "config.yml" = templatefile("${path.module}/../data/registry-proxy/config.yml.tpl", {
+      remoteurl     = "https://registry-1.docker.io"
+      rootdirectory = "/var/lib/registry"
+      listen_port   = "5000"
+    })
+  }
+}
+
+resource "kubernetes_config_map" "registry_dockerio_nginx_config" {
+  metadata {
+    name      = "registry-dockerio-nginx-config"
+    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/registry-proxy.nginx.conf.tpl", {
+      server_domain = "${var.registry_dockerio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+      upstream_port = "5000"
+    })
+  }
+}
+
 resource "kubernetes_deployment" "registry_dockerio" {
   metadata {
     name      = "registry-dockerio"
-    namespace = kubernetes_namespace.registry_dockerio.metadata[0].name
+    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
   }
 
   spec {
@@ -20,14 +154,13 @@ resource "kubernetes_deployment" "registry_dockerio" {
           "registry-config-hash"                = sha1(kubernetes_config_map.registry_dockerio_config.data["config.yml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_dockerio_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "registry-dockerio-tls"
-          # Pull-through cache of docker.io — every layer is regen-able by
-          # re-pulling on cache miss. Skipping FSB saves ~tens of GB per backup.
-          "backup.velero.io/backup-volumes-excludes" = "registry-dockerio-data"
+          # Pull-through cache — every layer is regen-able by re-pulling.
+          "backup.velero.io/backup-volumes-excludes" = "registry-data"
         }
       }
 
       spec {
-        service_account_name = kubernetes_service_account.registry_dockerio.metadata[0].name
+        service_account_name = kubernetes_service_account.registry_proxy.metadata[0].name
 
         init_container {
           name  = "wait-for-secrets"
@@ -45,32 +178,26 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
         }
 
-        # Distribution in proxy/cache mode. Default ENTRYPOINT is
-        # `registry`, default CMD is `serve /etc/docker/registry/config.yml`.
-        # We mount our config there to take over.
         container {
           name  = "registry-dockerio"
           image = var.image_registry
 
-          # Route upstream pulls (registry-1.docker.io) through the in-cluster
-          # rotating exit-node front-end. Each TCP connection picks a random
-          # ProtonVPN exit, so the per-IP anonymous rate limit on Docker Hub
-          # is multiplied by the number of configured exit-nodes. Distribution
-          # is Go and respects HTTPS_PROXY/HTTP_PROXY for outbound; NO_PROXY
-          # excludes intra-cluster traffic so this doesn't loop back through
-          # the proxy chain.
-          env {
-            name  = "HTTPS_PROXY"
-            value = "http://exitnode-haproxy.exitnode.svc.cluster.local:8888"
-          }
-          env {
-            name  = "HTTP_PROXY"
-            value = "http://exitnode-haproxy.exitnode.svc.cluster.local:8888"
-          }
-          env {
-            name  = "NO_PROXY"
-            value = "${var.k8s_pod_cidr},${var.k8s_service_cidr},127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local"
-          }
+          # Route upstream pulls through the rotating exit-node front-end.
+          # Each TCP connection picks a random ProtonVPN exit, so docker.io's
+          # per-IP anonymous rate limit is multiplied by the number of
+          # configured exit-nodes.
+          # env {
+          #   name  = "HTTPS_PROXY"
+          #   value = "http://exitnode-haproxy.exitnode.svc.cluster.local:8888"
+          # }
+          # env {
+          #   name  = "HTTP_PROXY"
+          #   value = "http://exitnode-haproxy.exitnode.svc.cluster.local:8888"
+          # }
+          # env {
+          #   name  = "NO_PROXY"
+          #   value = "${var.k8s_pod_cidr},${var.k8s_service_cidr},127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local"
+          # }
 
           port {
             container_port = 5000
@@ -78,8 +205,9 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
 
           volume_mount {
-            name       = "registry-dockerio-data"
+            name       = "registry-data"
             mount_path = "/var/lib/registry"
+            sub_path   = "dockerio"
           }
           volume_mount {
             name       = "registry-config"
@@ -112,30 +240,6 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
         }
 
-        volume {
-          name = "registry-dockerio-data"
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.registry_dockerio_data.metadata[0].name
-          }
-        }
-        volume {
-          name = "registry-config"
-          config_map {
-            name = kubernetes_config_map.registry_dockerio_config.metadata[0].name
-          }
-        }
-        volume {
-          name = "secrets-store"
-          csi {
-            driver    = "secrets-store.csi.k8s.io"
-            read_only = true
-            volume_attributes = {
-              secretProviderClass = kubernetes_manifest.registry_dockerio_secret_provider.manifest.metadata.name
-            }
-          }
-        }
-
-        # Nginx — TLS termination + basic-auth gate.
         container {
           name  = "registry-dockerio-nginx"
           image = var.image_nginx
@@ -157,27 +261,13 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
 
           resources {
-            requests = { cpu = "50m", memory = "64Mi" }
-            limits   = { cpu = "200m", memory = "128Mi" }
+            # See registry.tf for rationale — same TLS handshake CPU
+            # ceiling under concurrent BuildKit pull bursts.
+            requests = { cpu = "100m", memory = "128Mi" }
+            limits   = { cpu = "1", memory = "256Mi" }
           }
         }
 
-        volume {
-          name = "registry-dockerio-tls"
-          secret { secret_name = "registry-dockerio-tls" }
-        }
-        volume {
-          name = "nginx-config"
-          config_map {
-            name = kubernetes_config_map.registry_dockerio_nginx_config.metadata[0].name
-          }
-        }
-
-        # Tailscale sidecar — exposes the pod as
-        # `registry-dockerio.<magic_domain>` to the tailnet. Headscale user
-        # remains "registry-proxy" (var.tailnet_users["registry_proxy_server_user"])
-        # so future mirrors (registry-quayio etc.) can join the same identity
-        # and ACL group while taking distinct hostnames.
         container {
           name  = "registry-dockerio-tailscale"
           image = var.image_tailscale
@@ -211,6 +301,10 @@ resource "kubernetes_deployment" "registry_dockerio" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {
@@ -219,14 +313,8 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
 
           resources {
-            requests = {
-              cpu    = "50m"
-              memory = "128Mi"
-            }
-            limits = {
-              cpu    = "500m"
-              memory = "512Mi"
-            }
+            requests = { cpu = "50m", memory = "128Mi" }
+            limits   = { cpu = "500m", memory = "512Mi" }
           }
 
           volume_mount {
@@ -239,6 +327,38 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
         }
 
+        volume {
+          name = "registry-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.registry_proxy_data.metadata[0].name
+          }
+        }
+        volume {
+          name = "registry-config"
+          config_map {
+            name = kubernetes_config_map.registry_dockerio_config.metadata[0].name
+          }
+        }
+        volume {
+          name = "nginx-config"
+          config_map {
+            name = kubernetes_config_map.registry_dockerio_nginx_config.metadata[0].name
+          }
+        }
+        volume {
+          name = "registry-dockerio-tls"
+          secret { secret_name = "registry-dockerio-tls" }
+        }
+        volume {
+          name = "secrets-store"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = kubernetes_manifest.registry_dockerio_secret_provider.manifest.metadata.name
+            }
+          }
+        }
         volume {
           name = "dev-net-tun"
           host_path {
@@ -263,5 +383,20 @@ resource "kubernetes_deployment" "registry_dockerio" {
       spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
       spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
     ]
+  }
+}
+
+resource "kubernetes_service" "registry_dockerio" {
+  metadata {
+    name      = "registry-dockerio"
+    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
+  }
+  spec {
+    selector = { app = "registry-dockerio" }
+    port {
+      name        = "https"
+      port        = 443
+      target_port = 443
+    }
   }
 }

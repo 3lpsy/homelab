@@ -150,6 +150,10 @@ resource "kubernetes_deployment" "exitnode" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn} --advertise-exit-node"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {
@@ -240,7 +244,7 @@ resource "kubernetes_deployment" "exitnode" {
   }
 
   depends_on = [
-    kubernetes_manifest.exitnode_tinyproxy_build,
+    module.exitnode_tinyproxy_build,
   ]
 
   lifecycle {

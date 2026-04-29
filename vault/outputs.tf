@@ -9,3 +9,7 @@ output "vault_namespace" {
 output "vault_internal_address" {
   value = "http://vault.vault.svc.cluster.local:8200"
 }
+
+output "vault_cluster_ip" {
+  value = kubernetes_service.vault.spec[0].cluster_ip
+}

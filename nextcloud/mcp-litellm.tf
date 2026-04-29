@@ -21,7 +21,7 @@ resource "kubernetes_deployment" "mcp_litellm" {
           app = "mcp-litellm"
         }
         annotations = {
-          "build-job"                           = local.mcp_litellm_build_job_name
+          "build-job"                           = module.mcp_litellm_build.job_name
           "secret.reloader.stakater.com/reload" = "mcp-litellm-secrets"
         }
       }
@@ -31,6 +31,15 @@ resource "kubernetes_deployment" "mcp_litellm" {
 
         image_pull_secrets {
           name = kubernetes_secret.mcp_registry_pull_secret.metadata[0].name
+        }
+
+        # Pin litellm.<hs>.<magic> to the litellm Service ClusterIP so the
+        # backend can dial the FQDN (LITELLM_BASE_URL) and keep using the
+        # same FQDN-valid TLS cert nginx serves at :443 — no tailnet
+        # round-trip needed.
+        host_aliases {
+          ip        = kubernetes_service.litellm.spec[0].cluster_ip
+          hostnames = ["${var.litellm_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
         }
 
         init_container {
@@ -65,11 +74,8 @@ resource "kubernetes_deployment" "mcp_litellm" {
           }
         }
 
-        # LiteLLM MCP server — TLS + external routing live in mcp-shared.
-        # Tailscale sidecar is required because LiteLLM's TLS cert is issued
-        # for the tailnet FQDN; talking to litellm.<ns>.svc would fail cert
-        # verification (and we want the same auth path production clients
-        # use).
+        # LiteLLM MCP server. TLS + external routing live in mcp-shared;
+        # this pod talks to LiteLLM directly via cluster routing.
         container {
           name              = "mcp-litellm"
           image             = local.mcp_litellm_image
@@ -167,8 +173,6 @@ resource "kubernetes_deployment" "mcp_litellm" {
             timeout_seconds       = 5
           }
 
-          # Container-level only: pod-level run_as_non_root would break the
-          # tailscale sidecar (needs root + NET_ADMIN).
           security_context {
             run_as_non_root            = true
             run_as_user                = 1000
@@ -201,69 +205,6 @@ resource "kubernetes_deployment" "mcp_litellm" {
           }
         }
 
-        # Tailscale sidecar — egress-only. Registers on the tailnet so the
-        # MCP pod can resolve/reach litellm.<hs>.<magic> with a valid TLS cert.
-        container {
-          name  = "tailscale"
-          image = var.image_tailscale
-
-          env {
-            name  = "TS_STATE_DIR"
-            value = "/var/lib/tailscale"
-          }
-          env {
-            name  = "TS_KUBE_SECRET"
-            value = "mcp-litellm-tailscale-state"
-          }
-          env {
-            name  = "TS_USERSPACE"
-            value = "false"
-          }
-          env {
-            name = "TS_AUTHKEY"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.mcp_tailscale_auth.metadata[0].name
-                key  = "TS_AUTHKEY"
-              }
-            }
-          }
-          env {
-            name  = "TS_HOSTNAME"
-            value = var.mcp_litellm_domain
-          }
-          env {
-            name  = "TS_EXTRA_ARGS"
-            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
-          }
-
-          security_context {
-            capabilities {
-              add = ["NET_ADMIN"]
-            }
-          }
-
-          resources {
-            requests = {
-              cpu    = "20m"
-              memory = "64Mi"
-            }
-            limits = {
-              cpu    = "200m"
-              memory = "256Mi"
-            }
-          }
-
-          volume_mount {
-            name       = "dev-net-tun"
-            mount_path = "/dev/net/tun"
-          }
-          volume_mount {
-            name       = "tailscale-state"
-            mount_path = "/var/lib/tailscale"
-          }
-        }
-
         volume {
           name = "secrets-store"
           csi {
@@ -285,17 +226,6 @@ resource "kubernetes_deployment" "mcp_litellm" {
           }
         }
         volume {
-          name = "dev-net-tun"
-          host_path {
-            path = "/dev/net/tun"
-            type = "CharDevice"
-          }
-        }
-        volume {
-          name = "tailscale-state"
-          empty_dir {}
-        }
-        volume {
           name = "tmp"
           empty_dir {}
         }
@@ -306,7 +236,7 @@ resource "kubernetes_deployment" "mcp_litellm" {
   depends_on = [
     kubernetes_manifest.mcp_shared_secret_provider,
     kubernetes_manifest.mcp_litellm_secret_provider,
-    kubernetes_manifest.mcp_litellm_build,
+    module.mcp_litellm_build,
   ]
 
   lifecycle {

@@ -22,13 +22,26 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
         }
         annotations = {
           # Rolls the pod whenever the backend build Job's name changes.
-          "build-job"                           = local.thunderbolt_backend_build_job_name
+          "build-job"                           = module.thunderbolt_backend_build.job_name
           "secret.reloader.stakater.com/reload" = "thunderbolt-secrets"
         }
       }
 
       spec {
         service_account_name = kubernetes_service_account.thunderbolt.metadata[0].name
+
+        # Pin searxng + litellm tailnet FQDNs to their Service ClusterIPs
+        # so SEARXNG_URL and THUNDERBOLT_INFERENCE_URL keep their
+        # FQDN-valid TLS certs (nginx :443 in each target pod) without
+        # going through a Tailscale sidecar.
+        host_aliases {
+          ip        = kubernetes_service.searxng.spec[0].cluster_ip
+          hostnames = ["${var.searxng_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
+        }
+        host_aliases {
+          ip        = kubernetes_service.litellm.spec[0].cluster_ip
+          hostnames = ["${var.litellm_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
+        }
 
         image_pull_secrets {
           name = kubernetes_secret.thunderbolt_registry_pull_secret.metadata[0].name
@@ -226,70 +239,6 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
           }
         }
 
-        # Tailscale sidecar — registers as `thunderbolt-backend` under
-        # thunderbolt_server_user so the backend can reach `searxng.hs.<magic>`
-        # (and any other tailnet service) over the tailnet for Pro-mode search.
-        container {
-          name  = "tailscale"
-          image = var.image_tailscale
-
-          env {
-            name  = "TS_STATE_DIR"
-            value = "/var/lib/tailscale"
-          }
-          env {
-            name  = "TS_KUBE_SECRET"
-            value = "thunderbolt-backend-tailscale-state"
-          }
-          env {
-            name  = "TS_USERSPACE"
-            value = "false"
-          }
-          env {
-            name = "TS_AUTHKEY"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.thunderbolt_tailscale_auth.metadata[0].name
-                key  = "TS_AUTHKEY"
-              }
-            }
-          }
-          env {
-            name  = "TS_HOSTNAME"
-            value = "thunderbolt-backend"
-          }
-          env {
-            name  = "TS_EXTRA_ARGS"
-            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
-          }
-
-          security_context {
-            capabilities {
-              add = ["NET_ADMIN"]
-            }
-          }
-
-          resources {
-            requests = {
-              cpu    = "20m"
-              memory = "64Mi"
-            }
-            limits = {
-              cpu    = "200m"
-              memory = "256Mi"
-            }
-          }
-
-          volume_mount {
-            name       = "dev-net-tun"
-            mount_path = "/dev/net/tun"
-          }
-          volume_mount {
-            name       = "tailscale-state"
-            mount_path = "/var/lib/tailscale"
-          }
-        }
-
         volume {
           name = "secrets-store"
           csi {
@@ -300,17 +249,6 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
             }
           }
         }
-        volume {
-          name = "dev-net-tun"
-          host_path {
-            path = "/dev/net/tun"
-            type = "CharDevice"
-          }
-        }
-        volume {
-          name = "tailscale-state"
-          empty_dir {}
-        }
       }
     }
   }
@@ -320,7 +258,7 @@ resource "kubernetes_deployment" "thunderbolt_backend" {
     kubernetes_deployment.thunderbolt_postgres,
     kubernetes_deployment.thunderbolt_powersync,
     kubernetes_deployment.thunderbolt_keycloak,
-    kubernetes_manifest.thunderbolt_backend_build,
+    module.thunderbolt_backend_build,
   ]
 
   lifecycle {

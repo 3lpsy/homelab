@@ -90,6 +90,39 @@ resource "null_resource" "firewall_exclude" {
   depends_on = [null_resource.upload_auth_key]
 }
 
+# Apply subnet-route advertisements via `tailscale set` (non-disruptive, no
+# re-auth) so we can change advertise_routes without tearing down the
+# tailnet_auth resource. Re-runs whenever advertise_routes changes.
+#
+# Note: route delivery to specific pods *also* requires NetworkPolicy
+# permitting tailnet ingress to the destination namespace. kube-router
+# enforces netpols on delphi's FORWARD chain and drops tailnet-sourced
+# packets that don't match an explicit allow, so by default this route
+# only gets traffic to delphi — not all the way to the pod.
+resource "null_resource" "tailnet_advertise_routes" {
+  count = var.advertise_routes == "" ? 0 : 1
+
+  triggers = {
+    advertise_routes = var.advertise_routes
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo tailscale set --advertise-routes=${var.advertise_routes}"
+    ]
+  }
+
+  depends_on = [null_resource.tailnet_auth]
+}
+
 # After the device is registered via tailscale up
 data "headscale_device" "nomad_server" {
   name       = var.nomad_hostname # The hostname you set with --hostname flag

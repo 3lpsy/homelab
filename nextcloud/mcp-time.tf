@@ -21,7 +21,7 @@ resource "kubernetes_deployment" "mcp_time" {
           app = "mcp-time"
         }
         annotations = {
-          "build-job"                           = local.mcp_time_build_job_name
+          "build-job"                           = module.mcp_time_build.job_name
           "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
@@ -135,7 +135,7 @@ resource "kubernetes_deployment" "mcp_time" {
 
   depends_on = [
     kubernetes_manifest.mcp_shared_secret_provider,
-    kubernetes_manifest.mcp_time_build,
+    module.mcp_time_build,
   ]
 
   lifecycle {

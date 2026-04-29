@@ -388,6 +388,10 @@ resource "kubernetes_deployment" "litellm" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {
@@ -483,8 +487,18 @@ resource "kubernetes_service" "litellm" {
       app = "litellm"
     }
     port {
+      name        = "litellm"
       port        = 4000
       target_port = 4000
+    }
+    # nginx sidecar terminates TLS with the litellm.<hs>.<magic> cert.
+    # In-cluster callers using host_aliases reach :443 here so SNI + cert
+    # validation continue to work after egress-only Tailscale sidecars
+    # (mcp-litellm, thunderbolt-backend) are removed.
+    port {
+      name        = "https"
+      port        = 443
+      target_port = 443
     }
   }
 }

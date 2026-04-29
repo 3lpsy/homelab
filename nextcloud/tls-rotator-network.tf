@@ -1,15 +1,13 @@
 # NetworkPolicies for the `tls-rotator` namespace.
 #
-# CronJob runs daily, renewing certs via lego over Tailscale and writing
-# back to Vault on :8201. Today the Vault write goes via the pod's own
-# Tailscale sidecar (NetPol-invisible). After the deferred CoreDNS
-# rewrite for `vault.MAGIC_DOMAIN` lands, the write traverses the
-# cluster network and the cross-ns egress allow below becomes
-# load-bearing. Adding it now is harmless.
+# CronJob runs daily, renewing certs via lego (DNS-01 against Route53)
+# and writing back to Vault on :8201 via the cluster network — pod uses
+# host_aliases pinning `vault.<hs>.<magic>` to the vault Service
+# ClusterIP. The cross-ns egress allow below is load-bearing.
 #
-# Internet egress is required: lego performs DNS-01 challenges against
-# Route53 (TCP 443 to AWS), and the Tailscale sidecar needs Headscale +
-# DERP. Both covered by the baseline's internet egress.
+# Internet egress is required for DNS-01 (TCP 443 to AWS APIs) and
+# in-cluster ACME validation traffic — covered by the baseline's
+# internet egress.
 
 module "tls_rotator_netpol_baseline" {
   source = "./../templates/netpol-baseline"
@@ -45,3 +43,4 @@ resource "kubernetes_network_policy" "tls_rotator_to_vault" {
     }
   }
 }
+

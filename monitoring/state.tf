@@ -16,3 +16,10 @@ data "terraform_remote_state" "vault_conf" {
     path = "${var.state_dirs}/vault-conf/terraform.tfstate"
   }
 }
+
+data "terraform_remote_state" "vault" {
+  backend = "local"
+  config = {
+    path = "${var.state_dirs}/vault/terraform.tfstate"
+  }
+}

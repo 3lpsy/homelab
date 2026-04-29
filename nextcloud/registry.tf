@@ -152,8 +152,13 @@ resource "kubernetes_deployment" "registry" {
           }
 
           resources {
-            requests = { cpu = "50m", memory = "64Mi" }
-            limits   = { cpu = "200m", memory = "128Mi" }
+            # Bumped from 200m/128Mi: under heavy concurrent BuildKit push
+            # load (cache export from many builds at once), the previous
+            # limit caused `net/http: TLS handshake timeout` errors on
+            # builders. TLS handshakes are CPU-bound; 1 CPU absorbs the
+            # bursts, 256Mi covers parallel connection state.
+            requests = { cpu = "100m", memory = "128Mi" }
+            limits   = { cpu = "1", memory = "256Mi" }
           }
         }
 
@@ -206,6 +211,10 @@ resource "kubernetes_deployment" "registry" {
           env {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
+          }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
           }
 
           security_context {
@@ -260,5 +269,20 @@ resource "kubernetes_deployment" "registry" {
       spec[0].template[0].metadata[0].annotations["kubectl.kubernetes.io/restartedAt"],
       spec[0].template[0].metadata[0].annotations["reloader.stakater.com/last-reloaded-from"],
     ]
+  }
+}
+
+resource "kubernetes_service" "registry" {
+  metadata {
+    name      = "registry"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  spec {
+    selector = { app = "registry" }
+    port {
+      name        = "https"
+      port        = 443
+      target_port = 443
+    }
   }
 }

@@ -14,13 +14,13 @@ resource "kubernetes_service_account" "mcp" {
 }
 
 locals {
-  # mcp-shared is the external fronting pod (TLS + routing).
-  # mcp-searxng and mcp-litellm keep their own tailscale sidecar for egress
-  # to the upstream's tailnet FQDN (in-cluster DNS would TLS-fail).
+  # mcp-shared is the external fronting pod (TLS + routing) and the only
+  # remaining MCP pod with a tailscale sidecar. mcp-litellm + mcp-searxng
+  # used to keep their own sidecars for egress to upstream tailnet FQDNs;
+  # they now rely on host_aliases pinning the FQDNs to in-cluster Service
+  # ClusterIPs (the cert is the same FQDN cert nginx serves), so no
+  # tailnet round-trip is needed.
   mcp_server_names = [
     "mcp-shared",
-    "mcp-searxng",
-    "mcp-prometheus",
-    "mcp-litellm",
   ]
 }

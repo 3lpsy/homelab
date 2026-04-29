@@ -173,7 +173,7 @@ if [[ ! -d "${STATE_DIRS:-}" ]]; then
     exit 1
 fi
 
-DEPLOYMENTS="homelab cluster vault vault-conf nextcloud monitoring monitoring-conf backup"
+DEPLOYMENTS="homelab cluster vault vault-conf nextcloud monitoring monitoring-conf"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <deployment|all|subcommand> [args...]"
@@ -197,8 +197,8 @@ if [[ "$DEPLOYMENT_DIR" != "all" \
 fi
 
 # ---- state-backup / restore functions -------------------------------------
-# `tf_backup` ships encrypted state to S3. Renamed from `backup` to avoid a
-# subcommand collision with the `backup/` deployment directory (Velero).
+# `tf_backup` ships age-encrypted Terraform state to S3. Subcommand name
+# avoids collision with the `backup` namespace concept used elsewhere.
 
 function encrypt() {
     for dep in $DEPLOYMENTS; do

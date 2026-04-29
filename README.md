@@ -126,7 +126,7 @@ MCP servers. All sandboxed per-API-key and exposed through a single
 shared Nginx gateway in the `mcp` namespace:
 
 - `mcp-filesystem`, `mcp-memory`, `mcp-prometheus`, `mcp-k8s`,
-  `mcp-k8s-auth-gate`, `mcp-litellm`, `mcp-searxng`, `mcp-time`
+  `mcp-litellm`, `mcp-searxng`, `mcp-time`
 
 Shared infrastructure in the `nextcloud` deployment:
 

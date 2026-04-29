@@ -57,3 +57,9 @@ variable "acme_server_url" {
   type    = string
   default = "https://acme-v02.api.letsencrypt.org/directory"
 }
+
+variable "k8s_pod_cidr" {
+  description = "K3s pod CIDR. Used by delphi to advertise the pod-network as a Tailscale subnet route, so external tailnet clients can reach pod IPs via flannel. Must match k3s' default `cluster-cidr` (also referenced as nextcloud/variables.tf k8s_pod_cidr). End-to-end pod-IP reachability requires NetworkPolicy permitting tailnet ingress to the destination namespace."
+  type        = string
+  default     = "10.42.0.0/16"
+}

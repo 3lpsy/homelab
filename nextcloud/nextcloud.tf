@@ -23,7 +23,7 @@ resource "kubernetes_deployment" "nextcloud" {
           app = "nextcloud"
         }
         annotations = {
-          "build-job"                           = local.nextcloud_build_job_name
+          "build-job"                           = module.nextcloud_build.job_name
           "nginx-config-hash"                   = sha1(kubernetes_config_map.nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "nextcloud-secrets,nextcloud-tls"
         }
@@ -298,6 +298,10 @@ resource "kubernetes_deployment" "nextcloud" {
             name  = "TS_EXTRA_ARGS"
             value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
           }
+          env {
+            name  = "TS_TAILSCALED_EXTRA_ARGS"
+            value = "--port=41641"
+          }
 
           security_context {
             capabilities {
@@ -347,7 +351,7 @@ resource "kubernetes_deployment" "nextcloud" {
     kubernetes_manifest.nextcloud_secret_provider,
     kubernetes_service.nextcloud_postgres,
     kubernetes_service.nextcloud_redis,
-    kubernetes_manifest.nextcloud_build,
+    module.nextcloud_build,
   ]
 
   lifecycle {

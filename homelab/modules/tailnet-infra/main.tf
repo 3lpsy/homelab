@@ -48,11 +48,23 @@ resource "headscale_pre_auth_key" "headscale_host" {
 
 locals {
   acl_policy = {
-    groups        = local.acl_groups
-    autoApprovers = { exitNode = ["tag:exitnode"] }
-    tagOwners     = { "tag:exitnode" = ["group:exitnodes"] }
-    hosts         = {}
-    acls          = local.acl_acls
+    groups = local.acl_groups
+    autoApprovers = {
+      exitNode = ["tag:exitnode"]
+      # Auto-approve K8s pod-CIDR subnet route advertised by delphi.
+      # Lets laptop / other tailnet clients reach pod IPs (10.42.x.x) via
+      # delphi without kubectl port-forward. Requires NetworkPolicy
+      # permitting tailnet ingress to the destination namespace —
+      # kube-router default-deny will otherwise drop the forwarded
+      # packet at delphi's FORWARD chain, even though this route
+      # advertisement is approved.
+      routes = {
+        (var.k8s_pod_cidr) = ["group:node-server"]
+      }
+    }
+    tagOwners = { "tag:exitnode" = ["group:exitnodes"] }
+    hosts     = {}
+    acls      = local.acl_acls
   }
 }
 

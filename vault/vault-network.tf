@@ -32,12 +32,13 @@ module "vault_netpol_baseline" {
 #
 # 8200 — plaintext, in-cluster Vault API. CSI driver in vault-csi reaches
 #        this for SecretProviderClass mounts.
-# 8201 — TLS, nginx-fronted external listener. Pods that can't reach :8200
-#        because they're outside vault-csi (tls-rotator writes back rotated
-#        certs; openobserve-bootstrap in monitoring writes service-account
-#        creds) hit :8201 instead. Today they go via Tailscale FQDN; once
-#        the deferred CoreDNS rewrite lands, they hit the same Service
-#        ClusterIP directly via this rule.
+# 8201 — TLS, Vault's own listener with the magic-domain cert. Pods that
+#        can't reach :8200 because they're outside vault-csi (tls-rotator
+#        writes back rotated certs; openobserve-bootstrap in monitoring
+#        writes service-account creds) hit :8201 instead. Each consuming
+#        pod uses host_aliases to pin `vault.<hs>.<magic>` to the vault
+#        Service ClusterIP — the same FQDN the cert is issued for, so SNI
+#        + cert validation work without a Tailscale sidecar.
 resource "kubernetes_network_policy" "vault_cross_ns" {
   metadata {
     name      = "vault-cross-ns"
@@ -98,3 +99,4 @@ resource "kubernetes_network_policy" "vault_cross_ns" {
     }
   }
 }
+

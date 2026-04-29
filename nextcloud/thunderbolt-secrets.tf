@@ -17,7 +17,6 @@ resource "kubernetes_service_account" "thunderbolt" {
 resource "kubernetes_secret" "thunderbolt_tailscale_state" {
   for_each = toset([
     "thunderbolt-tailscale-state",
-    "thunderbolt-backend-tailscale-state",
   ])
 
   metadata {
@@ -42,7 +41,6 @@ resource "kubernetes_role" "thunderbolt_tailscale" {
     resources  = ["secrets"]
     resource_names = [
       "thunderbolt-tailscale-state",
-      "thunderbolt-backend-tailscale-state",
     ]
     verbs = ["get", "update", "patch"]
   }

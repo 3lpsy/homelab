@@ -33,10 +33,13 @@ resource "kubernetes_role" "exitnode_tailscale" {
   }
 
   rule {
-    api_groups     = [""]
-    resources      = ["secrets"]
-    resource_names = [for name in keys(local.exitnode_names) : "exitnode-${name}-state"]
-    verbs          = ["get", "update", "patch"]
+    api_groups = [""]
+    resources  = ["secrets"]
+    resource_names = concat(
+      [for name in keys(local.exitnode_names) : "exitnode-${name}-state"],
+      ["exitnode-haproxy-tailscale-state"],
+    )
+    verbs = ["get", "update", "patch"]
   }
 }
 

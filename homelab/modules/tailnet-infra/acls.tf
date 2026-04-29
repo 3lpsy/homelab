@@ -23,8 +23,6 @@ locals {
     "group:headscale-host"  = ["${var.tailnet_users["headscale_host_user"]}@"]
     "group:ollama-server"   = ["${var.tailnet_users["ollama_server_user"]}@"]
     "group:exitnodes"       = ["${var.tailnet_users["exit_node_user"]}@"]
-    "group:pod-provisioner" = ["${var.tailnet_users["pod_provisioner_user"]}@"]
-    "group:builder"         = ["${var.tailnet_users["builder_user"]}@"]
   }
 
   # Cluster service server identities
@@ -34,6 +32,7 @@ locals {
     "group:collabora-server"      = ["${var.tailnet_users["collabora_server_user"]}@"]
     "group:pihole-server"         = ["${var.tailnet_users["pihole_server_user"]}@"]
     "group:calendar-server"       = ["${var.tailnet_users["calendar_server_user"]}@"]
+    "group:music-server"          = ["${var.tailnet_users["music_server_user"]}@"]
     "group:homeassist-server"     = ["${var.tailnet_users["homeassist_server_user"]}@"]
     "group:frigate-server"        = ["${var.tailnet_users["frigate_server_user"]}@"]
     "group:registry-server"       = ["${var.tailnet_users["registry_server_user"]}@"]
@@ -46,6 +45,7 @@ locals {
     "group:thunderbolt-server"    = ["${var.tailnet_users["thunderbolt_server_user"]}@"]
     "group:mcp"                   = ["${var.tailnet_users["mcp_user"]}@"]
     "group:searxng-server"        = ["${var.tailnet_users["searxng_server_user"]}@"]
+    "group:jellyfin-server"       = ["${var.tailnet_users["jellyfin_server_user"]}@"]
   }
 
   acl_groups = merge(local.identity_groups, local.infra_groups, local.service_groups)
@@ -80,11 +80,13 @@ locals {
     },
   ]
 
-  # Vault — personal, k3s, and pod-provisioner reach it.
+  # Vault — personal + k3s reach it. (pod-provisioner removed: workloads
+  # that used to dial Vault over the tailnet now go via cluster routing
+  # with host_aliases pinning the FQDN to the vault Service ClusterIP.)
   acls_vault = [
     {
       action = "accept"
-      src    = ["group:personal", "group:node-server", "group:pod-provisioner"]
+      src    = ["group:personal", "group:node-server"]
       dst    = ["group:vault-server:443,8201"]
     },
   ]
@@ -106,6 +108,21 @@ locals {
     { action = "accept", src = ["group:personal", "group:mobile"], dst = ["group:calendar-server:443"] },
   ]
 
+  # Jellyfin — personal/mobile/tv reach the media server over the tailnet.
+  acls_jellyfin = [
+    { action = "accept", src = ["group:personal", "group:mobile", "group:tv"], dst = ["group:jellyfin-server:443"] },
+  ]
+
+  # Navidrome (music). Same device set as Syncthing peers — anything that has
+  # a copy of the music library locally should be able to stream from the server.
+  acls_music = [
+    {
+      action = "accept"
+      src    = ["group:personal", "group:personal-laptop", "group:mobile", "group:tablet", "group:deck"]
+      dst    = ["group:music-server:443"]
+    },
+  ]
+
   # Home Assistant.
   acls_homeassist = [
     { action = "accept", src = ["group:personal", "group:mobile"], dst = ["group:homeassist-server:443"] },
@@ -119,15 +136,18 @@ locals {
   # Container registry + the docker.io / future sibling-mirror cache pods,
   # all of which run as the shared `registry_proxy_server_user` headscale
   # identity (one ACL group, many distinct TS_HOSTNAMEs).
+  # Registry pulls from the tailnet (kubelet on the K3s host + personal
+  # devices). BuildKit jobs no longer need a tailnet-side ACL allow —
+  # they reach registries via cluster routing with host_aliases.
   acls_registry = [
     {
       action = "accept"
-      src    = ["group:node-server", "group:personal", "group:builder"]
+      src    = ["group:node-server", "group:personal"]
       dst    = ["group:registry-server:443"]
     },
     {
       action = "accept"
-      src    = ["group:node-server", "group:personal", "group:builder"]
+      src    = ["group:node-server", "group:personal"]
       dst    = ["group:registry-proxy-server:443"]
     },
   ]
@@ -211,6 +231,25 @@ locals {
     },
   ]
 
+  # K8s pod-network subnet route — delphi advertises the cluster pod CIDR
+  # via Tailscale (cluster/cluster.tf advertise_routes). For Headscale to
+  # actually include the route in a peer's netmap, that peer's ACL must
+  # also grant access to the IP range; otherwise Headscale strips the
+  # route.
+  #
+  # NOTE: this ACL grant is only the tailnet-layer permission. End-to-end
+  # pod-IP reachability also requires NetworkPolicy permitting tailnet
+  # (100.64.0.0/10) ingress to the destination namespace — kube-router on
+  # delphi default-denies forwarded packets that don't match a netpol,
+  # even though Headscale ACL allows the connection.
+  acls_pod_network = [
+    {
+      action = "accept"
+      src    = ["group:personal", "group:mobile", "group:tv"]
+      dst    = ["${var.k8s_pod_cidr}:*"]
+    },
+  ]
+
   # SSH — every port-22 grant in one place.
   acls_ssh = [
     { action = "accept", src = ["group:personal-laptop"], dst = ["group:personal:22"] },
@@ -235,6 +274,8 @@ locals {
     local.acls_nextcloud,
     local.acls_pihole,
     local.acls_calendar,
+    local.acls_music,
+    local.acls_jellyfin,
     local.acls_homeassist,
     local.acls_frigate,
     local.acls_registry,
@@ -247,6 +288,7 @@ locals {
     local.acls_mcp,
     local.acls_searxng,
     local.acls_exitnodes,
+    local.acls_pod_network,
     local.acls_ssh,
     local.acls_self,
   )

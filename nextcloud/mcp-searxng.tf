@@ -21,7 +21,7 @@ resource "kubernetes_deployment" "mcp_searxng" {
           app = "mcp-searxng"
         }
         annotations = {
-          "build-job"                           = local.mcp_searxng_build_job_name
+          "build-job"                           = module.mcp_searxng_build.job_name
           "secret.reloader.stakater.com/reload" = "mcp-auth,mcp-shared-tls"
         }
       }
@@ -31,6 +31,15 @@ resource "kubernetes_deployment" "mcp_searxng" {
 
         image_pull_secrets {
           name = kubernetes_secret.mcp_registry_pull_secret.metadata[0].name
+        }
+
+        # Pin searxng.<hs>.<magic> to the searxng Service ClusterIP so the
+        # backend can dial the FQDN (MCP_SEARXNG_URL) and keep using the
+        # same FQDN-valid TLS cert nginx serves at :443 — no tailnet
+        # round-trip needed.
+        host_aliases {
+          ip        = kubernetes_service.searxng.spec[0].cluster_ip
+          hostnames = ["${var.searxng_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
         }
 
         init_container {
@@ -49,10 +58,8 @@ resource "kubernetes_deployment" "mcp_searxng" {
           }
         }
 
-        # SearXNG MCP server — TLS + external routing live in mcp-shared.
-        # Tailscale sidecar is retained because this pod needs outbound
-        # tailnet access to reach searxng.<hs>.<magic> for upstream calls
-        # (the cert would TLS-fail on an in-cluster DNS hop).
+        # SearXNG MCP server. TLS + external routing live in mcp-shared;
+        # this pod talks to SearXNG directly via cluster routing.
         container {
           name              = "mcp-searxng"
           image             = local.mcp_searxng_image
@@ -121,8 +128,6 @@ resource "kubernetes_deployment" "mcp_searxng" {
             timeout_seconds       = 5
           }
 
-          # Container-level only: pod-level run_as_non_root would break the
-          # tailscale sidecar (needs root + NET_ADMIN).
           security_context {
             run_as_non_root            = true
             run_as_user                = 1000
@@ -150,69 +155,6 @@ resource "kubernetes_deployment" "mcp_searxng" {
           }
         }
 
-        # Tailscale sidecar — egress-only (no TS_HOSTNAME is still advertised
-        # to Headscale, but no traffic is destined to this node).
-        container {
-          name  = "tailscale"
-          image = var.image_tailscale
-
-          env {
-            name  = "TS_STATE_DIR"
-            value = "/var/lib/tailscale"
-          }
-          env {
-            name  = "TS_KUBE_SECRET"
-            value = "mcp-searxng-tailscale-state"
-          }
-          env {
-            name  = "TS_USERSPACE"
-            value = "false"
-          }
-          env {
-            name = "TS_AUTHKEY"
-            value_from {
-              secret_key_ref {
-                name = kubernetes_secret.mcp_tailscale_auth.metadata[0].name
-                key  = "TS_AUTHKEY"
-              }
-            }
-          }
-          env {
-            name  = "TS_HOSTNAME"
-            value = var.mcp_searxng_domain
-          }
-          env {
-            name  = "TS_EXTRA_ARGS"
-            value = "--login-server=https://${data.terraform_remote_state.homelab.outputs.headscale_server_fqdn}"
-          }
-
-          security_context {
-            capabilities {
-              add = ["NET_ADMIN"]
-            }
-          }
-
-          resources {
-            requests = {
-              cpu    = "20m"
-              memory = "64Mi"
-            }
-            limits = {
-              cpu    = "200m"
-              memory = "256Mi"
-            }
-          }
-
-          volume_mount {
-            name       = "dev-net-tun"
-            mount_path = "/dev/net/tun"
-          }
-          volume_mount {
-            name       = "tailscale-state"
-            mount_path = "/var/lib/tailscale"
-          }
-        }
-
         volume {
           name = "secrets-store"
           csi {
@@ -224,17 +166,6 @@ resource "kubernetes_deployment" "mcp_searxng" {
           }
         }
         volume {
-          name = "dev-net-tun"
-          host_path {
-            path = "/dev/net/tun"
-            type = "CharDevice"
-          }
-        }
-        volume {
-          name = "tailscale-state"
-          empty_dir {}
-        }
-        volume {
           name = "tmp"
           empty_dir {}
         }
@@ -244,7 +175,7 @@ resource "kubernetes_deployment" "mcp_searxng" {
 
   depends_on = [
     kubernetes_manifest.mcp_shared_secret_provider,
-    kubernetes_manifest.mcp_searxng_build,
+    module.mcp_searxng_build,
   ]
 
   lifecycle {

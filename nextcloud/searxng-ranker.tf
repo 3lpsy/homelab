@@ -161,7 +161,7 @@ resource "kubernetes_deployment" "searxng_ranker" {
   }
 
   depends_on = [
-    kubernetes_manifest.searxng_ranker_build,
+    module.searxng_ranker_build,
     kubernetes_role_binding.searxng_ranker,
     kubernetes_deployment.searxng,
   ]
