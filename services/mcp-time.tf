@@ -8,6 +8,7 @@ module "mcp_time_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-time/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-time/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

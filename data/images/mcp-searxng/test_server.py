@@ -7,6 +7,13 @@ fake httpx.AsyncClient. Run with:
   uv run --with pytest --with fastmcp --with pydantic --with httpx \
          --with uvicorn --with starlette pytest test_server.py
 """
+# Make the sibling `data/images/mcp-common/` package importable for tests
+# without polluting `data/images/` with a top-level pyproject.toml + conftest.
+import pathlib as _pathlib
+import sys as _sys
+
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent / "mcp-common"))
+
 import asyncio
 import os
 import socket
@@ -17,6 +24,8 @@ os.environ.setdefault("LOG_LEVEL", "error")
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
+
+from mcp_common.testing import make_http_scope, run_auth  # noqa: E402
 
 import server  # noqa: E402
 
@@ -691,77 +700,28 @@ def test_parse_cidrs_accepts_mixed_families_and_host_bits():
 
 
 def test_auth_rejects_missing_bearer():
-    sent: list[dict] = []
-
-    async def _send(msg):
-        sent.append(msg)
-
-    async def _recv():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    mw = server.AuthMiddleware(lambda *a, **kw: None)
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp/",
-        "query_string": b"",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    }
-    asyncio.run(mw(scope, _recv, _send))
+    sent = run_auth(make_http_scope(method="POST", path="/mcp/"), api_keys=server.API_KEYS)
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 401
 
 
 def test_auth_accepts_valid_bearer():
-    seen: list[int] = []
-
-    async def inner(scope, receive, send):
-        seen.append(scope["method"] == "POST")
-        await send({"type": "http.response.start", "status": 200, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    async def _send(msg):
-        pass
-
-    async def _recv():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    mw = server.AuthMiddleware(inner)
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp/",
-        "query_string": b"",
-        "headers": [(b"authorization", b"Bearer key-a")],
-        "client": ("1.2.3.4", 1234),
-    }
-    asyncio.run(mw(scope, _recv, _send))
-    assert seen == [True]
+    sent = run_auth(
+        make_http_scope(
+            method="POST",
+            path="/mcp/",
+            headers=[(b"authorization", b"Bearer key-a")],
+        ),
+        api_keys=server.API_KEYS,
+    )
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 200
 
 
 def test_auth_accepts_query_param_key():
-    seen: list[int] = []
-
-    async def inner(scope, receive, send):
-        seen.append(1)
-        await send({"type": "http.response.start", "status": 200, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    async def _send(msg):
-        pass
-
-    async def _recv():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    mw = server.AuthMiddleware(inner)
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/mcp/",
-        "query_string": b"api_key=key-b",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    }
-    asyncio.run(mw(scope, _recv, _send))
-    assert seen == [1]
+    sent = run_auth(
+        make_http_scope(method="POST", path="/mcp/", query=b"api_key=key-b"),
+        api_keys=server.API_KEYS,
+    )
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 200

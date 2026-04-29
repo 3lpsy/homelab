@@ -7,6 +7,12 @@ RUN pip install --no-cache-dir \
       "httpx>=0.27"
 
 WORKDIR /app
+
+# Shared bootstrap package. The build context lands `mcp_common/` as a real
+# directory thanks to the buildkit-job module's `context_dirs` input
+# (ConfigMap items[].path remap). COPY before server.py so a tools-only
+# server.py change does not bust this layer's cache.
+COPY mcp_common ./mcp_common
 COPY server.py /app/server.py
 
 ENV MCP_HOST=0.0.0.0 \

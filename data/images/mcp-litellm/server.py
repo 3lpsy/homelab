@@ -35,7 +35,6 @@ Environment:
 import asyncio
 import calendar
 import json
-import logging
 import os
 import re
 import secrets
@@ -44,30 +43,18 @@ from datetime import date, datetime
 from typing import Annotated, Any
 
 import httpx
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
-
-def _env_float(name: str, default: str) -> float:
-    raw = os.environ.get(name, default)
-    try:
-        return float(raw)
-    except ValueError as e:
-        raise SystemExit(f"{name} must be a float, got {raw!r}") from e
-
-
-def _env_int(name: str, default: str) -> int:
-    raw = os.environ.get(name, default)
-    try:
-        return int(raw)
-    except ValueError as e:
-        raise SystemExit(f"{name} must be an int, got {raw!r}") from e
+from mcp_common import (
+    bootstrap,
+    env_bool,
+    env_csv_set,
+    env_float,
+    env_int,
+    setup_logging,
+)
 
 
 def _parse_hash_map(raw: str) -> dict[str, frozenset[str]]:
@@ -102,26 +89,19 @@ def _parse_hash_map(raw: str) -> dict[str, frozenset[str]]:
     return out
 
 
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
+API_KEYS = env_csv_set("MCP_API_KEYS")
 KEY_HASH_MAP = _parse_hash_map(os.environ.get("MCP_KEY_HASH_MAP", ""))
 LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
-LITELLM_TLS_SKIP_VERIFY = os.environ.get("LITELLM_TLS_SKIP_VERIFY", "").lower() in ("1", "true", "yes")
-MCP_UPSTREAM_TIMEOUT = _env_float("MCP_UPSTREAM_TIMEOUT", "60")
-MCP_MAX_LOGS = _env_int("MCP_MAX_LOGS", "2000")
+LITELLM_TLS_SKIP_VERIFY = env_bool("LITELLM_TLS_SKIP_VERIFY")
+MCP_UPSTREAM_TIMEOUT = env_float("MCP_UPSTREAM_TIMEOUT", "60")
+MCP_MAX_LOGS = env_int("MCP_MAX_LOGS", "2000")
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = _env_int("MCP_PORT", "8000")
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_PORT = env_int("MCP_PORT", "8000")
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-# httpx logs full request URLs (including query strings) at INFO. URLs may
-# carry per-tenant identifiers or future query-string credentials; mute to
-# WARNING so only failures surface.
-logging.getLogger("httpx").setLevel(logging.WARNING)
-log = logging.getLogger("mcp-litellm")
+# httpx logs full request URLs at INFO; per-tenant identifiers and future
+# query-string credentials end up there. Mute so only failures surface.
+log = setup_logging("mcp-litellm", mute=["httpx"])
 
 if not LITELLM_BASE_URL:
     raise SystemExit("LITELLM_BASE_URL must be set")
@@ -129,7 +109,7 @@ if not LITELLM_MASTER_KEY:
     raise SystemExit("LITELLM_MASTER_KEY must be set")
 
 log.info(
-    "startup: litellm=%s api_keys=%d hash_map_tenants=%d hash_map_hashes=%d tls_skip_verify=%s timeout=%.1fs max_logs=%d log_level=%s",
+    "startup: litellm=%s api_keys=%d hash_map_tenants=%d hash_map_hashes=%d tls_skip_verify=%s timeout=%.1fs max_logs=%d",
     LITELLM_BASE_URL,
     len(API_KEYS),
     len(KEY_HASH_MAP),
@@ -137,14 +117,22 @@ log.info(
     LITELLM_TLS_SKIP_VERIFY,
     MCP_UPSTREAM_TIMEOUT,
     MCP_MAX_LOGS,
-    LOG_LEVEL,
 )
 
 
-# Per-request allowed-hash set, bound by AuthMiddleware.
+# Per-request allowed-hash set, bound by the shared AuthMiddleware via
+# `_bind_allowed_hashes` (passed as the `on_auth` hook from bootstrap.run).
 current_allowed_hashes: ContextVar[frozenset[str]] = ContextVar(
     "current_allowed_hashes", default=frozenset()
 )
+
+
+def _bind_allowed_hashes(matched: str) -> None:
+    """on_auth hook called by mcp_common.AuthMiddleware once the bearer has
+    been validated. Maps the matched bearer to its frozenset of LiteLLM key
+    hashes; tools read it via `_allowlist()`. No reset — Starlette wraps
+    each request in a fresh ContextVars copy so the binding is request-local."""
+    current_allowed_hashes.set(KEY_HASH_MAP.get(matched, frozenset()))
 
 
 def _allowlist() -> frozenset[str]:
@@ -553,13 +541,6 @@ def _aggregate_daily(rows: list[dict[str, Any]]) -> tuple[list[DailyRow], int]:
 # --- Tools -----------------------------------------------------------------
 
 
-async def _healthz(_request: Any) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no upstream calls — just
-    proves the ASGI app is alive. Separate from tool dispatch so a wedged
-    upstream LiteLLM doesn't flap the pod."""
-    return JSONResponse({"ok": True})
-
-
 mcp = FastMCP(
     "litellm-spend",
     instructions=(
@@ -579,9 +560,6 @@ mcp = FastMCP(
         "interpreted in UTC."
     ),
 )
-
-
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 async def _fetch_key_info(h: str) -> MyKey:
@@ -786,78 +764,12 @@ async def get_monthly_summary(
     )
 
 
-# --- Auth middleware -------------------------------------------------------
-
-
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            if scope["type"] == "websocket":
-                log.warning("auth: rejecting websocket (unsupported)")
-                try:
-                    await asyncio.wait_for(receive(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    log.warning("auth: websocket receive timed out before close")
-                await send({"type": "websocket.close", "code": 1008})
-            else:
-                log.warning("auth: unknown scope type %r, dropping", scope["type"])
-            return
-
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        # Health probe target — kubelet won't send a bearer. No upstream
-        # calls, no tenant context, safe to expose unauthenticated.
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = Headers(scope=scope)
-        qs = QueryParams(scope["query_string"])
-
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = qs.get("api_key", "").strip()
-
-        matched: str | None = None
-        if token:
-            for k in API_KEYS:
-                if secrets.compare_digest(token, k):
-                    matched = k
-                    break
-
-        client = scope.get("client")
-        if matched is None:
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        allowed = KEY_HASH_MAP.get(matched, frozenset())
-        token_ctx = current_allowed_hashes.set(allowed)
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            current_allowed_hashes.reset(token_ctx)
-
-
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run(
+        mcp,
+        host=MCP_HOST,
+        port=MCP_PORT,
+        api_keys=API_KEYS,
+        on_auth=_bind_allowed_hashes,
+        logger=log,
+    )

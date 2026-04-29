@@ -77,6 +77,7 @@ module "mcp_litellm_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-litellm/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-litellm/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

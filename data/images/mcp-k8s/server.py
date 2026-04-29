@@ -36,67 +36,39 @@ Environment:
   LOG_LEVEL                  debug / info / warning / error (default info).
 """
 
-import asyncio
 import json
-import logging
 import os
 import re
-import secrets
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
+from mcp_common import bootstrap, env_bool, env_csv_set, env_int, setup_logging
 
-def _env_int(name: str, default: str) -> int:
-    raw = os.environ.get(name, default)
-    try:
-        return int(raw)
-    except ValueError as e:
-        raise SystemExit(f"{name} must be an int, got {raw!r}") from e
+API_KEYS = env_csv_set("MCP_API_KEYS")
+ALLOWED_NAMESPACES = frozenset(env_csv_set("MCP_K8S_ALLOWED_NAMESPACES"))
+ALLOW_REVEAL_ENV = env_bool("MCP_K8S_REVEAL_ENV")
+LOCAL_KUBECONFIG = env_bool("MCP_K8S_LOCAL")
 
-
-def _env_bool(name: str) -> bool:
-    return os.environ.get(name, "").lower() in ("1", "true", "yes")
-
-
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
-ALLOWED_NAMESPACES = frozenset(
-    n.strip() for n in os.environ.get("MCP_K8S_ALLOWED_NAMESPACES", "").split(",") if n.strip()
-)
-ALLOW_REVEAL_ENV = _env_bool("MCP_K8S_REVEAL_ENV")
-LOCAL_KUBECONFIG = _env_bool("MCP_K8S_LOCAL")
-
-MCP_MAX_PODS = _env_int("MCP_MAX_PODS", "100")
-MCP_MAX_EVENTS = _env_int("MCP_MAX_EVENTS", "200")
+MCP_MAX_PODS = env_int("MCP_MAX_PODS", "100")
+MCP_MAX_EVENTS = env_int("MCP_MAX_EVENTS", "200")
 # 64 KiB / 2000 lines: tuned to fit comfortably inside an OSS 7B/8B model's
 # tool-result window. Bigger tails round-trip but get truncated to fit. Bump
 # both env vars per-deployment if you have a longer-context client.
-MCP_MAX_LOG_BYTES = _env_int("MCP_MAX_LOG_BYTES", "65536")
-MCP_MAX_LOG_TAIL_LINES = _env_int("MCP_MAX_LOG_TAIL_LINES", "2000")
+MCP_MAX_LOG_BYTES = env_int("MCP_MAX_LOG_BYTES", "65536")
+MCP_MAX_LOG_TAIL_LINES = env_int("MCP_MAX_LOG_TAIL_LINES", "2000")
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = _env_int("MCP_PORT", "8000")
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_PORT = env_int("MCP_PORT", "8000")
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-# Mute the urllib3 connection chatter the kubernetes client triggers — at
-# INFO it logs every API call URL, which is noise for a tool that hits the
-# API on every request.
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-log = logging.getLogger("mcp-k8s")
+# urllib3 chatter at INFO level logs every kubernetes API call URL — noise
+# for a server that hits the API on every tool call.
+log = setup_logging("mcp-k8s", mute=["urllib3"])
 
 
 # --- K8s clients -----------------------------------------------------------
@@ -129,9 +101,9 @@ def _ensure_clients() -> None:
 
 log.info(
     "startup: api_keys=%d allowed_namespaces=%d reveal_env=%s local=%s "
-    "max_pods=%d max_events=%d max_log_bytes=%d max_log_tail_lines=%d log_level=%s",
+    "max_pods=%d max_events=%d max_log_bytes=%d max_log_tail_lines=%d",
     len(API_KEYS), len(ALLOWED_NAMESPACES), ALLOW_REVEAL_ENV, LOCAL_KUBECONFIG,
-    MCP_MAX_PODS, MCP_MAX_EVENTS, MCP_MAX_LOG_BYTES, MCP_MAX_LOG_TAIL_LINES, LOG_LEVEL,
+    MCP_MAX_PODS, MCP_MAX_EVENTS, MCP_MAX_LOG_BYTES, MCP_MAX_LOG_TAIL_LINES,
 )
 
 
@@ -568,14 +540,6 @@ with no API call. Write verbs are not exposed."""
 mcp = FastMCP("k8s", instructions=_INSTRUCTIONS)
 
 
-async def _healthz(_request: Any) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no API calls."""
-    return JSONResponse({"ok": True})
-
-
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
-
-
 # --- Tools -----------------------------------------------------------------
 
 
@@ -917,64 +881,11 @@ async def events_list(
     )
 
 
-# --- Auth middleware (verbatim from mcp-prometheus) ------------------------
-
-
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            if scope["type"] == "websocket":
-                log.warning("auth: rejecting websocket (unsupported)")
-                try:
-                    await asyncio.wait_for(receive(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    log.warning("auth: websocket receive timed out before close")
-                await send({"type": "websocket.close", "code": 1008})
-            else:
-                log.warning("auth: unknown scope type %r, dropping", scope["type"])
-            return
-
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = Headers(scope=scope)
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = QueryParams(scope["query_string"]).get("api_key", "").strip()
-
-        ok = bool(token) and any(secrets.compare_digest(token, k) for k in API_KEYS)
-        if not ok:
-            client = scope.get("client")
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        log.debug("auth: ok %s %r", method, scope["path"])
-        await self.app(scope, receive, send)
-
-
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run(
+        mcp,
+        host=MCP_HOST,
+        port=MCP_PORT,
+        api_keys=API_KEYS,
+        logger=log,
+    )

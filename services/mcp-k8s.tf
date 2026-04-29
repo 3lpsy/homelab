@@ -168,6 +168,7 @@ module "mcp_k8s_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-k8s/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-k8s/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

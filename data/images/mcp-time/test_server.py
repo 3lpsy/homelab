@@ -5,7 +5,15 @@ Runs tool functions directly (bypassing FastMCP dispatch). Run with:
   uv run --with pytest --with fastmcp --with pydantic --with tzdata \
          --with uvicorn --with starlette pytest test_server.py
 """
+# Make the sibling `data/images/mcp-common/` package importable for tests
+# without polluting `data/images/` with a top-level pyproject.toml + conftest.
+import pathlib as _pathlib
+import sys as _sys
+
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent / "mcp-common"))
+
 import asyncio
+import logging
 import os
 
 os.environ["MCP_API_KEYS"] = "key-a,key-b"
@@ -17,6 +25,9 @@ from zoneinfo import ZoneInfo  # noqa: E402
 
 import pytest  # noqa: E402
 from fastmcp.exceptions import ToolError  # noqa: E402
+
+from mcp_common.auth import AuthMiddleware  # noqa: E402
+from mcp_common.testing import make_http_scope, run_asgi, run_auth  # noqa: E402
 
 import server  # noqa: E402
 
@@ -293,116 +304,75 @@ def test_zone_bad_name_raises_toolerror():
 # --- auth middleware ------------------------------------------------------
 
 
-def _run_auth(scope, inner=None):
-    """Drive AuthMiddleware once and return the list of sent ASGI messages
-    plus whatever the inner app produces. Inner defaults to a 200 stub."""
-    sent: list[dict] = []
-
-    async def _send(msg):
-        sent.append(msg)
-
-    async def _recv():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    if inner is None:
-        async def inner(scope, receive, send):
-            await send({"type": "http.response.start", "status": 200, "headers": []})
-            await send({"type": "http.response.body", "body": b"ok"})
-
-    mw = server.AuthMiddleware(inner)
-    asyncio.run(mw(scope, _recv, _send))
-    return sent
-
-
 def test_auth_rejects_missing_bearer():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/",
-        "query_string": b"",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="POST", path="/"),
+        api_keys=server.API_KEYS,
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 401
 
 
 def test_auth_rejects_wrong_bearer():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/",
-        "query_string": b"",
-        "headers": [(b"authorization", b"Bearer not-a-real-key")],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(
+            method="POST",
+            path="/",
+            headers=[(b"authorization", b"Bearer not-a-real-key")],
+        ),
+        api_keys=server.API_KEYS,
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 401
 
 
 def test_auth_accepts_valid_bearer():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/",
-        "query_string": b"",
-        "headers": [(b"authorization", b"Bearer key-a")],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(
+            method="POST",
+            path="/",
+            headers=[(b"authorization", b"Bearer key-a")],
+        ),
+        api_keys=server.API_KEYS,
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
 
 def test_auth_accepts_query_param_key():
-    sent = _run_auth({
-        "type": "http",
-        "method": "POST",
-        "path": "/",
-        "query_string": b"api_key=key-b",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="POST", path="/", query=b"api_key=key-b"),
+        api_keys=server.API_KEYS,
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
 
 def test_auth_allows_options_unauthenticated():
     # CORS preflights must bypass auth or browsers can't even probe the server.
-    sent = _run_auth({
-        "type": "http",
-        "method": "OPTIONS",
-        "path": "/",
-        "query_string": b"",
-        "headers": [],
-        "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="OPTIONS", path="/"),
+        api_keys=server.API_KEYS,
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
 
 def test_auth_allows_healthz_unauthenticated():
     # Kubelet probe — no bearer, must bypass auth.
-    sent = _run_auth({
-        "type": "http",
-        "method": "GET",
-        "path": "/healthz",
-        "query_string": b"",
-        "headers": [],
-        "client": ("10.0.0.1", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="GET", path="/healthz", client=("10.0.0.1", 1234)),
+        api_keys=server.API_KEYS,
+    )
     start = next(m for m in sent if m["type"] == "http.response.start")
     assert start["status"] == 200
 
 
 def test_auth_closes_websocket():
-    sent: list[dict] = []
-
-    async def _send(msg):
-        sent.append(msg)
-
-    async def _recv():
-        return {"type": "websocket.connect"}
-
-    mw = server.AuthMiddleware(lambda *a, **kw: None)
-    asyncio.run(mw({"type": "websocket"}, _recv, _send))
+    mw = AuthMiddleware(
+        lambda *a, **kw: None,
+        api_keys=server.API_KEYS,
+        logger=logging.getLogger("test-auth-ws"),
+    )
+    sent = run_asgi(mw, {"type": "websocket"})
     assert sent == [{"type": "websocket.close", "code": 1008}]

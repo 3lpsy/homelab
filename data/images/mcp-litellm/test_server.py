@@ -7,6 +7,13 @@ Run with:
   uv run --with pytest --with fastmcp --with pydantic --with httpx \
          --with uvicorn --with starlette pytest test_server.py
 """
+# Make the sibling `data/images/mcp-common/` package importable for tests
+# without polluting `data/images/` with a top-level pyproject.toml + conftest.
+import pathlib as _pathlib
+import sys as _sys
+
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent / "mcp-common"))
+
 import asyncio
 import json
 import os

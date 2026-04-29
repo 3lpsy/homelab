@@ -8,6 +8,7 @@ module "mcp_memory_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-memory/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-memory/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

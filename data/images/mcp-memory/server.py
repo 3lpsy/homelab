@@ -33,40 +33,40 @@ Environment:
 """
 
 import asyncio
-import contextvars
-import hashlib
 import json
-import logging
 import os
 import pathlib
 import secrets
 from typing import Annotated
 
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
-PATH_SALT = os.environ.get("MCP_PATH_SALT", "").encode()
-DATA_ROOT = pathlib.Path(os.environ.get("MCP_DATA_ROOT", "/data")).resolve()
+from mcp_common import (
+    bootstrap,
+    current_api_key,
+    env_csv_set,
+    env_int,
+    hash_tenant,
+    init_tenant_root,
+    setup_logging,
+)
+
+API_KEYS = env_csv_set("MCP_API_KEYS")
+PATH_SALT, DATA_ROOT = init_tenant_root()
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
-MCP_MAX_GRAPH_BYTES = int(os.environ.get("MCP_MAX_GRAPH_BYTES", str(32 * 1024 * 1024)))
+MCP_PORT = env_int("MCP_PORT", "8000")
+MCP_MAX_GRAPH_BYTES = env_int("MCP_MAX_GRAPH_BYTES", str(32 * 1024 * 1024))
 # Per-call cardinality + per-string caps. These bound peak RSS / request body
 # size BEFORE the graph-wide MCP_MAX_GRAPH_BYTES rear-guard fires at save
 # time. Overridable via env so the admin can raise them without a rebuild.
-MCP_MAX_ENTITIES_PER_CALL = int(os.environ.get("MCP_MAX_ENTITIES_PER_CALL", "256"))
-MCP_MAX_RELATIONS_PER_CALL = int(os.environ.get("MCP_MAX_RELATIONS_PER_CALL", "256"))
-MCP_MAX_OBSERVATIONS_PER_CALL = int(os.environ.get("MCP_MAX_OBSERVATIONS_PER_CALL", "256"))
-MCP_MAX_NAMES_PER_CALL = int(os.environ.get("MCP_MAX_NAMES_PER_CALL", "256"))
-MCP_MAX_STRING_CHARS = int(os.environ.get("MCP_MAX_STRING_CHARS", "4096"))
-MCP_MAX_QUERY_CHARS = int(os.environ.get("MCP_MAX_QUERY_CHARS", "512"))
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_MAX_ENTITIES_PER_CALL = env_int("MCP_MAX_ENTITIES_PER_CALL", "256")
+MCP_MAX_RELATIONS_PER_CALL = env_int("MCP_MAX_RELATIONS_PER_CALL", "256")
+MCP_MAX_OBSERVATIONS_PER_CALL = env_int("MCP_MAX_OBSERVATIONS_PER_CALL", "256")
+MCP_MAX_NAMES_PER_CALL = env_int("MCP_MAX_NAMES_PER_CALL", "256")
+MCP_MAX_STRING_CHARS = env_int("MCP_MAX_STRING_CHARS", "4096")
+MCP_MAX_QUERY_CHARS = env_int("MCP_MAX_QUERY_CHARS", "512")
 
 # Reusable constrained-string type. Only the per-item length is encoded here;
 # list-length caps go on the field that owns the list so Entity.observations
@@ -75,19 +75,8 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
 # per-call bound.
 _BoundedStr = Annotated[str, Field(min_length=1, max_length=MCP_MAX_STRING_CHARS)]
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.ERROR),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-log = logging.getLogger("mcp-memory")
-
-if not PATH_SALT:
-    raise SystemExit("MCP_PATH_SALT must be set")
-
-DATA_ROOT.mkdir(parents=True, exist_ok=True)
-log.info("startup: data_root=%s api_keys=%d log_level=%s", DATA_ROOT, len(API_KEYS), LOG_LEVEL)
-
-_api_key_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("api_key", default="")
+log = setup_logging("mcp-memory")
+log.info("startup: data_root=%s api_keys=%d", DATA_ROOT, len(API_KEYS))
 
 # Per-tenant write lock. The mutating tools are a load_graph → mutate →
 # save_graph read-modify-write. Two concurrent calls on the same API key
@@ -100,7 +89,7 @@ _tenant_locks: dict[str, asyncio.Lock] = {}
 
 def _tenant_lock() -> asyncio.Lock:
     """Return the asyncio.Lock for the caller's tenant, creating it on first use."""
-    key = _api_key_ctx.get()
+    key = current_api_key.get()
     if not key:
         log.error("tenant_lock: no api key in request context")
         raise PermissionError("no api key in request context")
@@ -206,25 +195,18 @@ Wire format note: Relation JSON keys are `from`, `to`, `relationType` —
 use `from`, not `from_`.
 """
 
-async def _healthz(_request) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no upstream calls."""
-    return JSONResponse({"ok": True})
-
-
 mcp = FastMCP("memory", instructions=_INSTRUCTIONS)
 
 
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
-
-
 def _hash(v: str) -> str:
-    # 128-bit truncated SHA-256, matching the filesystem server. Not a
-    # credential hash — just a stable directory name per API key.
-    return hashlib.sha256(PATH_SALT + v.encode()).hexdigest()[:32]
+    # Thin wrapper so existing call sites stay short. Identical algorithm to
+    # mcp-filesystem (both share the `mcp_data` PVC; the on-disk subdir for a
+    # given bearer must match between the two servers).
+    return hash_tenant(PATH_SALT, v)
 
 
 def _tenant_dir() -> pathlib.Path:
-    key = _api_key_ctx.get()
+    key = current_api_key.get()
     if not key:
         log.error("tenant_dir: no api key in request context")
         raise PermissionError("no api key in request context")
@@ -522,64 +504,11 @@ async def open_nodes(
     return Graph(entities=ents, relations=rels)
 
 
-# Pure ASGI middleware — same reasoning as mcp-filesystem: BaseHTTPMiddleware
-# would dispatch in a separate anyio task and lose the api-key contextvar.
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            log.warning("auth: rejecting non-http scope: %s", scope["type"])
-            if scope["type"] == "websocket":
-                await receive()
-                await send({"type": "websocket.close", "code": 1008})
-            return
-
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        # Unauthenticated health probe — kubelet won't send a bearer, and
-        # we don't bind a contextvar here so tools can't run anyway.
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = Headers(scope=scope)
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = QueryParams(scope["query_string"]).get("api_key", "").strip()
-
-        ok = bool(token) and any(secrets.compare_digest(token, k) for k in API_KEYS)
-        if not ok:
-            client = scope.get("client")
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        ctx_token = _api_key_ctx.set(token)
-        log.debug("auth: ok %s %r", method, scope["path"])
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            _api_key_ctx.reset(ctx_token)
-
-
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run(
+        mcp,
+        host=MCP_HOST,
+        port=MCP_PORT,
+        api_keys=API_KEYS,
+        logger=log,
+    )

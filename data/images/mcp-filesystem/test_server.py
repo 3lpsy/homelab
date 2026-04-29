@@ -5,6 +5,13 @@ Runs the tool functions directly (bypassing FastMCP dispatch) with a
 manually populated api-key ContextVar. Does not require the HTTP server
 to be running. Run with `pytest test_server.py`.
 """
+# Make the sibling `data/images/mcp-common/` package importable for tests
+# without polluting `data/images/` with a top-level pyproject.toml + conftest.
+import pathlib as _pathlib
+import sys as _sys
+
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent / "mcp-common"))
+
 import asyncio
 import os
 import pathlib
@@ -27,20 +34,20 @@ def _call(coro):
 
 @pytest.fixture
 def key_a():
-    tok = server._api_key_ctx.set("key-a")
+    tok = server.current_api_key.set("key-a")
     try:
         yield "key-a"
     finally:
-        server._api_key_ctx.reset(tok)
+        server.current_api_key.reset(tok)
 
 
 @pytest.fixture
 def key_b():
-    tok = server._api_key_ctx.set("key-b")
+    tok = server.current_api_key.set("key-b")
     try:
         yield "key-b"
     finally:
-        server._api_key_ctx.reset(tok)
+        server.current_api_key.reset(tok)
 
 
 # --- _hash / _session_root ---------------------------------------------------
@@ -57,14 +64,14 @@ def test_session_root_unique_per_key_and_session(key_a):
     assert r1 != r2
     assert r1.exists() and r2.exists()
 
-    server._api_key_ctx.set("key-b")
+    server.current_api_key.set("key-b")
     r3 = server._session_root("s1")
     assert r3 != r1  # different tenant
 
 
 def test_session_root_requires_api_key():
     # Fresh context with no key set
-    ctx_var_value = server._api_key_ctx.get()
+    ctx_var_value = server.current_api_key.get()
     assert ctx_var_value == "" or ctx_var_value is None  # default
     with pytest.raises(PermissionError):
         server._session_root("s1")
@@ -154,10 +161,10 @@ def test_write_file_parent_mkdir_comes_from_safe(key_a):
 
 
 def test_tenant_isolation():
-    server._api_key_ctx.set("key-a")
+    server.current_api_key.set("key-a")
     _call(server.write_file("s1", "secret.txt", "A's data"))
 
-    server._api_key_ctx.set("key-b")
+    server.current_api_key.set("key-b")
     entries = _call(server.list_directory("s1"))
     assert entries == []  # B sees empty — different tenant dir
 
@@ -331,7 +338,7 @@ def test_destroy_session_does_not_touch_other_sessions(key_a):
 
 def test_list_sessions_empty_for_fresh_tenant():
     # key-c is never used by any other test, so its index is empty.
-    server._api_key_ctx.set("key-c")
+    server.current_api_key.set("key-c")
     assert _call(server.list_sessions()) == []
 
 
@@ -383,21 +390,21 @@ def test_destroy_session_removes_from_index(key_a):
 
 
 def test_sessions_are_tenant_scoped():
-    server._api_key_ctx.set("key-a")
+    server.current_api_key.set("key-a")
     _call(server.describe_session("only-a", "A's session"))
-    server._api_key_ctx.set("key-b")
+    server.current_api_key.set("key-b")
     ids = {s["session_id"] for s in _call(server.list_sessions())}
     assert "only-a" not in ids
 
 
 def test_destroy_session_does_not_touch_other_tenants():
-    server._api_key_ctx.set("key-a")
+    server.current_api_key.set("key-a")
     _call(server.write_file("shared-id", "mine.txt", "A"))
-    server._api_key_ctx.set("key-b")
+    server.current_api_key.set("key-b")
     _call(server.write_file("shared-id", "mine.txt", "B"))
     # B destroys their session — A's data must survive.
     _call(server.destroy_session("shared-id"))
-    server._api_key_ctx.set("key-a")
+    server.current_api_key.set("key-a")
     assert _call(server.read_file("shared-id", "mine.txt")) == "A"
 
 
@@ -568,11 +575,13 @@ def test_move_file_overwrite_true(key_a):
 
 
 def test_auth_log_escapes_control_chars_in_path(caplog):
-    import importlib, logging as _logging
+    import logging as _logging
+
+    from mcp_common.auth import AuthMiddleware
 
     # Hit the rejection branch directly with a scope that has CRLF in the path.
     # We don't need the live server — just call the middleware.
-    rejected = {"sent": []}
+    rejected: dict = {"sent": []}
 
     async def _send(msg):
         rejected["sent"].append(msg)
@@ -580,7 +589,11 @@ def test_auth_log_escapes_control_chars_in_path(caplog):
     async def _recv():
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    mw = server.AuthMiddleware(lambda *a, **kw: None)
+    mw = AuthMiddleware(
+        lambda *a, **kw: None,
+        api_keys=server.API_KEYS,
+        logger=server.log,
+    )
     scope = {
         "type": "http",
         "method": "GET",
@@ -682,7 +695,7 @@ def test_session_id_validation_runs_in_tools(key_a):
 
 
 def test_session_count_cap_blocks_new_session(monkeypatch):
-    server._api_key_ctx.set("isolated-scount-block")
+    server.current_api_key.set("isolated-scount-block")
     monkeypatch.setattr(server, "MCP_MAX_SESSIONS_PER_TENANT", 2)
     _call(server.write_file("scount-1", "a.txt", "x"))
     _call(server.write_file("scount-2", "a.txt", "x"))
@@ -692,7 +705,7 @@ def test_session_count_cap_blocks_new_session(monkeypatch):
 
 
 def test_session_count_cap_allows_reuse_of_existing(monkeypatch):
-    server._api_key_ctx.set("isolated-scount-reuse")
+    server.current_api_key.set("isolated-scount-reuse")
     monkeypatch.setattr(server, "MCP_MAX_SESSIONS_PER_TENANT", 2)
     # Pre-fill the index up to the cap, then re-open one of them.
     _call(server.describe_session("reuse-1", "first"))
@@ -709,7 +722,7 @@ def test_session_count_cap_allows_reuse_of_existing(monkeypatch):
 
 
 def test_tenant_quota_blocks_oversize_write(monkeypatch):
-    server._api_key_ctx.set("isolated-quota-oversize")
+    server.current_api_key.set("isolated-quota-oversize")
     monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 20)
     _call(server.write_file("quota-tiny", "a.txt", "x" * 10))  # under cap
     with pytest.raises(ValueError) as exc:
@@ -720,7 +733,7 @@ def test_tenant_quota_blocks_oversize_write(monkeypatch):
 def test_tenant_quota_offsets_replaced_file(monkeypatch):
     # Replacing an existing file should subtract its current size from the
     # projection, otherwise overwrites at the cap would always fail.
-    server._api_key_ctx.set("isolated-quota-replace")
+    server.current_api_key.set("isolated-quota-replace")
     monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 20)
     _call(server.write_file("quota-replace", "a.txt", "x" * 15))
     # Same byte-count overwrite — net zero, must be allowed.
@@ -729,7 +742,7 @@ def test_tenant_quota_offsets_replaced_file(monkeypatch):
 
 
 def test_tenant_quota_blocks_edit(monkeypatch):
-    server._api_key_ctx.set("isolated-quota-edit")
+    server.current_api_key.set("isolated-quota-edit")
     _call(server.write_file("quota-edit", "f.txt", "abc"))
     monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 5)
     with pytest.raises(ValueError) as exc:
@@ -743,7 +756,7 @@ def test_tenant_quota_blocks_edit(monkeypatch):
 def test_tenant_quota_dry_run_edit_skips_check(monkeypatch):
     # dry_run never writes to disk so it must not consult the quota; the
     # per-file MCP_MAX_FILE_BYTES check still fires elsewhere.
-    server._api_key_ctx.set("isolated-quota-dryrun")
+    server.current_api_key.set("isolated-quota-dryrun")
     _call(server.write_file("quota-edit-dry", "f.txt", "abc"))
     monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 5)
     out = _call(server.edit_file(
@@ -758,12 +771,12 @@ def test_tenant_quota_is_per_tenant(monkeypatch):
     # Tenant-A hits the cap; tenant-B with the same logical session_id is
     # unaffected because hashes diverge by api-key.
     monkeypatch.setattr(server, "MCP_MAX_TENANT_BYTES", 30)
-    server._api_key_ctx.set("isolated-quota-split-A")
+    server.current_api_key.set("isolated-quota-split-A")
     _call(server.write_file("split-quota", "a.txt", "x" * 25))
     with pytest.raises(ValueError):
         _call(server.write_file("split-quota", "b.txt", "y" * 25))
 
-    server._api_key_ctx.set("isolated-quota-split-B")
+    server.current_api_key.set("isolated-quota-split-B")
     # B's tenant dir is separate, so a fresh write must succeed.
     _call(server.write_file("split-quota", "a.txt", "x" * 25))
 

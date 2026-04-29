@@ -6,6 +6,13 @@ fake kubernetes API client objects. No real cluster access. Run with:
   uv run --with pytest --with fastmcp --with pydantic --with kubernetes \
          --with uvicorn --with starlette pytest test_server.py
 """
+# Make the sibling `data/images/mcp-common/` package importable for tests
+# without polluting `data/images/` with a top-level pyproject.toml + conftest.
+import pathlib as _pathlib
+import sys as _sys
+
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent / "mcp-common"))
+
 import asyncio
 import os
 from datetime import datetime, timedelta, timezone
@@ -24,6 +31,8 @@ import pytest  # noqa: E402
 from fastmcp.exceptions import ToolError  # noqa: E402
 from kubernetes import client as k8s_client  # noqa: E402
 from kubernetes.client.rest import ApiException  # noqa: E402
+
+from mcp_common.testing import make_http_scope, run_auth  # noqa: E402
 
 import server  # noqa: E402
 
@@ -486,57 +495,42 @@ def test_events_list_truncates():
 # --- AuthMiddleware --------------------------------------------------------
 
 
-def _run_auth(scope, inner=None):
-    sent: list[dict] = []
-
-    async def _send(msg):
-        sent.append(msg)
-
-    async def _recv():
-        return {"type": "http.request", "body": b"", "more_body": False}
-
-    if inner is None:
-        async def inner(scope, receive, send):
-            await send({"type": "http.response.start", "status": 200, "headers": []})
-            await send({"type": "http.response.body", "body": b"ok"})
-
-    mw = server.AuthMiddleware(inner)
-    asyncio.run(mw(scope, _recv, _send))
-    return sent
-
-
 def test_auth_rejects_missing_bearer():
-    sent = _run_auth({"type": "http", "method": "POST", "path": "/", "query_string": b"", "headers": [], "client": ("1.2.3.4", 1234)})
+    sent = run_auth(make_http_scope(method="POST", path="/"), api_keys=server.API_KEYS)
     assert next(m for m in sent if m["type"] == "http.response.start")["status"] == 401
 
 
 def test_auth_accepts_valid_bearer():
-    sent = _run_auth({
-        "type": "http", "method": "POST", "path": "/", "query_string": b"",
-        "headers": [(b"authorization", b"Bearer key-a")], "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(
+            method="POST",
+            path="/",
+            headers=[(b"authorization", b"Bearer key-a")],
+        ),
+        api_keys=server.API_KEYS,
+    )
     assert next(m for m in sent if m["type"] == "http.response.start")["status"] == 200
 
 
 def test_auth_accepts_query_param_key():
-    sent = _run_auth({
-        "type": "http", "method": "POST", "path": "/", "query_string": b"api_key=key-b",
-        "headers": [], "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="POST", path="/", query=b"api_key=key-b"),
+        api_keys=server.API_KEYS,
+    )
     assert next(m for m in sent if m["type"] == "http.response.start")["status"] == 200
 
 
 def test_auth_allows_healthz_unauthenticated():
-    sent = _run_auth({
-        "type": "http", "method": "GET", "path": "/healthz", "query_string": b"",
-        "headers": [], "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="GET", path="/healthz"),
+        api_keys=server.API_KEYS,
+    )
     assert next(m for m in sent if m["type"] == "http.response.start")["status"] == 200
 
 
 def test_auth_allows_options_unauthenticated():
-    sent = _run_auth({
-        "type": "http", "method": "OPTIONS", "path": "/", "query_string": b"",
-        "headers": [], "client": ("1.2.3.4", 1234),
-    })
+    sent = run_auth(
+        make_http_scope(method="OPTIONS", path="/"),
+        api_keys=server.API_KEYS,
+    )
     assert next(m for m in sent if m["type"] == "http.response.start")["status"] == 200

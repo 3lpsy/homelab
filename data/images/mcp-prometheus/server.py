@@ -32,66 +32,45 @@ Environment:
   LOG_LEVEL              debug / info / warning / error (default info).
 """
 
-import asyncio
 import json
-import logging
 import math
 import os
 import re
-import secrets
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
 import httpx
-import uvicorn
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
-def _env_float(name: str, default: str) -> float:
-    raw = os.environ.get(name, default)
-    try:
-        return float(raw)
-    except ValueError as e:
-        raise SystemExit(f"{name} must be a float, got {raw!r}") from e
+from mcp_common import (
+    bootstrap,
+    env_bool,
+    env_csv_set,
+    env_float,
+    env_int,
+    setup_logging,
+)
 
-
-def _env_int(name: str, default: str) -> int:
-    raw = os.environ.get(name, default)
-    try:
-        return int(raw)
-    except ValueError as e:
-        raise SystemExit(f"{name} must be an int, got {raw!r}") from e
-
-
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
-MCP_ALLOW_CONFIG = os.environ.get("MCP_ALLOW_CONFIG", "").lower() in ("1", "true", "yes")
+API_KEYS = env_csv_set("MCP_API_KEYS")
+MCP_ALLOW_CONFIG = env_bool("MCP_ALLOW_CONFIG")
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "").rstrip("/")
 PROMETHEUS_USERNAME = os.environ.get("PROMETHEUS_USERNAME", "")
 PROMETHEUS_PASSWORD = os.environ.get("PROMETHEUS_PASSWORD", "")
 PROMETHEUS_TOKEN = os.environ.get("PROMETHEUS_TOKEN", "")
 PROMETHEUS_ORGID = os.environ.get("PROMETHEUS_ORGID", "")
-PROMETHEUS_TLS_SKIP_VERIFY = os.environ.get("PROMETHEUS_TLS_SKIP_VERIFY", "").lower() in ("1", "true", "yes")
+PROMETHEUS_TLS_SKIP_VERIFY = env_bool("PROMETHEUS_TLS_SKIP_VERIFY")
 PROMETHEUS_TLS_CA_CERT = os.environ.get("PROMETHEUS_TLS_CA_CERT", "")
-PROMETHEUS_TIMEOUT = _env_float("PROMETHEUS_TIMEOUT", "30")
+PROMETHEUS_TIMEOUT = env_float("PROMETHEUS_TIMEOUT", "30")
 MCP_QUERY_TIMEOUT = os.environ.get("MCP_QUERY_TIMEOUT", "30s")
-MCP_MAX_SERIES = _env_int("MCP_MAX_SERIES", "10000")
+MCP_MAX_SERIES = env_int("MCP_MAX_SERIES", "10000")
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = _env_int("MCP_PORT", "8000")
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_PORT = env_int("MCP_PORT", "8000")
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-# httpx logs full request URLs (including query strings) at INFO. PromQL
-# expressions land in the query string and may contain sensitive label
-# selectors; mute to WARNING so only failures surface.
-logging.getLogger("httpx").setLevel(logging.WARNING)
-log = logging.getLogger("mcp-prometheus")
+# httpx logs full request URLs at INFO. PromQL expressions land in the query
+# string and may carry sensitive label selectors; mute so only failures
+# surface.
+log = setup_logging("mcp-prometheus", mute=["httpx"])
 
 if not PROMETHEUS_URL:
     raise SystemExit("PROMETHEUS_URL must be set")
@@ -103,14 +82,13 @@ if PROMETHEUS_TLS_CA_CERT and not os.path.isfile(PROMETHEUS_TLS_CA_CERT):
     raise SystemExit(f"PROMETHEUS_TLS_CA_CERT not found: {PROMETHEUS_TLS_CA_CERT}")
 
 log.info(
-    "startup: prometheus=%s api_keys=%d orgid=%s tls_skip_verify=%s ca_cert=%s allow_config=%s log_level=%s",
+    "startup: prometheus=%s api_keys=%d orgid=%s tls_skip_verify=%s ca_cert=%s allow_config=%s",
     PROMETHEUS_URL,
     len(API_KEYS),
     "set" if PROMETHEUS_ORGID else "unset",
     PROMETHEUS_TLS_SKIP_VERIFY,
     PROMETHEUS_TLS_CA_CERT or "system",
     MCP_ALLOW_CONFIG,
-    LOG_LEVEL,
 )
 
 
@@ -1016,68 +994,11 @@ async def check_ready() -> ReadyResult | PromError:
     )
 
 
-# --- Auth middleware (verbatim from mcp-searxng) ---------------------------
-
-
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            if scope["type"] == "websocket":
-                log.warning("auth: rejecting websocket (unsupported)")
-                try:
-                    # Drain the initial `websocket.connect` so the close frame
-                    # is well-formed; bound the wait so a client that never
-                    # sends can't pin the handler.
-                    await asyncio.wait_for(receive(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    log.warning("auth: websocket receive timed out before close")
-                await send({"type": "websocket.close", "code": 1008})
-            else:
-                log.warning("auth: unknown scope type %r, dropping", scope["type"])
-            return
-
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        # Unauthenticated health probe — kubelet won't send a bearer.
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = Headers(scope=scope)
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = QueryParams(scope["query_string"]).get("api_key", "").strip()
-
-        ok = bool(token) and any(secrets.compare_digest(token, k) for k in API_KEYS)
-        if not ok:
-            client = scope.get("client")
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        log.debug("auth: ok %s %r", method, scope["path"])
-        await self.app(scope, receive, send)
-
-
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run(
+        mcp,
+        host=MCP_HOST,
+        port=MCP_PORT,
+        api_keys=API_KEYS,
+        logger=log,
+    )

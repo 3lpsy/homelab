@@ -8,6 +8,7 @@ module "mcp_searxng_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-searxng/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-searxng/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

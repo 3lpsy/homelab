@@ -4,6 +4,13 @@ Unit tests for mcp-memory server.py.
 Runs the tool functions directly (bypassing FastMCP dispatch) with a
 manually populated api-key ContextVar. Run with `pytest test_server.py`.
 """
+# Make the sibling `data/images/mcp-common/` package importable for tests
+# without polluting `data/images/` with a top-level pyproject.toml + conftest.
+import pathlib as _pathlib
+import sys as _sys
+
+_sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent.parent / "mcp-common"))
+
 import asyncio
 import json
 import os
@@ -22,6 +29,8 @@ import pytest  # noqa: E402
 from fastmcp.exceptions import ToolError  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
+from mcp_common.auth import AuthMiddleware  # noqa: E402
+
 import server  # noqa: E402
 from server import (  # noqa: E402
     Entity,
@@ -29,6 +38,14 @@ from server import (  # noqa: E402
     ObservationDelete,
     Relation,
 )
+
+
+def _auth_mw(inner):
+    return AuthMiddleware(
+        inner,
+        api_keys=server.API_KEYS,
+        logger=server.log,
+    )
 
 
 def _call(coro):
@@ -48,25 +65,25 @@ def _wipe_data_root():
                 shutil.rmtree(child, ignore_errors=True)
             else:
                 child.unlink(missing_ok=True)
-    server._api_key_ctx.set("")
+    server.current_api_key.set("")
 
 
 @pytest.fixture
 def key_a():
-    tok = server._api_key_ctx.set("key-a")
+    tok = server.current_api_key.set("key-a")
     try:
         yield "key-a"
     finally:
-        server._api_key_ctx.reset(tok)
+        server.current_api_key.reset(tok)
 
 
 @pytest.fixture
 def key_b():
-    tok = server._api_key_ctx.set("key-b")
+    tok = server.current_api_key.set("key-b")
     try:
         yield "key-b"
     finally:
-        server._api_key_ctx.reset(tok)
+        server.current_api_key.reset(tok)
 
 
 # --- hashing / tenant dirs ---------------------------------------------------
@@ -79,14 +96,14 @@ def test_hash_deterministic():
 
 def test_tenant_dir_requires_api_key():
     # Fresh context
-    assert server._api_key_ctx.get() in ("", None)
+    assert server.current_api_key.get() in ("", None)
     with pytest.raises(PermissionError):
         server._tenant_dir()
 
 
 def test_tenant_dir_per_key(key_a):
     a = server._tenant_dir()
-    server._api_key_ctx.set("key-b")
+    server.current_api_key.set("key-b")
     b = server._tenant_dir()
     assert a != b
 
@@ -302,15 +319,15 @@ def test_open_nodes_returns_connecting_relations(key_a):
 
 
 def test_tenant_isolation():
-    server._api_key_ctx.set("key-a")
+    server.current_api_key.set("key-a")
     _call(server.create_entities([Entity(name="a-only", entityType="x")]))
 
-    server._api_key_ctx.set("key-b")
+    server.current_api_key.set("key-b")
     g = _call(server.read_graph())
     assert g.entities == []
     assert g.relations == []
 
-    server._api_key_ctx.set("key-a")
+    server.current_api_key.set("key-a")
     g = _call(server.read_graph())
     assert [e.name for e in g.entities] == ["a-only"]
 
@@ -372,7 +389,7 @@ def test_auth_rejects_missing_bearer():
     async def _recv():
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    mw = server.AuthMiddleware(lambda *a, **kw: None)
+    mw = _auth_mw(lambda *a, **kw: None)
     scope = {
         "type": "http",
         "method": "POST",
@@ -391,7 +408,7 @@ def test_auth_accepts_valid_bearer_and_binds_contextvar():
 
     async def inner(scope, receive, send):
         # The contextvar must be set by the time the inner app runs.
-        captured.append(server._api_key_ctx.get())
+        captured.append(server.current_api_key.get())
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b""})
 
@@ -401,7 +418,7 @@ def test_auth_accepts_valid_bearer_and_binds_contextvar():
     async def _recv():
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    mw = server.AuthMiddleware(inner)
+    mw = _auth_mw(inner)
     scope = {
         "type": "http",
         "method": "POST",
@@ -413,7 +430,7 @@ def test_auth_accepts_valid_bearer_and_binds_contextvar():
     asyncio.run(mw(scope, _recv, _send))
     assert captured == ["key-a"]
     # And it resets on the way out.
-    assert server._api_key_ctx.get() in ("", None)
+    assert server.current_api_key.get() in ("", None)
 
 
 def test_auth_allows_healthz_unauthenticated():
@@ -430,7 +447,7 @@ def test_auth_allows_healthz_unauthenticated():
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
 
-    mw = server.AuthMiddleware(inner)
+    mw = _auth_mw(inner)
     scope = {
         "type": "http",
         "method": "GET",
@@ -570,7 +587,7 @@ def test_concurrent_create_entities_serializes_via_lock():
 
     async def _go():
         async def worker(name: str):
-            tok = server._api_key_ctx.set("key-a")
+            tok = server.current_api_key.set("key-a")
             try:
                 async with server._tenant_lock():
                     g = server.load_graph()
@@ -578,14 +595,14 @@ def test_concurrent_create_entities_serializes_via_lock():
                         g.entities.append(server.Entity(name=name, entityType="x"))
                     await _racey_save(g)
             finally:
-                server._api_key_ctx.reset(tok)
+                server.current_api_key.reset(tok)
 
         await asyncio.gather(worker("first"), worker("second"))
-        tok = server._api_key_ctx.set("key-a")
+        tok = server.current_api_key.set("key-a")
         try:
             return await server.read_graph()
         finally:
-            server._api_key_ctx.reset(tok)
+            server.current_api_key.reset(tok)
 
     g = asyncio.run(_go())
     assert {e.name for e in g.entities} == {"first", "second"}
@@ -598,22 +615,22 @@ def test_tenant_locks_are_per_tenant():
     # A lock for key-a must not be returned for key-b. Otherwise two tenants
     # would serialize against each other — correct on disk but bad for
     # throughput and, more importantly, a cross-tenant signal.
-    tok_a = server._api_key_ctx.set("key-a")
+    tok_a = server.current_api_key.set("key-a")
     try:
         la = server._tenant_lock()
     finally:
-        server._api_key_ctx.reset(tok_a)
-    tok_b = server._api_key_ctx.set("key-b")
+        server.current_api_key.reset(tok_a)
+    tok_b = server.current_api_key.set("key-b")
     try:
         lb = server._tenant_lock()
     finally:
-        server._api_key_ctx.reset(tok_b)
+        server.current_api_key.reset(tok_b)
     assert la is not lb
 
 
 def test_tenant_lock_requires_api_key():
     # Fresh context, no key bound.
-    server._api_key_ctx.set("")
+    server.current_api_key.set("")
     with pytest.raises(PermissionError):
         server._tenant_lock()
 
@@ -670,7 +687,7 @@ def test_auth_accepts_query_param_key():
     captured: list[str] = []
 
     async def inner(scope, receive, send):
-        captured.append(server._api_key_ctx.get())
+        captured.append(server.current_api_key.get())
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b""})
 
@@ -680,7 +697,7 @@ def test_auth_accepts_query_param_key():
     async def _recv():
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    mw = server.AuthMiddleware(inner)
+    mw = _auth_mw(inner)
     scope = {
         "type": "http",
         "method": "POST",

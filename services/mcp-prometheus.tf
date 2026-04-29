@@ -8,6 +8,7 @@ module "mcp_prometheus_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-prometheus/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-prometheus/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

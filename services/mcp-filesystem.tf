@@ -8,6 +8,7 @@ module "mcp_filesystem_build" {
     "Dockerfile" = file("${path.module}/../data/images/mcp-filesystem/Dockerfile")
     "server.py"  = file("${path.module}/../data/images/mcp-filesystem/server.py")
   }
+  context_dirs = local.mcp_common_files
 
   shared = local.buildkit_job_shared
 

@@ -29,12 +29,9 @@ Tool set mirrors @modelcontextprotocol/server-filesystem with a mandatory
 upstream algorithm.
 """
 
-import contextvars
 import difflib
 import fnmatch
-import hashlib
 import json
-import logging
 import os
 import pathlib
 import re
@@ -42,47 +39,39 @@ import secrets
 import shutil
 from typing import TypedDict
 
-import uvicorn
 from fastmcp import FastMCP
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
-PATH_SALT = os.environ.get("MCP_PATH_SALT", "").encode()
-DATA_ROOT = pathlib.Path(os.environ.get("MCP_DATA_ROOT", "/data")).resolve()
+from mcp_common import (
+    bootstrap,
+    current_api_key,
+    env_csv_set,
+    env_int,
+    hash_tenant,
+    init_tenant_root,
+    setup_logging,
+)
+
+API_KEYS = env_csv_set("MCP_API_KEYS")
+PATH_SALT, DATA_ROOT = init_tenant_root()
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
-MCP_MAX_FILE_BYTES = int(os.environ.get("MCP_MAX_FILE_BYTES", str(10 * 1024 * 1024)))
-MCP_MAX_READ_BATCH = int(os.environ.get("MCP_MAX_READ_BATCH", "32"))
-MCP_MAX_EDITS = int(os.environ.get("MCP_MAX_EDITS", "64"))
-MCP_MAX_EDIT_BYTES = int(os.environ.get("MCP_MAX_EDIT_BYTES", str(256 * 1024)))
-MCP_MAX_DESCRIPTION_CHARS = int(os.environ.get("MCP_MAX_DESCRIPTION_CHARS", "1024"))
-MCP_MAX_TENANT_BYTES = int(os.environ.get("MCP_MAX_TENANT_BYTES", str(1 * 1024 * 1024 * 1024)))
-MCP_MAX_SESSIONS_PER_TENANT = int(os.environ.get("MCP_MAX_SESSIONS_PER_TENANT", "256"))
-MCP_MAX_DIR_ENTRIES = int(os.environ.get("MCP_MAX_DIR_ENTRIES", "2000"))
-MCP_MAX_TREE_DEPTH = int(os.environ.get("MCP_MAX_TREE_DEPTH", "32"))
-MCP_MAX_TREE_NODES = int(os.environ.get("MCP_MAX_TREE_NODES", "5000"))
-MCP_MAX_SEARCH_HITS = int(os.environ.get("MCP_MAX_SEARCH_HITS", "2000"))
-MCP_MAX_SESSION_ID_CHARS = int(os.environ.get("MCP_MAX_SESSION_ID_CHARS", "128"))
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_PORT = env_int("MCP_PORT", "8000")
+MCP_MAX_FILE_BYTES = env_int("MCP_MAX_FILE_BYTES", str(10 * 1024 * 1024))
+MCP_MAX_READ_BATCH = env_int("MCP_MAX_READ_BATCH", "32")
+MCP_MAX_EDITS = env_int("MCP_MAX_EDITS", "64")
+MCP_MAX_EDIT_BYTES = env_int("MCP_MAX_EDIT_BYTES", str(256 * 1024))
+MCP_MAX_DESCRIPTION_CHARS = env_int("MCP_MAX_DESCRIPTION_CHARS", "1024")
+MCP_MAX_TENANT_BYTES = env_int("MCP_MAX_TENANT_BYTES", str(1 * 1024 * 1024 * 1024))
+MCP_MAX_SESSIONS_PER_TENANT = env_int("MCP_MAX_SESSIONS_PER_TENANT", "256")
+MCP_MAX_DIR_ENTRIES = env_int("MCP_MAX_DIR_ENTRIES", "2000")
+MCP_MAX_TREE_DEPTH = env_int("MCP_MAX_TREE_DEPTH", "32")
+MCP_MAX_TREE_NODES = env_int("MCP_MAX_TREE_NODES", "5000")
+MCP_MAX_SEARCH_HITS = env_int("MCP_MAX_SEARCH_HITS", "2000")
+MCP_MAX_SESSION_ID_CHARS = env_int("MCP_MAX_SESSION_ID_CHARS", "128")
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.ERROR),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-log = logging.getLogger("mcp-filesystem")
-
-if not PATH_SALT:
-    raise SystemExit("MCP_PATH_SALT must be set")
-
-DATA_ROOT.mkdir(parents=True, exist_ok=True)
-log.info("startup: data_root=%s api_keys=%d log_level=%s", DATA_ROOT, len(API_KEYS), LOG_LEVEL)
-
-_api_key_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("api_key", default="")
+log = setup_logging("mcp-filesystem")
+log.info("startup: data_root=%s api_keys=%d", DATA_ROOT, len(API_KEYS))
 
 
 class EditOp(TypedDict):
@@ -121,28 +110,21 @@ DESTRUCTIVE: `destroy_session` wipes every file in the session. Only call
 when the user explicitly asks to wipe it.
 """
 
-async def _healthz(_request) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no upstream calls."""
-    return JSONResponse({"ok": True})
-
-
 # FastMCP v2: transport (host/port/path) is configured at run/http_app time,
 # not on the constructor. Constructor takes only the server name + options.
 mcp = FastMCP("filesystem", instructions=_INSTRUCTIONS)
 
 
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
-
-
 def _hash(v: str) -> str:
-    # 128-bit truncation: collision risk is birthday ~2^64, fine for a
-    # salted directory name. Not a credential hash.
-    return hashlib.sha256(PATH_SALT + v.encode()).hexdigest()[:32]
+    # Thin wrapper so existing call sites stay short. Identical algorithm to
+    # mcp-memory's hashing (both servers share the `mcp_data` PVC and must
+    # land at the same per-tenant subdir).
+    return hash_tenant(PATH_SALT, v)
 
 
 def _tenant_dir() -> pathlib.Path:
     """Per-API-key directory. Requires an api key bound to the contextvar."""
-    key = _api_key_ctx.get()
+    key = current_api_key.get()
     if not key:
         log.error("tenant_dir: no api key in request context")
         raise PermissionError("no api key in request context")
@@ -210,7 +192,7 @@ def _session_root_path(session_id: str) -> pathlib.Path:
         )
     if not _SESSION_ID_RE.match(session_id):
         raise ValueError("session_id must match [A-Za-z0-9._-]+ (no spaces or other chars)")
-    key = _api_key_ctx.get()
+    key = current_api_key.get()
     if not key:
         log.error("session_root: no api key in request context")
         raise PermissionError("no api key in request context")
@@ -792,83 +774,10 @@ async def describe_session(session_id: str, description: str) -> dict:
     return {"session_id": session_id, "description": description}
 
 
-# Pure ASGI middleware (not BaseHTTPMiddleware): BaseHTTPMiddleware runs the
-# downstream app in a separate anyio task, and contextvars set in `dispatch`
-# do not reliably propagate to the handler task. Running as raw ASGI keeps the
-# whole request in one task, so `_api_key_ctx.set()` is visible to tools.
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        # ASGI startup/shutdown events must reach the inner app untouched.
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        # Everything that isn't HTTP is rejected closed — MCP streamable-http
-        # does not use websockets, so a ws upgrade here is either a stray route
-        # or an attacker probing for an auth bypass.
-        if scope["type"] != "http":
-            log.warning("auth: rejecting non-http scope: %s", scope["type"])
-            if scope["type"] == "websocket":
-                # ASGI spec: respond to websocket.connect with close (no accept).
-                await receive()
-                await send({"type": "websocket.close", "code": 1008})
-            return
-
-        # CORS preflight: no auth, no context.
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        # Unauthenticated health probe — kubelet won't send a bearer, and
-        # we don't bind a contextvar here so tools can't run anyway.
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        # Extract bearer token, falling back to ?api_key= query param.
-        headers = Headers(scope=scope)
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = QueryParams(scope["query_string"]).get("api_key", "").strip()
-
-        # Reject unknown or missing tokens. Empty API_KEYS also rejects (fail-closed).
-        # compare_digest per candidate avoids per-byte timing leaks on the match.
-        ok = bool(token) and any(secrets.compare_digest(token, k) for k in API_KEYS)
-        if not ok:
-            client = scope.get("client")
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        # Bind token into contextvar for this request; reset on the way out so
-        # the value does not leak if the underlying task is reused.
-        ctx_token = _api_key_ctx.set(token)
-        log.debug("auth: ok %s %r", method, scope["path"])
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            _api_key_ctx.reset(ctx_token)
-
-
-# FastMCP v2 exposes the Starlette ASGI app via `http_app()`. Custom Starlette
-# middleware must be passed via the `middleware=` kwarg so it wraps the inner
-# app before FastMCP's own RequestContextMiddleware — `app.add_middleware`
-# after construction would apply in the wrong order relative to the lifespan.
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
+# Built at module load so the live-ASGI tests in test_server.py can mount
+# the same app under uvicorn without re-running bootstrap.run().
+app = bootstrap.build_app(mcp, api_keys=API_KEYS, logger=log)
 
 
 if __name__ == "__main__":
-    # uvicorn respects the lifespan wired into the Starlette app returned by
-    # http_app(), so FastMCP's session manager starts/stops cleanly.
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run_app(app, host=MCP_HOST, port=MCP_PORT)

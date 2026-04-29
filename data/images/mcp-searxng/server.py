@@ -24,32 +24,26 @@ Environment:
 
 import html
 import ipaddress
-import logging
 import os
-import secrets
 import socket
 import urllib.parse
 from html.parser import HTMLParser
-from typing import Annotated, Any
+from typing import Annotated
 
 import httpx
-import uvicorn
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
+from mcp_common import bootstrap, env_csv_set, env_float, env_int, setup_logging
+
+API_KEYS = env_csv_set("MCP_API_KEYS")
 MCP_SEARXNG_URL = os.environ.get("MCP_SEARXNG_URL", "http://localhost:8080").rstrip("/")
-MCP_FETCH_MAX_BYTES = int(os.environ.get("MCP_FETCH_MAX_BYTES", str(10 * 1024 * 1024)))
-MCP_FETCH_TIMEOUT = float(os.environ.get("MCP_FETCH_TIMEOUT", "15"))
-MCP_FETCH_MAX_REDIRECTS = int(os.environ.get("MCP_FETCH_MAX_REDIRECTS", "5"))
-MCP_SEARCH_TIMEOUT = float(os.environ.get("MCP_SEARCH_TIMEOUT", "15"))
+MCP_FETCH_MAX_BYTES = env_int("MCP_FETCH_MAX_BYTES", str(10 * 1024 * 1024))
+MCP_FETCH_TIMEOUT = env_float("MCP_FETCH_TIMEOUT", "15")
+MCP_FETCH_MAX_REDIRECTS = env_int("MCP_FETCH_MAX_REDIRECTS", "5")
+MCP_SEARCH_TIMEOUT = env_float("MCP_SEARCH_TIMEOUT", "15")
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_PORT = env_int("MCP_PORT", "8000")
 
 
 def _parse_cidrs(raw: str) -> list:
@@ -102,18 +96,12 @@ def _split_categories(raw: str) -> tuple[list[str], list[str]]:
             dropped.append(name)
     return kept, dropped
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.ERROR),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-# httpx logs full request URLs (including query strings) at INFO. Search
-# queries and arbitrary fetch URLs land in those logs; mute to WARNING so
-# only failures surface.
-logging.getLogger("httpx").setLevel(logging.WARNING)
-log = logging.getLogger("mcp-searxng")
+# httpx logs full request URLs at INFO. Search queries and arbitrary fetch
+# URLs land in those logs; mute so only failures surface.
+log = setup_logging("mcp-searxng", mute=["httpx"])
 log.info(
-    "startup: searxng=%s api_keys=%d allowed_cidrs=%d log_level=%s",
-    MCP_SEARXNG_URL, len(API_KEYS), len(ALLOWED_PRIVATE_CIDRS), LOG_LEVEL,
+    "startup: searxng=%s api_keys=%d allowed_cidrs=%d",
+    MCP_SEARXNG_URL, len(API_KEYS), len(ALLOWED_PRIVATE_CIDRS),
 )
 
 
@@ -175,14 +163,6 @@ mcp = FastMCP(
         "context window."
     ),
 )
-
-
-async def _healthz(_request: Any) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no upstream calls."""
-    return JSONResponse({"ok": True})
-
-
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 @mcp.tool()
@@ -536,61 +516,11 @@ async def fetch(
     )
 
 
-# Pure ASGI middleware (not BaseHTTPMiddleware): keeps the whole request in
-# one task so nothing gets dropped across anyio task boundaries. Matches
-# mcp-memory / mcp-filesystem shape; this server has no per-tenant state so
-# no contextvar is bound — the token is only used to authorize the request.
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            log.warning("auth: rejecting non-http scope: %s", scope["type"])
-            if scope["type"] == "websocket":
-                await receive()
-                await send({"type": "websocket.close", "code": 1008})
-            return
-
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        # Unauthenticated health probe — kubelet sends no bearer.
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = Headers(scope=scope)
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = QueryParams(scope["query_string"]).get("api_key", "").strip()
-
-        ok = bool(token) and any(secrets.compare_digest(token, k) for k in API_KEYS)
-        if not ok:
-            client = scope.get("client")
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        log.debug("auth: ok %s %r", method, scope["path"])
-        await self.app(scope, receive, send)
-
-
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run(
+        mcp,
+        host=MCP_HOST,
+        port=MCP_PORT,
+        api_keys=API_KEYS,
+        logger=log,
+    )

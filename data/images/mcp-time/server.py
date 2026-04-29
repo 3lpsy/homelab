@@ -14,42 +14,23 @@ Environment:
   LOG_LEVEL              debug / info / warning / error (default info).
 """
 
-import logging
 import os
-import secrets
 from datetime import datetime, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import uvicorn
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.datastructures import Headers, QueryParams
-from starlette.middleware import Middleware
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
 
+from mcp_common import bootstrap, env_csv_set, env_int, setup_logging
 
-def _env_int(name: str, default: str) -> int:
-    raw = os.environ.get(name, default)
-    try:
-        return int(raw)
-    except ValueError as e:
-        raise SystemExit(f"{name} must be an int, got {raw!r}") from e
-
-
-API_KEYS = {k.strip() for k in os.environ.get("MCP_API_KEYS", "").split(",") if k.strip()}
+API_KEYS = env_csv_set("MCP_API_KEYS")
 MCP_DEFAULT_TIMEZONE = os.environ.get("MCP_DEFAULT_TIMEZONE", "America/Chicago").strip()
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
-MCP_PORT = _env_int("MCP_PORT", "8000")
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
+MCP_PORT = env_int("MCP_PORT", "8000")
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-log = logging.getLogger("mcp-time")
+log = setup_logging("mcp-time")
 
 # Validate the default zone at import so a typo fails the pod instead of every
 # tool call. ZoneInfoNotFoundError is the only failure mode once we have the
@@ -62,8 +43,8 @@ except ZoneInfoNotFoundError as _e:
     ) from _e
 
 log.info(
-    "startup: default_tz=%s api_keys=%d log_level=%s",
-    MCP_DEFAULT_TIMEZONE, len(API_KEYS), LOG_LEVEL,
+    "startup: default_tz=%s api_keys=%d",
+    MCP_DEFAULT_TIMEZONE, len(API_KEYS),
 )
 
 
@@ -180,15 +161,7 @@ Outputs include `timezone`, `datetime` (ISO 8601 with offset), `day_of_week`
 in the form "+5.0h", "+5.5h", "+5.75h".
 """
 
-async def _healthz(_request) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no upstream calls."""
-    return JSONResponse({"ok": True})
-
-
 mcp = FastMCP("time", instructions=_INSTRUCTIONS)
-
-
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 TzParam = Annotated[
@@ -268,60 +241,11 @@ async def convert_time(
     )
 
 
-# Pure ASGI middleware — matches mcp-prometheus / mcp-searxng shape. No
-# per-tenant state on this server so no contextvar is bound; token is only
-# used to authorize the request.
-class AuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "lifespan":
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            log.warning("auth: rejecting non-http scope: %s", scope["type"])
-            if scope["type"] == "websocket":
-                await receive()
-                await send({"type": "websocket.close", "code": 1008})
-            return
-
-        method = scope["method"]
-        if method == "OPTIONS":
-            await self.app(scope, receive, send)
-            return
-
-        # Unauthenticated health probe — kubelet won't send a bearer.
-        if scope["path"] == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = Headers(scope=scope)
-        header = headers.get("authorization", "")
-        token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-        if not token:
-            token = QueryParams(scope["query_string"]).get("api_key", "").strip()
-
-        ok = bool(token) and any(secrets.compare_digest(token, k) for k in API_KEYS)
-        if not ok:
-            client = scope.get("client")
-            log.warning(
-                "auth: rejected %s %r from %s",
-                method, scope["path"], client[0] if client else "?",
-            )
-            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
-            return
-
-        log.debug("auth: ok %s %r", method, scope["path"])
-        await self.app(scope, receive, send)
-
-
-app = mcp.http_app(
-    path="/",
-    middleware=[Middleware(AuthMiddleware)],
-)
-
-
 if __name__ == "__main__":
-    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT, log_level=LOG_LEVEL.lower(), access_log=False)
+    bootstrap.run(
+        mcp,
+        host=MCP_HOST,
+        port=MCP_PORT,
+        api_keys=API_KEYS,
+        logger=log,
+    )
