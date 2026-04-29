@@ -103,15 +103,19 @@ resource "null_resource" "env_file" {
 
   provisioner "file" {
     content     = local.env_file
-    destination = "/home/${var.ssh_user}/kopia.env"
+    destination = "/tmp/kopia.env"
   }
 
   provisioner "remote-exec" {
+    # `install` lays the file with proper owner/perms in one shot; restorecon
+    # relabels the SELinux context (Fedora) so systemd's EnvironmentFile= can
+    # read it. Without restorecon the inherited user_home_t context blocks
+    # systemd-init at boot, even though `cat /etc/kopia/env` works as root.
     inline = [
       "sudo mkdir -p /etc/kopia /var/lib/kopia /var/cache/kopia /var/log/kopia",
-      "sudo mv /home/${var.ssh_user}/kopia.env /etc/kopia/env",
-      "sudo chown root:root /etc/kopia/env",
-      "sudo chmod 600 /etc/kopia/env",
+      "sudo install -m 0600 -o root -g root /tmp/kopia.env /etc/kopia/env",
+      "rm -f /tmp/kopia.env",
+      "command -v restorecon >/dev/null 2>&1 && sudo restorecon -Rv /etc/kopia || true",
     ]
   }
 
