@@ -63,3 +63,9 @@ variable "k8s_pod_cidr" {
   type        = string
   default     = "10.42.0.0/16"
 }
+
+variable "zigbee_dongle_serial" {
+  description = "USB serial of the Zigbee coordinator dongle (e.g. ZBT-2). Empty disables the udev rule. See cluster/modules/node-provision-server/variables.tf for details."
+  type        = string
+  default     = ""
+}

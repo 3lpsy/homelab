@@ -69,6 +69,13 @@ opencode.jsonc
 test/
 test.sh
 
+# navidrome-ingest's actual LLM prompt — may contain personal corpus
+# details (artist names, genres, listening habits). The committed
+# prompt.example.j2 is a generic fallback; copy it to prompt.j2 and
+# customize there. The TF reads prompt.j2 if present, falls back to
+# prompt.example.j2 otherwise.
+data/navidrome-ingest/prompt.j2
+
 # Include override files you do wish to add to version control using negated pattern
 # !example_override.tf
 

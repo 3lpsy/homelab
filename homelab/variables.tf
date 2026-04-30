@@ -85,6 +85,8 @@ variable "tailnet_users" {
     homeassist_server_user  = "homeassist"
     frigate_server_user     = "frigate"
     jellyfin_server_user    = "media"
+    syncthing_server_user   = "syncthing"
+    ingest_server_user      = "ingest"
 
   }
 }

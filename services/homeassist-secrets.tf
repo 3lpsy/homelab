@@ -150,7 +150,11 @@ resource "kubernetes_manifest" "homeassist_secret_provider" {
             {
               objectName = "admin_password"
               key        = "admin_password"
-            }
+            },
+            {
+              objectName = "ha_password"
+              key        = "ha_password"
+            },
           ]
         },
         {
@@ -186,6 +190,11 @@ resource "kubernetes_manifest" "homeassist_secret_provider" {
             objectName = "tls_key"
             secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/homeassist/tls"
             secretKey  = "privkey_pem"
+          },
+          {
+            objectName = "ha_password"
+            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/homeassist/mosquitto"
+            secretKey  = "ha_password"
           }
         ])
       }
@@ -196,6 +205,7 @@ resource "kubernetes_manifest" "homeassist_secret_provider" {
     kubernetes_namespace.homeassist,
     vault_kubernetes_auth_backend_role.homeassist,
     vault_kv_secret_v2.homeassist_config,
+    vault_kv_secret_v2.homeassist_mosquitto,
     vault_kv_secret_v2.homeassist_tls,
     vault_policy.homeassist
   ]

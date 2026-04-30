@@ -9,8 +9,14 @@ variable "image_ref" {
 }
 
 variable "context_files" {
-  description = "Map of filename -> file content for the build context. Keys must include `Dockerfile`. Additional entries are mounted alongside it under /workspace inside the BuildKit container."
+  description = "Map of filename -> file content for the build context. Keys must include `Dockerfile`. Keys are flat (no `/`) — they land directly under /workspace in the BuildKit container. For files that need to live in a subdirectory of the context, use `context_dirs` instead."
   type        = map(string)
+}
+
+variable "context_dirs" {
+  description = "Map of `subpath/file` -> file content for build-context files that need to live inside a subdirectory. ConfigMap data keys cannot contain `/`, so this module sanitizes each subpath to a flat key in the ConfigMap and uses `items[].path` on the volume mount to materialize them at the original subpath under /workspace. Keys may contain `/`; they're also mixed into context_hash so a content/path change rebuilds."
+  type        = map(string)
+  default     = {}
 }
 
 variable "build_args" {
@@ -67,6 +73,9 @@ variable "shared" {
     registry_ghcrio_fqdn         = string
     registry_ghcrio_cluster_ip   = string
     image_buildkit               = string
+    # Used by the stage-context init container that materializes the
+    # build-context ConfigMap into a real (non-symlink) directory.
+    image_busybox = string
     # Enables `--debug` on buildkitd. Adds verbose internal logs (resolver
     # state, fetcher goroutines) — useful when diagnosing wedges. Off by
     # default; flip to true on the calling deployment when something stalls.

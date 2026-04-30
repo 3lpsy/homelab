@@ -238,6 +238,153 @@ variable "navidrome_music_size" {
   default = "100Gi"
 }
 
+variable "media_dropzone_size" {
+  type    = string
+  default = "50Gi"
+}
+
+variable "ingest_syncthing_domain" {
+  type    = string
+  default = "ingest-syncthing"
+}
+
+variable "image_ingest_syncthing" {
+  type    = string
+  default = "syncthing/syncthing:latest"
+}
+
+variable "tailnet_device_hostnames" {
+  description = <<-EOT
+    Map of role-key -> the device's actual tailnet hostname (i.e. the
+    name registered with `tailscale up --hostname=<name>`). Used to
+    resolve a role-key like "personal" to a dial address like
+    "garden.hs.<magic>:22000".
+
+    Override via .env when device hostnames change:
+      export TF_VAR_tailnet_device_hostnames='{"personal":"garden","mobile":"iphone","personal-laptop":"ronin"}'
+
+    Missing keys fall back to the role-key itself (so role "personal"
+    resolves to "personal.hs.<magic>" if no override is set).
+  EOT
+  type = map(string)
+  default = {
+    personal = "garden"
+    mobile   = "iphone"
+  }
+}
+
+variable "ingest_syncthing_trusted_devices" {
+  description = <<-EOT
+    Map of device-alias -> Syncthing Device ID for hosts the cluster
+    pre-trusts. Each entry adds a <device> to the cluster's Syncthing
+    config and shares the `ingest-music` folder with it.
+
+    The map key MUST match the device's tailnet hostname (i.e. its
+    TS_HOSTNAME / `tailscale up --hostname=<name>`). The cluster
+    resolves the static dial address as
+      tcp://<key>.${"$"}{var.headscale_subdomain}.${"$"}{var.headscale_magic_domain}:22000
+    so name your laptop's tailnet host "personal" and the map key
+    "personal".
+
+    Value = the remote's Syncthing Device ID, copied from its GUI under
+    Actions -> Show ID.
+
+    Get the cluster's own Device ID after first apply with:
+      kubectl -n ingest exec deploy/syncthing -c syncthing -- syncthing -device-id
+    and add it on each remote alongside tcp://ingest-syncthing.<hs>.<magic>:22000.
+
+    Empty values are skipped so applies before populating .env succeed.
+
+    Set via .env:
+      export TF_VAR_ingest_syncthing_trusted_devices='{"personal":"ABC1234-..."}'
+  EOT
+  type    = map(string)
+  default = {
+    personal = ""
+  }
+}
+
+variable "ingest_ui_domain" {
+  type    = string
+  default = "ingest"
+}
+
+variable "ingest_ui_users" {
+  description = "List of basic-auth user names for ingest-ui. Each gets its own random_password and Vault KV entry under ingest-ui/users/<name>. Add to extend; remove with `terraform apply -replace=...` or by destroying the per-user vault_kv_secret_v2."
+  type        = list(string)
+  default     = ["manual"]
+}
+
+variable "ytdlp_cookies" {
+  description = <<-EOT
+    Optional Netscape-format cookies file content for yt-dlp. YouTube's
+    bot detection now blocks anonymous downloads on many videos with
+    "Sign in to confirm you're not a bot". Passing a logged-in session's
+    cookies bypasses this gate.
+
+    Export from your browser (e.g. via "Get cookies.txt LOCALLY" or
+    similar extension) while logged into youtube.com, then set:
+
+      export TF_VAR_ytdlp_cookies='# Netscape HTTP Cookie File
+      # http://curl.haxx.se/rfc/cookie_spec.html
+      .youtube.com\tTRUE\t/\tFALSE\t1234567890\tSID\tabcdef...
+      ...rest of your cookies...'
+
+    (Tab-separated, single-quoted to preserve newlines.) Empty default
+    leaves cookies disabled — yt-dlp will still try mweb/tv player
+    clients which sometimes work without a session.
+
+    Cookies expire periodically; rotate by re-exporting from the browser
+    and re-applying.
+  EOT
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "navidrome_ingest_model" {
+  description = <<-EOT
+    LiteLLM alias used to tag dropzone files. Must reliably emit OpenAI
+    tool-calls for the structured output schema — small instruct-only
+    models (e.g. default-qwen-3.5-4b) tend to skip the tool call and dump
+    JSON-ish text instead, which falls into the parse_tags_from_text
+    fallback and usually gets confidence=0.00 -> quarantine.
+
+    Available aliases live in var.llm_models. agent-class models are the
+    safest bet for tool-call reliability.
+  EOT
+  type        = string
+  default     = "agent-glm-4.5-air"
+}
+
+variable "navidrome_ingest_confidence_threshold" {
+  description = "Below this LLM-reported confidence, the file is moved to dropzone/music/failed/ instead of into the music PVC."
+  type        = number
+  default     = 0.5
+}
+
+variable "litellm_user_keys" {
+  description = <<-EOT
+    Map of app name -> LiteLLM virtual key (sk-...). Each value is a key
+    you create out-of-band via the LiteLLM admin UI/API, scoped to the
+    models + budget that app should be allowed to use. Apps reference
+    their entry by name (e.g. var.litellm_user_keys["ingestor"]) to pull
+    a scoped key into Vault rather than handing every workload the
+    master key.
+
+    Set via .env:
+      export TF_VAR_litellm_user_keys='{"ingestor":"sk-...","other-app":"sk-..."}'
+
+    A blank value is allowed (treated as "not yet provisioned") — the
+    pod will boot but every LLM call returns 401 until you populate it.
+  EOT
+  type        = map(string)
+  sensitive   = true
+  default = {
+    ingestor = ""
+  }
+}
+
 variable "jellyfin_domain" {
   type    = string
   default = "jellyfin"
@@ -596,7 +743,7 @@ variable "mcp_shared_domain" {
 variable "mcp_api_key_users" {
   description = "Named consumers of the shared MCP auth pool. One random Bearer key is minted per name and stored at vault `mcp/auth` under `api_key_<name>`, plus the aggregate `api_keys_csv` that every MCP pod reads."
   type        = list(string)
-  default     = ["thunderbolt", "litellm", "claude", "opencode"]
+  default     = ["thunderbolt", "litellm", "claude", "opencode", "ingestor"]
 }
 
 variable "image_thunderbolt_postgres" {
@@ -610,7 +757,7 @@ variable "image_mongo" {
 }
 
 variable "image_keycloak" {
-  type    = string
+  type = string
   # Keycloak publishes the same image to both quay.io and docker.io —
   # docker.io routes through registry-dockerio cache.
   default = "keycloak/keycloak:26.0"
@@ -776,13 +923,13 @@ locals {
   thunderbolt_public_url     = "https://${local.thunderbolt_fqdn}"
   thunderbolt_admin_email    = "thunderbolt@${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
-  mcp_searxng_image       = "${local.thunderbolt_registry}/mcp-searxng:latest"
-  mcp_filesystem_image    = "${local.thunderbolt_registry}/mcp-filesystem:latest"
-  mcp_memory_image        = "${local.thunderbolt_registry}/mcp-memory:latest"
-  mcp_prometheus_image    = "${local.thunderbolt_registry}/mcp-prometheus:latest"
-  mcp_time_image          = "${local.thunderbolt_registry}/mcp-time:latest"
-  mcp_k8s_image           = "${local.thunderbolt_registry}/mcp-k8s:latest"
-  mcp_litellm_image       = "${local.thunderbolt_registry}/mcp-litellm:latest"
+  mcp_searxng_image    = "${local.thunderbolt_registry}/mcp-searxng:latest"
+  mcp_filesystem_image = "${local.thunderbolt_registry}/mcp-filesystem:latest"
+  mcp_memory_image     = "${local.thunderbolt_registry}/mcp-memory:latest"
+  mcp_prometheus_image = "${local.thunderbolt_registry}/mcp-prometheus:latest"
+  mcp_time_image       = "${local.thunderbolt_registry}/mcp-time:latest"
+  mcp_k8s_image        = "${local.thunderbolt_registry}/mcp-k8s:latest"
+  mcp_litellm_image    = "${local.thunderbolt_registry}/mcp-litellm:latest"
 
   mcp_shared_fqdn = "${var.mcp_shared_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
 
@@ -802,4 +949,7 @@ locals {
   exitnode_tinyproxy_image = "${local.thunderbolt_registry}/exitnode-tinyproxy:latest"
 
   searxng_ranker_image = "${local.thunderbolt_registry}/searxng-ranker:latest"
+
+  ingest_ui_image        = "${local.thunderbolt_registry}/ingest-ui:latest"
+  navidrome_ingest_image = "${local.thunderbolt_registry}/navidrome-ingest:latest"
 }

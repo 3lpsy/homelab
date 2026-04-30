@@ -46,6 +46,36 @@ resource "kubernetes_network_policy" "exitnode_from_searxng" {
   }
 }
 
+# Ingress from ingest ns on :8888. The ingest-ui pod runs yt-dlp with
+# `--proxy http://exitnode-<x>-proxy:8888` to keep YouTube downloads on a
+# rotating, residential-friendly egress IP set.
+resource "kubernetes_network_policy" "exitnode_from_ingest" {
+  metadata {
+    name      = "exitnode-from-ingest"
+    namespace = kubernetes_namespace.exitnode.metadata[0].name
+  }
+
+  spec {
+    pod_selector {}
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.ingest.metadata[0].name
+          }
+        }
+        pod_selector { match_labels = { app = "ingest-ui" } }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "8888"
+      }
+    }
+  }
+}
+
 # Ingress from registry-proxy ns on :8888. The combined pull-through cache
 # pod (Distribution proxies for docker.io + ghcr.io) routes upstream pulls
 # through the rotator (HTTPS_PROXY env on each registry-* container) so

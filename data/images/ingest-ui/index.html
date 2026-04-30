@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ingest</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    color-scheme: dark light;
+    --fg: #ddd;
+    --bg: #111;
+    --muted: #888;
+    --accent: #6cf;
+    --accent-dim: rgba(102, 204, 255, 0.18);
+    --border: #444;
+    --log-bg: #0a0a0a;
+    --log-fg: #ddd;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --fg: #222;
+      --bg: #fafafa;
+      --muted: #666;
+      --accent: #06c;
+      --accent-dim: rgba(0, 102, 204, 0.12);
+      --border: #ccc;
+      --log-bg: #f0f0f0;
+      --log-fg: #222;
+    }
+  }
+  body {
+    font-family: ui-monospace, monospace;
+    max-width: 720px; margin: 2rem auto; padding: 0 1rem;
+    background: var(--bg); color: var(--fg);
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  nav { display: flex; gap: .25rem; margin: 1rem 0 0; border-bottom: 1px solid var(--border); }
+  button.tab {
+    padding: .5rem 1rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    margin-bottom: -1px;
+  }
+  button.tab:hover { color: var(--fg); }
+  button.tab[aria-selected="true"] {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  section { padding: 1rem 0; }
+  section[hidden] { display: none; }
+  label { display: block; margin: .75rem 0 .25rem; font-size: .9rem; color: var(--muted); }
+  input, select, textarea {
+    width: 100%; padding: .5rem; font: inherit; box-sizing: border-box;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button.submit {
+    margin-top: 1rem; padding: .5rem 1.2rem; cursor: pointer;
+    background: var(--accent); color: var(--bg); border: none; border-radius: 4px;
+    font: inherit; font-weight: bold;
+  }
+  button.submit:hover { filter: brightness(1.15); }
+  pre.log {
+    background: var(--log-bg); color: var(--log-fg);
+    padding: .75rem; min-height: 4rem; white-space: pre-wrap;
+    word-break: break-word; max-height: 20rem; overflow: auto;
+    border: 1px solid var(--border); border-radius: 4px;
+    margin-top: 1rem;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .75rem; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: normal; }
+  .status-done { color: #6c6; }
+  .status-failed { color: #f66; }
+  .status-running, .status-queued { color: #fc6; }
+</style>
+</head>
+<body>
+<h1>ingest</h1>
+<small>upload files or submit URLs to drop into the music pipeline. authenticated via basic auth.</small>
+
+<nav>
+  <button class="tab" data-tab="upload" aria-selected="true">upload</button>
+  <button class="tab" data-tab="url" aria-selected="false">url</button>
+  <button class="tab" data-tab="jobs" aria-selected="false">jobs</button>
+</nav>
+
+<section id="tab-upload">
+  <form id="upload-form">
+    <label>target
+      <select name="target">
+        <option value="music" selected>music</option>
+      </select>
+    </label>
+    <label>file (single audio file, or .zip of audio files)
+      <input type="file" name="file" required>
+    </label>
+    <button class="submit" type="submit">upload</button>
+  </form>
+  <pre class="log" id="upload-log"></pre>
+</section>
+
+<section id="tab-url" hidden>
+  <form id="url-form">
+    <label>url
+      <input type="url" name="url" placeholder="https://..." required>
+    </label>
+    <label>target
+      <select name="target">
+        <option value="music" selected>music</option>
+      </select>
+    </label>
+    <label><input type="checkbox" name="audio_only" checked> audio only (extract to opus)</label>
+    <label><input type="checkbox" name="no_playlist" checked> single track only (uncheck for playlists)</label>
+    <label><input type="checkbox" name="use_exit_node" checked> route through exit node (uncheck to use direct/home IP — useful on YouTube where datacenter IPs hit bot checks)</label>
+    <label>format selector (optional, e.g. <code>bestaudio[ext=opus]</code>)
+      <input type="text" name="format" placeholder="bestaudio/best">
+    </label>
+    <label>playlist start (1-1000, optional)
+      <input type="number" name="playlist_start" min="1" max="1000">
+    </label>
+    <label>playlist end (1-1000, optional)
+      <input type="number" name="playlist_end" min="1" max="1000">
+    </label>
+    <label>max file size MB (1-2000, optional)
+      <input type="number" name="max_filesize_mb" min="1" max="2000">
+    </label>
+    <label>max downloads (1-50, optional)
+      <input type="number" name="max_downloads" min="1" max="50">
+    </label>
+    <button class="submit" type="submit">download</button>
+  </form>
+  <pre class="log" id="url-log"></pre>
+</section>
+
+<section id="tab-jobs" hidden>
+  <button class="submit" id="refresh-jobs" type="button">refresh</button>
+  <table id="jobs-table">
+    <thead><tr><th>id</th><th>kind</th><th>status</th><th>files</th><th>detail</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<script>
+const tabs = document.querySelectorAll('button.tab');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.setAttribute('aria-selected', x === t ? 'true' : 'false'));
+  document.querySelectorAll('section').forEach(s => s.hidden = s.id !== `tab-${t.dataset.tab}`);
+  if (t.dataset.tab === 'jobs') refreshJobs();
+}));
+
+async function postJSON(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return [r.status, await r.json().catch(() => ({}))];
+}
+
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const log = document.getElementById('upload-log');
+  log.textContent = 'uploading...';
+  const fd = new FormData(e.target);
+  const r = await fetch('/api/upload', { method: 'POST', body: fd });
+  const data = await r.json().catch(() => ({}));
+  log.textContent = JSON.stringify(data, null, 2);
+});
+
+document.getElementById('url-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const log = document.getElementById('url-log');
+  log.textContent = 'submitting...';
+  const f = e.target;
+  // Build a body that omits empty fields entirely so Pydantic's
+  // extra="forbid" + Optional[int] validators see clean input.
+  const body = {
+    url: f.url.value.trim(),
+    target: f.target.value,
+    audio_only: f.audio_only.checked,
+    no_playlist: f.no_playlist.checked,
+    use_exit_node: f.use_exit_node.checked,
+  };
+  if (f.format.value.trim()) body.format = f.format.value.trim();
+  if (f.playlist_start.value) body.playlist_start = parseInt(f.playlist_start.value, 10);
+  if (f.playlist_end.value) body.playlist_end = parseInt(f.playlist_end.value, 10);
+  if (f.max_filesize_mb.value) body.max_filesize_mb = parseInt(f.max_filesize_mb.value, 10);
+  if (f.max_downloads.value) body.max_downloads = parseInt(f.max_downloads.value, 10);
+  const [status, data] = await postJSON('/api/download', body);
+  log.textContent = `HTTP ${status}\n` + JSON.stringify(data, null, 2);
+});
+
+async function refreshJobs() {
+  const r = await fetch('/api/jobs');
+  const data = await r.json().catch(() => ({ jobs: [] }));
+  const tbody = document.querySelector('#jobs-table tbody');
+  tbody.innerHTML = '';
+  for (const j of data.jobs || []) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${j.id}</td><td>${j.kind}</td><td class="status-${j.status}">${j.status}</td><td>${(j.files || []).length}</td><td>${(j.detail || '').slice(0, 200)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById('refresh-jobs').addEventListener('click', refreshJobs);
+</script>
+</body>
+</html>

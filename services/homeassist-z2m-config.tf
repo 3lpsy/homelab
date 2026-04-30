@@ -4,32 +4,19 @@ resource "kubernetes_config_map" "homeassist_z2m_config" {
     namespace = kubernetes_namespace.homeassist.metadata[0].name
   }
   data = {
-    # Seed configuration.yaml. The seed-z2m-config init container copies this
-    # to /app/data/configuration.yaml on first boot only — subsequent edits
-    # made via the Z2M frontend (pairings, group assignments, friendly names)
-    # live on the PVC and are not overwritten.
-    #
-    # serial.port is included only when var.homeassist_z2m_usb_device_path is
-    # set. While empty, Z2M will start, find no coordinator, and crash-loop the
-    # main container — that's the visible signal you still need to plug in
-    # the dongle and set the variable.
+    # First-boot seed; user-owned thereafter (Z2M frontend writes devices /
+    # groups / friendly-names here). All TF-managed `mqtt.*` and `serial.*`
+    # values come in via `ZIGBEE2MQTT_CONFIG_*` env vars on the main
+    # container — Z2M overrides any matching key in configuration.yaml with
+    # the env value at runtime, never persisting the override to disk. This
+    # sidesteps Z2M's schema migrations rewriting `!include` / `!secret`
+    # references (issues #27077, #21803, #27696). `version: 5` matches Z2M's
+    # current settings schema so migrations are a no-op on first load.
     "configuration.yaml" = <<-EOT
+      version: 5
+
       homeassistant:
         enabled: true
-
-      permit_join: false
-
-      mqtt:
-        base_topic: zigbee2mqtt
-        server: mqtt://mosquitto.homeassist.svc.cluster.local:1883
-        user: z2m
-        password: '!secret mqtt_password'
-
-      %{ if var.homeassist_z2m_usb_device_path != "" ~}
-      serial:
-        port: /dev/zigbee
-        adapter: ember
-      %{ endif ~}
 
       frontend:
         enabled: true
@@ -44,6 +31,7 @@ resource "kubernetes_config_map" "homeassist_z2m_config" {
         cache_state_persistent: true
 
       availability:
+        enabled: true
         active:
           timeout: 10
         passive:

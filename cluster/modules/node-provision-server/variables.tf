@@ -35,3 +35,9 @@ variable "k3s_version" {
   type    = string
   default = "v1.35.3+k3s1"
 }
+
+variable "zigbee_dongle_serial" {
+  type        = string
+  description = "USB serial of the Zigbee coordinator dongle (e.g. ZBT-2). When set, a udev rule on the K3s node creates a stable /dev/zbt-2 symlink to the underlying char device. Point services/var.homeassist_z2m_usb_device_path at /dev/zbt-2 — that decouples from kubelet's hostPath-plugin bug where it auto-creates an empty directory at /dev/serial/by-id/<name> on a failed mount, blocking udev from recreating the symlink. Find with `udevadm info -q property -n /dev/ttyACM0 | grep ID_SERIAL_SHORT`. Empty disables the rule."
+  default     = ""
+}

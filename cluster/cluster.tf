@@ -75,6 +75,7 @@ module "cluster-provision" {
   # services deployment.
   registry_dockerio_domain  = "registry-dockerio"
   registry_ghcrio_domain    = "registry-ghcrio"
+  zigbee_dongle_serial      = var.zigbee_dongle_serial
   depends_on                = [module.node-provision-dep]
 }
 

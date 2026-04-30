@@ -29,6 +29,18 @@ resource "kubernetes_config_map" "homeassist_config" {
   }
 }
 
+resource "kubernetes_config_map" "homeassist_init_scripts" {
+  metadata {
+    name      = "homeassist-init-scripts"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  data = {
+    # Plain script; the password is read at runtime from /mnt/secrets via the
+    # CSI mount, so no secret ever lands in this ConfigMap.
+    "seed-mqtt-broker.py" = file("${path.module}/../data/homeassist/seed-mqtt-broker.py")
+  }
+}
+
 resource "kubernetes_config_map" "homeassist_nginx_config" {
   metadata {
     name      = "homeassist-nginx-config"

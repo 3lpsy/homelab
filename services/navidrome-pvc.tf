@@ -37,3 +37,4 @@ resource "kubernetes_persistent_volume_claim" "navidrome_music" {
   }
   wait_until_bound = false
 }
+

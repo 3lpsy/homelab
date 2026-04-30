@@ -46,6 +46,8 @@ locals {
     "group:mcp"                   = ["${var.tailnet_users["mcp_user"]}@"]
     "group:searxng-server"        = ["${var.tailnet_users["searxng_server_user"]}@"]
     "group:jellyfin-server"       = ["${var.tailnet_users["jellyfin_server_user"]}@"]
+    "group:syncthing-server"      = ["${var.tailnet_users["syncthing_server_user"]}@"]
+    "group:ingest-server"         = ["${var.tailnet_users["ingest_server_user"]}@"]
   }
 
   acl_groups = merge(local.identity_groups, local.infra_groups, local.service_groups)
@@ -71,12 +73,35 @@ locals {
     { action = "accept", src = ["group:personal"], dst = ["group:openwrt:80,443,9100"] },
   ]
 
-  # Syncthing peer-to-peer (personal, mobile, tablet, deck talk to each other).
+  # Syncthing peer-to-peer. Personal devices sync with each other AND with the
+  # cluster-hosted syncthing-server pod on tcp:22000. The pod runs with
+  # globalAnnounce/localAnnounce/relays disabled — devices add it as a static
+  # `tcp://<ts-fqdn>:22000` address. Personal devices can also browse the
+  # syncthing-server GUI on :443 for debug.
   acls_syncthing = [
     {
       action = "accept"
-      src    = ["group:personal", "group:mobile", "group:tablet", "group:deck"]
+      src    = ["group:personal", "group:personal-laptop", "group:mobile", "group:tablet", "group:deck"]
       dst    = ["group:personal:22000,21027", "group:mobile:22000,21027", "group:tablet:22000,21027", "group:deck:22000,21027"]
+    },
+    {
+      action = "accept"
+      src    = ["group:personal", "group:personal-laptop", "group:mobile", "group:tablet", "group:deck", "group:syncthing-server"]
+      dst    = ["group:syncthing-server:22000", "group:personal:22000", "group:personal-laptop:22000", "group:mobile:22000", "group:tablet:22000", "group:deck:22000"]
+    },
+    {
+      action = "accept"
+      src    = ["group:personal", "group:personal-laptop"]
+      dst    = ["group:syncthing-server:443"]
+    },
+  ]
+
+  # ingest-ui — personal devices upload files / submit yt-dlp URLs.
+  acls_ingest = [
+    {
+      action = "accept"
+      src    = ["group:personal", "group:personal-laptop", "group:devbox", "group:mobile"]
+      dst    = ["group:ingest-server:443"]
     },
   ]
 
@@ -287,6 +312,7 @@ locals {
     local.acls_litellm,
     local.acls_mcp,
     local.acls_searxng,
+    local.acls_ingest,
     local.acls_exitnodes,
     local.acls_pod_network,
     local.acls_ssh,

@@ -74,3 +74,32 @@ resource "kubernetes_network_policy" "litellm_from_mcp_litellm" {
   }
 }
 
+# Cross-ns ingress: navidrome-ingest → litellm:443. The worker tags new
+# dropzone files via LiteLLM (filename NER). Source-side egress allow
+# lives in services/navidrome-ingest-network.tf.
+resource "kubernetes_network_policy" "litellm_from_navidrome_ingest" {
+  metadata {
+    name      = "litellm-from-navidrome-ingest"
+    namespace = kubernetes_namespace.litellm.metadata[0].name
+  }
+
+  spec {
+    pod_selector { match_labels = { app = "litellm" } }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.navidrome.metadata[0].name
+          }
+        }
+        pod_selector { match_labels = { app = "navidrome-ingest" } }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "443"
+      }
+    }
+  }
+}

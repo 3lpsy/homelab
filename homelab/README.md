@@ -3,7 +3,7 @@
 Foundation deployment. Creates all AWS infrastructure, provisions the
 Headscale control server, joins it to its own tailnet, and defines the
 tailnet users. Every downstream deployment (cluster, vault, vault-conf,
-nextcloud, monitoring, monitoring-conf) reads this deployment's state
+services, monitoring-conf) reads this deployment's state
 via `terraform_remote_state`.
 
 ## Architecture
@@ -13,13 +13,13 @@ Two live servers, both connected via Tailscale:
 - **Headscale EC2** (Ubuntu). Headscale control plane, served behind
   Nginx TLS. Runs encrypted state backups to S3. Also joined to its
   own tailnet as `headscale-host` so SSH and the OTel host agent
-  (installed by the `monitoring` deployment) can reach it by tailnet
+  (installed by the `services` deployment) can reach it by tailnet
   name.
 - **K3s node** (Fedora, LAN). Single-node Kubernetes cluster.
   Provisioned by the `cluster` deployment, not here.
 
 Exit-node egress has moved into the cluster and no longer runs on
-AWS. See `nextcloud/README.md` for the in-cluster WireGuard proxies.
+AWS. See `services/README.md` for the in-cluster WireGuard proxies.
 
 ## Deployment flow
 
@@ -86,11 +86,11 @@ Templates in `../templates/` are reused across deployments:
 
 | Output | Consumed by |
 |---|---|
-| `acme_account_key_pem` | cluster, vault, nextcloud, monitoring (per-deployment Let's Encrypt certs) |
-| `tailnet_user_map` | vault, nextcloud, monitoring (look up Headscale pre-auth keys by role key) |
-| `headscale_server_fqdn` | cluster, vault, nextcloud, monitoring (Tailscale login server, Headscale provider endpoint) |
+| `acme_account_key_pem` | cluster, vault, services (per-deployment Let's Encrypt certs) |
+| `tailnet_user_map` | vault, services (look up Headscale pre-auth keys by role key) |
+| `headscale_server_fqdn` | cluster, vault, services (Tailscale login server, Headscale provider endpoint) |
 | `node_preauth_key` | cluster (initial tailnet join) |
-| `headscale_ec2_public_ip`, `headscale_ec2_ssh_user`, `headscale_ec2_tailnet_hostname` | monitoring (SSH-based OTel host-agent install) |
+| `headscale_ec2_public_ip`, `headscale_ec2_ssh_user`, `headscale_ec2_tailnet_hostname` | services (SSH-based OTel host-agent install) |
 
 ## Tailnet users
 

@@ -148,7 +148,13 @@ resource "null_resource" "post_k3s_install" {
       "sudo systemctl disable --now avahi-daemon.socket || echo 'No avahi socket to disable or it failed'",
       "sudo systemctl mask avahi-daemon.service avahi-daemon.socket || echo 'No avahi to mask or it failed'",
       "sudo systemctl stop passim.service || echo 'No passim to stop or it failed'",
-      "sudo systemctl mask passim.service || echo 'No passim to mask or it failed'"
+      "sudo systemctl mask passim.service || echo 'No passim to mask or it failed'",
+      # ModemManager AT-probes any USB CDC-ACM device on enumeration. That
+      # races zigbee2mqtt's first ASH frame to the ZBT-2 EmberZNet NCP and
+      # leaves the dongle in a state where it never replies → ASH-reset loop
+      # → HOST_FATAL_ERROR. Masking is the canonical fix per Z2M's docs.
+      "sudo systemctl disable --now ModemManager.service || echo 'No ModemManager to disable or it failed'",
+      "sudo systemctl mask ModemManager.service || echo 'No ModemManager to mask or it failed'"
     ]
   }
   depends_on = [null_resource.k3s_install]
@@ -197,6 +203,47 @@ EOF
   depends_on = [null_resource.k3s_install]
 }
 
+
+# Stable host-managed symlink for the Zigbee coordinator dongle (ZBT-2 et al).
+# Decouples from kubelet's hostPath plugin bug: kubelet auto-creates an empty
+# directory at any non-existing source path during pod mount setup, so a
+# failed mount against /dev/serial/by-id/<name> leaves a directory behind
+# that blocks udev from recreating the symlink on the next dongle replug
+# until the directory is rmdir'd by hand. Pointing TF's
+# homeassist_z2m_usb_device_path at /dev/zbt-2 (this rule's symlink target)
+# sidesteps the race entirely — kubelet never touches the by-id path, and
+# udev re-creates /dev/zbt-2 every plug. Gated on var.zigbee_dongle_serial
+# so nodes without a dongle skip the rule.
+resource "null_resource" "udev_zigbee_dongle" {
+  count = var.zigbee_dongle_serial != "" ? 1 : 0
+
+  triggers = {
+    serial = var.zigbee_dongle_serial
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      <<-EOT
+        sudo tee /etc/udev/rules.d/99-zigbee-dongle.rules > /dev/null <<EOF
+SUBSYSTEM=="tty", ATTRS{serial}=="${var.zigbee_dongle_serial}", SYMLINK+="zbt-2", MODE="0660", GROUP="dialout"
+EOF
+      EOT
+      ,
+      "sudo udevadm control --reload",
+      "sudo udevadm trigger --action=add"
+    ]
+  }
+
+  depends_on = [null_resource.k3s_install]
+}
 
 resource "null_resource" "dns_override" {
   connection {

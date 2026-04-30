@@ -1,0 +1,46 @@
+{# COMMITTED EXAMPLE PROMPT.
+   This file is checked into git and serves as the fallback prompt when
+   `prompt.j2` (gitignored) does not exist. To customize the tagger for
+   your personal corpus without leaking artist names / genres / personal
+   listening habits to the repo, copy this file to `prompt.j2` in the
+   same directory and edit there.
+   `prompt.j2` is excluded by .gitignore.
+#}
+You are tagging a music file destined for a Subsonic-compatible library.
+
+The corpus is heterogeneous. The filename is usually the only reliable
+signal — existing tags are often empty or contain a YouTube upload id.
+Do not invent album/year information when not present in the filename.
+
+Filename: {{ filename }}
+Parent folder: {{ parent_dir }}
+Existing tags (JSON): {{ existing_tags }}
+Duration (s): {{ duration_s }}
+Codec: {{ codec }}
+
+Output rules:
+- Use ASCII-friendly characters in artist and title. Treat fullwidth
+  unicode separators as their ASCII equivalents. Normalize mathematical
+  bold / fancy italic to plain ASCII. Replace fancy quotes with straight
+  ones. Don't include emoji or symbols.
+- Drop yt-dlp's bracketed video-id suffix from the title.
+- Drop quality/format/release-type tags from the title.
+- `[Genre]` prefix at the start of a filename is a genre hint, not part
+  of the artist. Move it to the `genre` field.
+- Drop track-number prefixes from producer-style filenames; the BPM is
+  metadata, not part of the title.
+- `Artist x Other Artist` (collab) -> join with ` x ` in artist.
+- `Artist & Other Artist` -> join with ` & ` in artist.
+- `Artist ft. <Person>` / `Artist feat. <Person>` -> keep the feature
+  notation INSIDE the artist field.
+- Remix attributions like `(Slowed)` / `(<Person> Remix)` stay on the
+  title only when they disambiguate from the original.
+- Files that are pure title (no clear artist): set `artist: null` and
+  put the meaningful name in `title`. Confidence 0.5-0.7.
+- The parent folder name is a hint — use it for the genre field but
+  not the artist.
+- If the file is a single (no album), leave album null.
+- If you cannot read both artist and title with reasonable certainty,
+  return a confidence below 0.5 and partial fields.
+
+Call the `tag_track` tool exactly once with your best parse.

@@ -6,16 +6,40 @@ terraform {
   }
 }
 
+locals {
+  # ConfigMap data keys must match `[-._a-zA-Z0-9]+` per Kubernetes API
+  # validation, so any `context_dirs` key containing `/` is encoded to a flat
+  # `dir-<md5>` key in the ConfigMap. The original subpath is restored at
+  # mount time via the volume's `items[].path` field (which IS allowed to
+  # contain `/`). Keep the encoding deterministic so the build_context
+  # ConfigMap and the volume's items list agree on every plan.
+  context_dir_keys = {
+    for path, _ in var.context_dirs : path => "dir-${md5(path)}"
+  }
+}
+
 resource "kubernetes_config_map" "build_context" {
   metadata {
     name      = "${var.name}-build-context"
     namespace = var.shared.builder_namespace
   }
 
-  data = var.context_files
+  data = merge(
+    var.context_files,
+    { for path, content in var.context_dirs : local.context_dir_keys[path] => content },
+  )
 }
 
 locals {
+  # `items` controls which ConfigMap data keys appear under the volume mount
+  # AND where each one lands. Setting it means we must include EVERY key —
+  # both flat context_files (key == path) and the sanitized context_dirs
+  # entries (sanitized key, original subpath as path).
+  context_volume_items = concat(
+    [for k, _ in var.context_files : { key = k, path = k }],
+    [for path, _ in var.context_dirs : { key = local.context_dir_keys[path], path = path }],
+  )
+
   # Cache tag for BuildKit's `--export-cache` / `--import-cache`. Lives
   # alongside the runtime image in the same registry, distinguished only
   # by tag. e.g. registry/foo:latest -> registry/foo:cache. Caller can
@@ -70,7 +94,7 @@ locals {
   # `buildctl_args` and `context_files` don't capture. Job spec.template
   # is immutable, so this forces a clean destroy-and-recreate via the
   # `job_name` hash.
-  pod_spec_sentinel = "host-aliases=v1,bk=v0.29.0,debug=on,tmpdir,pprof"
+  pod_spec_sentinel = "host-aliases=v1,bk=v0.29.0,debug=off,tmpdir,pprof,context-items=v1,materialize-context=v1"
 
   # Hash mixes every input that affects the Job spec — context files,
   # build-args, image_ref, the full buildctl args list, and the
@@ -78,6 +102,9 @@ locals {
   context_hash = substr(sha256(join("\n",
     concat(
       [for k, v in var.context_files : "${k}:${v}"],
+      # Prefix dir entries so a `context_files` key that happens to equal
+      # a `context_dirs` path can't silently collide on the hash input.
+      [for k, v in var.context_dirs : "dir:${k}:${v}"],
       [var.context_hash_extra],
       local.buildctl_args,
       [local.pod_spec_sentinel],
@@ -122,6 +149,31 @@ resource "kubernetes_manifest" "build" {
             { ip = var.shared.registry_ghcrio_cluster_ip, hostnames = [var.shared.registry_ghcrio_fqdn] },
           ]
 
+          # Materialize the ConfigMap into an emptyDir before buildkit
+          # reads it. Direct ConfigMap mounts use a symlink chain
+          # (`<file>` -> `..data/<file>`) that BuildKit's fsutil context
+          # streamer can't follow: fsutil skips dotfile-prefixed paths,
+          # so the `..data` symlink target appears missing during COPY.
+          # Result was every `COPY <file>` failing with "/<file>: not
+          # found" while the Dockerfile itself loaded fine (it goes
+          # through a different code path that resolves via the OS).
+          # `cp -rL` follows the symlinks and writes plain files into
+          # the emptyDir; buildkit then sees a normal directory.
+          initContainers = [
+            {
+              name    = "stage-context"
+              image   = var.shared.image_busybox
+              command = [
+                "sh", "-c",
+                "cp -rL /context-src/. /workspace/ && chown -R 1000:1000 /workspace",
+              ]
+              volumeMounts = [
+                { name = "context-src", mountPath = "/context-src", readOnly = true },
+                { name = "context", mountPath = "/workspace" },
+              ]
+            },
+          ]
+
           containers = [
             {
               name    = "buildkit"
@@ -162,9 +214,17 @@ resource "kubernetes_manifest" "build" {
 
           volumes = [
             {
-              name = "context"
+              name     = "context"
+              emptyDir = {}
+            },
+            {
+              name = "context-src"
               configMap = {
-                name = kubernetes_config_map.build_context.metadata[0].name
+                name  = kubernetes_config_map.build_context.metadata[0].name
+                # `items` lists every key the volume should expose AND the
+                # path it should land at — required to materialize
+                # `context_dirs` entries under their original subpath.
+                items = local.context_volume_items
               }
             },
             {

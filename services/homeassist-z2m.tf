@@ -82,10 +82,13 @@ resource "kubernetes_deployment" "homeassist_z2m" {
           }
         }
 
-        # Seeds Z2M's configuration.yaml on the PVC the first time only,
-        # then always writes secrets.yaml from the CSI-mounted MQTT password
-        # so Vault rotation flows through and Z2M's `!secret mqtt_password`
-        # reference resolves at startup.
+        # First boot only: seeds configuration.yaml on the PVC. User-owned
+        # thereafter (Z2M frontend writes devices / groups / friendly-names
+        # here). All TF-managed mqtt.* and serial.* values come in via
+        # ZIGBEE2MQTT_CONFIG_* env vars on the main container, so the init
+        # never has to touch configuration.yaml after the seed. Also clears
+        # legacy artifacts (secret.yaml, secrets.yaml, mqtt.yaml, serial.yaml)
+        # left behind by older iterations of this init that wrote them.
         init_container {
           name  = "seed-z2m-config"
           image = var.image_busybox
@@ -96,9 +99,8 @@ resource "kubernetes_deployment" "homeassist_z2m" {
               if [ ! -f /app/data/configuration.yaml ]; then
                 cp /etc/z2m-config-seed/configuration.yaml /app/data/configuration.yaml
               fi
-              PASSWORD=$(cat /mnt/secrets/z2m_password)
-              printf 'mqtt_password: "%s"\n' "$PASSWORD" > /app/data/secrets.yaml
-              chmod 600 /app/data/secrets.yaml
+              rm -f /app/data/secret.yaml /app/data/secrets.yaml \
+                    /app/data/mqtt.yaml /app/data/serial.yaml
             EOT
           ]
           volume_mount {
@@ -108,11 +110,6 @@ resource "kubernetes_deployment" "homeassist_z2m" {
           volume_mount {
             name       = "z2m-config-seed"
             mount_path = "/etc/z2m-config-seed"
-            read_only  = true
-          }
-          volume_mount {
-            name       = "secrets-store"
-            mount_path = "/mnt/secrets"
             read_only  = true
           }
         }
@@ -135,11 +132,74 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             name  = "ZIGBEE2MQTT_DATA"
             value = "/app/data"
           }
+          # ZIGBEE2MQTT_CONFIG_* env vars override the matching keys in
+          # configuration.yaml at runtime, never persist to disk, and survive
+          # Z2M's schema migrations. Source of truth for all TF-managed
+          # broker / serial settings.
+          env {
+            name  = "ZIGBEE2MQTT_CONFIG_MQTT_SERVER"
+            value = "mqtt://mosquitto.homeassist.svc.cluster.local:1883"
+          }
+          env {
+            name  = "ZIGBEE2MQTT_CONFIG_MQTT_USER"
+            value = "z2m"
+          }
+          env {
+            name = "ZIGBEE2MQTT_CONFIG_MQTT_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = "homeassist-z2m-secrets"
+                key  = "z2m_password"
+              }
+            }
+          }
+          # serial.* envs only when the dongle is actually wired in. Without
+          # them Z2M crash-loops with "no coordinator", which is the visible
+          # signal that var.homeassist_z2m_usb_device_path is unset.
+          dynamic "env" {
+            for_each = var.homeassist_z2m_usb_device_path != "" ? [1] : []
+            content {
+              name  = "ZIGBEE2MQTT_CONFIG_SERIAL_PORT"
+              value = "/dev/zigbee"
+            }
+          }
+          dynamic "env" {
+            for_each = var.homeassist_z2m_usb_device_path != "" ? [1] : []
+            content {
+              name  = "ZIGBEE2MQTT_CONFIG_SERIAL_ADAPTER"
+              value = "ember"
+            }
+          }
+          # ZBT-2 requires hardware flow control. Z2M defaults serial.rtscts
+          # to false and falls back to software flow control (XON/XOFF),
+          # which the ZBT-2's EmberZNet firmware does not speak — ASH
+          # handshake then fails with HOST_FATAL_ERROR after a few retries.
+          # Hard-on it whenever the dongle is wired in.
+          dynamic "env" {
+            for_each = var.homeassist_z2m_usb_device_path != "" ? [1] : []
+            content {
+              name  = "ZIGBEE2MQTT_CONFIG_SERIAL_RTSCTS"
+              value = "true"
+            }
+          }
+          # ZBT-2's EmberZNet NCP firmware runs at 460800. Z2M's ember
+          # adapter defaults to 115200 — mismatch produces an ASH-reset loop
+          # at startup even with rtscts on.
+          dynamic "env" {
+            for_each = var.homeassist_z2m_usb_device_path != "" ? [1] : []
+            content {
+              name  = "ZIGBEE2MQTT_CONFIG_SERIAL_BAUDRATE"
+              value = "460800"
+            }
+          }
 
           volume_mount {
             name       = "z2m-data"
             mount_path = "/app/data"
           }
+          # secrets-store mount kept so syncSecret keeps homeassist-z2m-secrets
+          # populated for the env-var secretKeyRef above and for the nginx
+          # sidecar's basic-auth + TLS.
           volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
@@ -147,9 +207,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
           }
 
           # USB coordinator passthrough. Active only when
-          # var.homeassist_z2m_usb_device_path is set — until then the dynamic
-          # block is empty and Z2M will crash-loop with "no serial port",
-          # which is the visible signal that the dongle is not yet wired in.
+          # var.homeassist_z2m_usb_device_path is set.
           dynamic "volume_mount" {
             for_each = var.homeassist_z2m_usb_device_path != "" ? [1] : []
             content {
@@ -172,9 +230,12 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             limits   = { cpu = "1000m", memory = "1Gi" }
           }
 
+          # Z2M's frontend binds 127.0.0.1:8080 (nginx-sidecar-only). A k8s
+          # tcp_socket probe targets the pod IP, not loopback, so it always
+          # fails. Exec the check inside the container instead.
           liveness_probe {
-            tcp_socket {
-              port = 8080
+            exec {
+              command = ["sh", "-c", "nc -z 127.0.0.1 8080"]
             }
             initial_delay_seconds = 60
             period_seconds        = 30
@@ -183,8 +244,8 @@ resource "kubernetes_deployment" "homeassist_z2m" {
           }
 
           readiness_probe {
-            tcp_socket {
-              port = 8080
+            exec {
+              command = ["sh", "-c", "nc -z 127.0.0.1 8080"]
             }
             initial_delay_seconds = 30
             period_seconds        = 10

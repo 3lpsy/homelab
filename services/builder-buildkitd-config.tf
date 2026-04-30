@@ -31,12 +31,15 @@ locals {
     # deliberately when upgrading; remember to bump pod_spec_sentinel in
     # templates/buildkit-job/main.tf so existing Jobs recreate.
     image_buildkit = "moby/buildkit:v0.29.0-rootless"
-    # Diagnostic flag — flip to true (and bump the pod_spec_sentinel) when
-    # investigating a build wedge to capture buildkitd resolver internals.
-    # Currently ON: chasing a non-deterministic wedge where step #2
-    # `[load metadata]` or step #7 `importing cache manifest` stalls for
-    # minutes despite the registry serving the request immediately.
-    buildkit_debug = true
+    # Used by the stage-context init container in templates/buildkit-job
+    # to materialize the ConfigMap into a real directory before buildkit
+    # reads it (works around fsutil's dotfile symlink filtering).
+    image_busybox = var.image_busybox
+    # Diagnostic flag — flip to true (and bump the pod_spec_sentinel in
+    # templates/buildkit-job/main.tf) when investigating a build wedge
+    # to capture buildkitd resolver internals. Default off; the gRPC
+    # resolver wedge it was chasing is fixed.
+    buildkit_debug = false
   }
 }
 

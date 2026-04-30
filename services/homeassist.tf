@@ -18,8 +18,9 @@ resource "kubernetes_deployment" "homeassist" {
         labels = { app = "homeassist" }
         annotations = {
           "config-hash"                         = sha1(kubernetes_config_map.homeassist_config.data["configuration.yaml"])
+          "init-scripts-hash"                   = sha1(kubernetes_config_map.homeassist_init_scripts.data["seed-mqtt-broker.py"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.homeassist_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "homeassist-tls"
+          "secret.reloader.stakater.com/reload" = "homeassist-tls,homeassist-secrets"
         }
       }
 
@@ -139,6 +140,34 @@ resource "kubernetes_deployment" "homeassist" {
           }
         }
 
+        # Pre-wires the MQTT integration so HA talks to the in-cluster
+        # mosquitto broker without a manual UI config-flow, and so Vault
+        # rotations of homeassist/mosquitto:ha_password flow through to HA
+        # automatically (Reloader bounces this pod, init re-runs, password is
+        # patched in place). Logic lives in data/homeassist/seed-mqtt-broker.py
+        # — see the docstring there for first-boot vs. patch behavior. The
+        # ConfigMap holds only the script; the password is read at runtime
+        # from /mnt/secrets so no secret leaks into the ConfigMap.
+        init_container {
+          name    = "seed-mqtt-broker"
+          image   = var.image_python
+          command = ["python3", "/scripts/seed-mqtt-broker.py"]
+          volume_mount {
+            name       = "homeassist-data"
+            mount_path = "/config"
+          }
+          volume_mount {
+            name       = "homeassist-init-scripts"
+            mount_path = "/scripts"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "secrets-store"
+            mount_path = "/mnt/secrets"
+            read_only  = true
+          }
+        }
+
         # Home Assistant
         container {
           name  = "homeassistant"
@@ -202,6 +231,13 @@ resource "kubernetes_deployment" "homeassist" {
           name = "homeassist-config-seed"
           config_map {
             name = kubernetes_config_map.homeassist_config.metadata[0].name
+          }
+        }
+        volume {
+          name = "homeassist-init-scripts"
+          config_map {
+            name         = kubernetes_config_map.homeassist_init_scripts.metadata[0].name
+            default_mode = "0555"
           }
         }
 
