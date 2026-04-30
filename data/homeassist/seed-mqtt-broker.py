@@ -2,10 +2,18 @@
 to be done by hand, and so Vault rotations of homeassist/mosquitto:ha_password
 flow through to HA on the next pod restart.
 
+Two storage-schema layers, both pinned to upstream constants:
+  - Outer file (/config/.storage/core.config_entries):
+        version=1, minor_version=5
+        homeassistant.config_entries.STORAGE_VERSION / STORAGE_VERSION_MINOR
+  - Inner MQTT entry:
+        version=2, minor_version=1
+        homeassistant.components.mqtt.const.CONFIG_ENTRY_VERSION /
+        CONFIG_ENTRY_MINOR_VERSION
+
 First boot (file missing): seeds /config/.storage/core.config_entries with one
-MQTT entry pointing at the in-cluster mosquitto Service. Schema follows HA's
-core_config_entries STORAGE_VERSION at the time of writing; HA's storage
-manager auto-migrates on read if the schema bumps.
+MQTT entry pointing at the in-cluster mosquitto Service. HA's storage manager
+auto-migrates on read if either schema bumps in a future release.
 
 Subsequent boots: parses the existing file, finds the entry whose
 `domain == "mqtt"`, and patches data.{broker,port,username,password} in place.
@@ -43,7 +51,7 @@ def make_entry(password: str, now: str) -> dict:
         "discovery_keys": {},
         "domain": "mqtt",
         "entry_id": uuid.uuid5(uuid.NAMESPACE_DNS, "homeassist-mqtt").hex,
-        "minor_version": 2,
+        "minor_version": 1,
         "modified_at": now,
         "options": {},
         "pref_disable_new_entities": False,
@@ -52,7 +60,7 @@ def make_entry(password: str, now: str) -> dict:
         "subentries": [],
         "title": "Mosquitto",
         "unique_id": None,
-        "version": 1,
+        "version": 2,
     }
 
 

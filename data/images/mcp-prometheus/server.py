@@ -455,11 +455,6 @@ def _build(ctor, **fields):
 # --- Tools -----------------------------------------------------------------
 
 
-async def _healthz(_request: Any) -> JSONResponse:
-    """Liveness + readiness probe target. No auth, no upstream calls."""
-    return JSONResponse({"ok": True})
-
-
 mcp = FastMCP(
     "prometheus",
     instructions=(
@@ -480,9 +475,6 @@ mcp = FastMCP(
         "narrow your selectors if set."
     ),
 )
-
-
-mcp.custom_route("/healthz", methods=["GET"])(_healthz)
 
 
 @mcp.tool()

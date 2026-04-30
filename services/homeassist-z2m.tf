@@ -86,9 +86,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
         # thereafter (Z2M frontend writes devices / groups / friendly-names
         # here). All TF-managed mqtt.* and serial.* values come in via
         # ZIGBEE2MQTT_CONFIG_* env vars on the main container, so the init
-        # never has to touch configuration.yaml after the seed. Also clears
-        # legacy artifacts (secret.yaml, secrets.yaml, mqtt.yaml, serial.yaml)
-        # left behind by older iterations of this init that wrote them.
+        # never has to touch configuration.yaml after the seed.
         init_container {
           name  = "seed-z2m-config"
           image = var.image_busybox
@@ -99,8 +97,6 @@ resource "kubernetes_deployment" "homeassist_z2m" {
               if [ ! -f /app/data/configuration.yaml ]; then
                 cp /etc/z2m-config-seed/configuration.yaml /app/data/configuration.yaml
               fi
-              rm -f /app/data/secret.yaml /app/data/secrets.yaml \
-                    /app/data/mqtt.yaml /app/data/serial.yaml
             EOT
           ]
           volume_mount {
