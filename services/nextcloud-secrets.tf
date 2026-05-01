@@ -15,7 +15,7 @@ resource "kubernetes_service_account" "nextcloud" {
 }
 
 resource "kubernetes_secret" "tailscale_state" {
-  for_each = toset(["tailscale-state", "collabora-tailscale-state", "immich-tailscale-state"])
+  for_each = toset(["tailscale-state", "collabora-tailscale-state"])
 
   metadata {
     name      = each.value
@@ -37,7 +37,7 @@ resource "kubernetes_role" "tailscale" {
   rule {
     api_groups     = [""]
     resources      = ["secrets"]
-    resource_names = ["tailscale-state", "collabora-tailscale-state", "immich-tailscale-state"]
+    resource_names = ["tailscale-state", "collabora-tailscale-state"]
     verbs          = ["get", "update", "patch"]
   }
 }

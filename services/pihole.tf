@@ -1,3 +1,97 @@
+resource "kubernetes_namespace" "pihole" {
+  metadata {
+    name = "pihole"
+  }
+}
+
+resource "kubernetes_service_account" "pihole" {
+  metadata {
+    name      = "pihole"
+    namespace = kubernetes_namespace.pihole.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "random_password" "pihole_password" {
+  length  = 32
+  special = false
+}
+
+module "pihole_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "pihole"
+  namespace            = kubernetes_namespace.pihole.metadata[0].name
+  service_account_name = kubernetes_service_account.pihole.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.pihole_server_user
+}
+
+module "pihole_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "pihole"
+  namespace            = kubernetes_namespace.pihole.metadata[0].name
+  service_account_name = kubernetes_service_account.pihole.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.pihole_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = {
+    admin_password = random_password.pihole_password.result
+  }
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "pihole_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "pihole-data"
+    namespace = kubernetes_namespace.pihole.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = "1Gi"
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "pihole_nginx_config" {
+  metadata {
+    name      = "pihole-nginx-config"
+    namespace = kubernetes_namespace.pihole.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/pihole.nginx.conf.tpl", {
+      server_domain = "${var.pihole_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
+# Single-pod namespace. Pihole serves DNS to tailnet devices via its
+# Tailscale sidecar (NetPol-invisible). Internet egress (covered by
+# baseline) is required for Pihole's upstream DNS resolvers.
+module "pihole_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.pihole.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
 resource "kubernetes_deployment" "pihole" {
   metadata {
     name      = "pihole"
@@ -18,7 +112,7 @@ resource "kubernetes_deployment" "pihole" {
         labels = { app = "pihole" }
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.pihole_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "pihole-secrets,pihole-tls"
+          "secret.reloader.stakater.com/reload" = "${module.pihole_tls_vault.config_secret_name},${module.pihole_tls_vault.tls_secret_name}"
           # Admin password and upstream DNS settings come from FTLCONF env
           # vars (Vault CSI on pod start). Query log + gravity blocklist DB
           # rebuild on first start. Nothing in this PVC is irreplaceable.
@@ -54,7 +148,7 @@ resource "kubernetes_deployment" "pihole" {
             name = "FTLCONF_webserver_api_password"
             value_from {
               secret_key_ref {
-                name = "pihole-secrets"
+                name = module.pihole_tls_vault.config_secret_name
                 key  = "admin_password"
               }
             }
@@ -134,7 +228,7 @@ resource "kubernetes_deployment" "pihole" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.pihole_secret_provider.manifest.metadata.name
+              secretProviderClass = module.pihole_tls_vault.spc_name
             }
           }
         }
@@ -169,7 +263,7 @@ resource "kubernetes_deployment" "pihole" {
         # Nginx Volumes
         volume {
           name = "pihole-tls"
-          secret { secret_name = "pihole-tls" }
+          secret { secret_name = module.pihole_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -189,7 +283,7 @@ resource "kubernetes_deployment" "pihole" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "pihole-tailscale-state"
+            value = module.pihole_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -199,7 +293,7 @@ resource "kubernetes_deployment" "pihole" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.pihole_tailscale_auth.metadata[0].name
+                name = module.pihole_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -261,7 +355,7 @@ resource "kubernetes_deployment" "pihole" {
   }
 
   depends_on = [
-    kubernetes_manifest.pihole_secret_provider
+    module.pihole_tls_vault,
   ]
 
   lifecycle {

@@ -48,7 +48,7 @@ Secrets come from Vault through the Secrets Store CSI Driver.
 | Mosquitto | MQTT broker for HA | Co-located in the `homeassist` namespace; init container builds `mosquitto_passwd` from Vault-managed `ha` and `z2m` passwords on every pod start |
 | Zigbee2MQTT | Zigbee bridge | Same namespace as HA; reuses the HA Tailscale auth secret. USB coordinator passthrough is gated on `homeassist_z2m_usb_device_path` — empty until the dongle is wired in. Nginx sidecar adds htpasswd auth (Z2M has no native UI auth) |
 | Frigate | NVR / camera review | AMD VAAPI hwaccel decode via `/dev/dri` host_path; `/dev/shm` upsized to 512Mi for ffmpeg frame buffers; init container seeds Frigate's auth DB with the Vault-managed admin password (PBKDF2). Day-1 config has no cameras |
-| Grafana, Ntfy, OpenObserve, Prometheus, Alertmanager | Monitoring surfaces | Live in the `monitoring` Kubernetes namespace alongside the rest. Dashboards land via the separate `monitoring-conf` deployment. |
+| Grafana, Ntfy, OpenObserve, Prometheus, Alertmanager | Monitoring surfaces | Live in the `monitoring` Kubernetes namespace alongside the rest. Dashboards land via the separate `services-conf` deployment. |
 
 ## MCP gateway
 

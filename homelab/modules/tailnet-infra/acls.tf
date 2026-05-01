@@ -48,6 +48,7 @@ locals {
     "group:jellyfin-server"       = ["${var.tailnet_users["jellyfin_server_user"]}@"]
     "group:syncthing-server"      = ["${var.tailnet_users["syncthing_server_user"]}@"]
     "group:ingest-server"         = ["${var.tailnet_users["ingest_server_user"]}@"]
+    "group:podcast-server"        = ["${var.tailnet_users["podcast_server_user"]}@"]
   }
 
   acl_groups = merge(local.identity_groups, local.infra_groups, local.service_groups)
@@ -145,6 +146,17 @@ locals {
       action = "accept"
       src    = ["group:personal", "group:personal-laptop", "group:mobile", "group:tablet", "group:deck"]
       dst    = ["group:music-server:443"]
+    },
+  ]
+
+  # Audiobookshelf (podcasts) — consumer devices reach the server over the
+  # tailnet. Mirrors the music ACL; podcasts are mobile-first listening with
+  # desktop web as a secondary surface.
+  acls_podcast = [
+    {
+      action = "accept"
+      src    = ["group:personal", "group:personal-laptop", "group:mobile", "group:tablet", "group:deck"]
+      dst    = ["group:podcast-server:443"]
     },
   ]
 
@@ -301,6 +313,7 @@ locals {
     local.acls_calendar,
     local.acls_music,
     local.acls_jellyfin,
+    local.acls_podcast,
     local.acls_homeassist,
     local.acls_frigate,
     local.acls_registry,

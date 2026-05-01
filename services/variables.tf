@@ -156,6 +156,23 @@ variable "frigate_recordings_size" {
   default = "500Gi"
 }
 
+# Map key is the Frigate camera name (lowercase, no spaces) — appears in
+# UI, RTSP URLs, MQTT topics, recording paths. Passwords land in Vault at
+# frigate/config and surface as FRIGATE_RTSP_PASSWORD_<KEY> env vars
+# referenced from config.yml via Frigate's `{FRIGATE_*}` interpolation.
+# Non-alphanumeric chars in the key are replaced with `_` for env-var
+# names; pick simple keys (e.g. "frontdoor", "garage") to avoid surprises.
+variable "frigate_cameras" {
+  type = map(object({
+    ip       = string
+    username = string
+    password = string
+    objects  = optional(list(string), ["person"])
+  }))
+  sensitive = true
+  default   = {}
+}
+
 # Container images
 
 variable "image_busybox" {
@@ -350,11 +367,12 @@ variable "navidrome_ingest_model" {
     JSON-ish text instead, which falls into the parse_tags_from_text
     fallback and usually gets confidence=0.00 -> quarantine.
 
-    Available aliases live in var.llm_models. agent-class models are the
-    safest bet for tool-call reliability.
+    Available aliases live in var.llm_models. flagship-gpt-oss-120b is
+    explicitly tool-call-trained and the most reliable choice; agent-class
+    models are the next-safest bet.
   EOT
   type        = string
-  default     = "agent-glm-4.5-air"
+  default     = "flagship-gpt-oss-120b"
 }
 
 variable "navidrome_ingest_confidence_threshold" {
@@ -417,6 +435,101 @@ variable "jellyfin_video_gid" {
   default     = 39
 }
 
+variable "audiobookshelf_domain" {
+  type    = string
+  default = "podcast"
+}
+
+variable "image_audiobookshelf" {
+  type    = string
+  default = "advplyr/audiobookshelf:latest"
+}
+
+variable "image_audiobookshelf_seed" {
+  description = "Image used by the audiobookshelf seed Job (bootstrap + reconcile). Stdlib-only Python script — no extra packages installed at runtime, so the version tag matters mainly for cache locality."
+  type        = string
+  default     = "python:3.14-alpine"
+}
+
+variable "audiobookshelf_config_size" {
+  description = "PVC size for the ABS sqlite DB at /config. Small — must be local FS per ABS docs."
+  type        = string
+  default     = "2Gi"
+}
+
+variable "audiobookshelf_metadata_size" {
+  description = "PVC size for /metadata: covers, cache, built-in nightly DB backups."
+  type        = string
+  default     = "10Gi"
+}
+
+variable "audiobookshelf_podcasts_size" {
+  description = "PVC size for /podcasts: one folder per podcast, all downloaded episodes."
+  type        = string
+  default     = "200Gi"
+}
+
+variable "audiobookshelf_users" {
+  description = "List of ABS usernames. The first entry is the root admin (auto-created via POST /init on first boot). Each gets a random_password + Vault KV entry under audiobookshelf/config and is auto-provisioned by the seed Job."
+  type        = list(string)
+  default     = ["jim"]
+}
+
+variable "audiobookshelf_opml_path" {
+  description = "Path (relative to repo root) to an OPML file preseeded into the Podcasts library by the seed Job. Default points at data/audiobookshelf/podcasts.opml (gitignored). If the file is absent or empty the seed step is skipped."
+  type        = string
+  default     = "data/audiobookshelf/podcasts.opml"
+}
+
+variable "audiobookshelf_podcast_default_max_episodes" {
+  description = "Default `maxEpisodesToKeep` applied to every imported podcast (FIFO retention — newest N kept regardless of listened state). Set to 0 for unlimited. Per-podcast overrides allowed via audiobookshelf_auto_download_podcasts."
+  type        = number
+  default     = 5
+}
+
+variable "audiobookshelf_podcast_default_schedule" {
+  description = "Default cron expression for `autoDownloadSchedule` applied to podcasts in audiobookshelf_auto_download_podcasts that don't override it. Default = every 4 hours. Has no effect on podcasts not in the auto-download list."
+  type        = string
+  default     = "0 */4 * * *"
+}
+
+variable "audiobookshelf_podcast_initial_lookback_days" {
+  description = "When the seed Job encounters a freshly-imported podcast (per audiobookshelf_podcast_fresh_import_window_seconds), it initializes lastEpisodeCheck to (now - this many days) so the first scheduled auto-download poll — and the UI's Check-New-Episodes dialog default — grabs the past week of episodes. Older podcasts are left alone since ABS advances their cursor on each poll. Set to 0 to disable seeding."
+  type        = number
+  default     = 7
+}
+
+variable "audiobookshelf_podcast_fresh_import_window_seconds" {
+  description = "How long after a library item's addedAt timestamp the seed Job is allowed to rewind its lastEpisodeCheck. Must be longer than the worst-case time between bulk-create and the seed Job's PATCH pass — bulk-create is async, big OPMLs take a while. Default 6h (21600s)."
+  type        = number
+  default     = 21600
+}
+
+variable "audiobookshelf_auto_download_podcasts" {
+  description = <<-EOT
+    Map of feed URL -> per-podcast override settings. Listed podcasts get
+    autoDownloadEpisodes=true set on them by the seed Job; unlisted ones
+    keep ABS's default of false (manual-download only). Each entry can
+    override:
+      schedule                     (cron string)
+      max_episodes_to_keep         (int; 0 = unlimited)
+      max_new_episodes_to_download (int per scheduled check)
+
+    Empty object `{}` for an entry = use the variable defaults.
+
+    Match key is the feed URL exactly as it appears in your OPML; the
+    seed Job normalizes trivial differences (trailing slash, http vs
+    https) when matching.
+  EOT
+  type = map(object({
+    _comment                     = optional(string)
+    schedule                     = optional(string)
+    max_episodes_to_keep         = optional(number)
+    max_new_episodes_to_download = optional(number)
+  }))
+  default = {}
+}
+
 variable "image_homeassist" {
   type    = string
   default = "ghcr.io/home-assistant/home-assistant:stable"
@@ -434,7 +547,12 @@ variable "image_homeassist_z2m" {
 
 variable "image_frigate" {
   type    = string
-  default = "ghcr.io/blakeblackshear/frigate:stable"
+  # ROCm variant — bundles the ONNX runtime + ROCm execution provider so
+  # the inference detector runs on the AMD iGPU instead of CPU. Image is
+  # ~5GB (vs ~1GB for stable); first pull takes a while. Only works on
+  # GPUs in ROCm's support matrix or via HSA_OVERRIDE_GFX_VERSION (set
+  # in frigate.tf for the Rembrandt 680M iGPU).
+  default = "ghcr.io/blakeblackshear/frigate:stable-rocm"
 }
 
 variable "image_python" {
@@ -838,6 +956,12 @@ variable "ntfy_users" {
     mobile      = "user"
     prometheus  = "user"
     openobserve = "user"
+    # Home Assistant publishes Frigate person-detection alerts (and any
+    # other HA-side automation notifications) via this user. HA's
+    # rest_command lives on the HA PVC; the password lookup is up to the
+    # operator (e.g. `vault kv get -field=password_homeassist
+    # ntfy/config`).
+    homeassist = "user"
   }
 }
 
@@ -952,4 +1076,6 @@ locals {
 
   ingest_ui_image        = "${local.thunderbolt_registry}/ingest-ui:latest"
   navidrome_ingest_image = "${local.thunderbolt_registry}/navidrome-ingest:latest"
+
+  frigate_model_image = "${local.thunderbolt_registry}/frigate-model:latest"
 }

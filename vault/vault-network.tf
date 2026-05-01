@@ -68,7 +68,12 @@ resource "kubernetes_network_policy" "vault_cross_ns" {
       }
     }
 
-    # tls-rotator → 8201 (cert rotation writes)
+    # tls-rotator (cert rotation writes) + monitoring (openobserve-bootstrap
+    # service-account creds) → 8201. Kept in a single ingress block with
+    # multiple `from` selectors — kube-router collapses same-port rules from
+    # different namespace_selectors into one iptables rule with a unioned src
+    # ipset and only populates one ns's pods if you split them. One block here
+    # forces the union explicitly and keeps both ns's pods in the ipset.
     ingress {
       from {
         namespace_selector {
@@ -77,14 +82,6 @@ resource "kubernetes_network_policy" "vault_cross_ns" {
           }
         }
       }
-      ports {
-        protocol = "TCP"
-        port     = "8201"
-      }
-    }
-
-    # monitoring → 8201 (openobserve-bootstrap writes service-account creds)
-    ingress {
       from {
         namespace_selector {
           match_labels = {

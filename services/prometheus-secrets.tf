@@ -163,7 +163,10 @@ resource "kubernetes_manifest" "prometheus_alertmanager_secret_provider" {
   depends_on = [
     kubernetes_namespace.monitoring,
     vault_kubernetes_auth_backend_role.prometheus_alertmanager,
-    vault_kv_secret_v2.ntfy_config,
+    # Was vault_kv_secret_v2.ntfy_config (now lives inside the
+    # ntfy_tls_vault module). Depend on the whole module so the config
+    # write completes before this SPC reads from the same path.
+    module.ntfy_tls_vault,
     vault_policy.prometheus_alertmanager,
   ]
 }

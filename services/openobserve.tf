@@ -1,3 +1,127 @@
+# Self-hosted log + metrics aggregator. Single-node mode (ZO_LOCAL_MODE=true)
+# with a local-path PVC. UI on 5080, gRPC ingest on 5081.
+#
+# Bootstrap and provisioner are separate one-shot Jobs in
+# openobserve-bootstrap.tf and openobserve-provisioner.tf. They have their
+# own SPCs because they target different Vault paths
+# (openobserve/service-accounts/*).
+
+resource "kubernetes_service_account" "openobserve" {
+  metadata {
+    name      = "openobserve"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "random_password" "openobserve_root" {
+  length  = 32
+  special = false
+}
+
+locals {
+  openobserve_root_email    = "admin@${local.magic_fqdn_suffix}"
+  openobserve_root_password = random_password.openobserve_root.result
+  openobserve_basic_b64     = base64encode("${local.openobserve_root_email}:${local.openobserve_root_password}")
+  openobserve_fqdn          = "${var.openobserve_domain}.${local.magic_fqdn_suffix}"
+}
+
+module "openobserve_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "openobserve"
+  namespace            = kubernetes_namespace.monitoring.metadata[0].name
+  service_account_name = kubernetes_service_account.openobserve.metadata[0].name
+  # Headscale user is `log`, not `openobserve` — historical naming.
+  tailnet_user_id = data.terraform_remote_state.homelab.outputs.tailnet_user_map.log_server_user
+}
+
+module "openobserve_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "openobserve"
+  namespace            = kubernetes_namespace.monitoring.metadata[0].name
+  service_account_name = kubernetes_service_account.openobserve.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = local.openobserve_fqdn
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  # Module produces k8s secret `openobserve-secrets` with keys matching
+  # objectNames (root_email, root_password, basic_b64). Pod spec below
+  # uses explicit env { value_from } to remap k8s keys to the env names
+  # OpenObserve actually reads (ZO_ROOT_USER_EMAIL, ZO_ROOT_USER_PASSWORD).
+  # basic_b64 stays in the secret because the bootstrap job's SPC reads
+  # it via separate path; provisioner reads its own service-account
+  # basic_b64 from /service-accounts/provisioner.
+  config_secrets = {
+    root_email    = local.openobserve_root_email
+    root_password = local.openobserve_root_password
+    basic_b64     = local.openobserve_basic_b64
+  }
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "openobserve_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "openobserve-data"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.openobserve_storage_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "openobserve_env" {
+  metadata {
+    name      = "openobserve-env"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+
+  data = {
+    ZO_LOCAL_MODE                  = "true"
+    ZO_LOCAL_MODE_STORAGE          = "disk"
+    ZO_DATA_DIR                    = "/data"
+    ZO_HTTP_PORT                   = "5080"
+    ZO_GRPC_PORT                   = "5081"
+    ZO_COMPACT_DATA_RETENTION_DAYS = tostring(var.openobserve_retention_days)
+    ZO_TELEMETRY                   = "false"
+    # Drop INFO chatter (flight->search SQL echo + access-log middleware lines
+    # that pollute the `pods` stream when searching for "error"). WARN+ still
+    # surfaces ingest rejections, schema conflicts, etc.
+    RUST_LOG = "warn"
+  }
+}
+
+resource "kubernetes_config_map" "openobserve_nginx" {
+  metadata {
+    name      = "openobserve-nginx"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/openobserve.nginx.conf.tpl", {
+      server_domain = local.openobserve_fqdn
+    })
+  }
+}
+
 resource "kubernetes_deployment" "openobserve" {
   metadata {
     name      = "openobserve"
@@ -23,7 +147,7 @@ resource "kubernetes_deployment" "openobserve" {
           "openobserve-env-hash"   = sha1(jsonencode(kubernetes_config_map.openobserve_env.data))
           "openobserve-nginx-hash" = sha1(kubernetes_config_map.openobserve_nginx.data["nginx.conf"])
           # Stakater Reloader still handles Vault CSI secret rotations.
-          "secret.reloader.stakater.com/reload" = "openobserve-secrets,openobserve-tls"
+          "secret.reloader.stakater.com/reload" = "${module.openobserve_tls_vault.config_secret_name},${module.openobserve_tls_vault.tls_secret_name}"
           # Logs are high-churn ingest with built-in retention; restoring a
           # stale log corpus is rarely useful. Skip FSB on the data volume —
           # OpenObserve starts on an empty store and ingests fresh data.
@@ -85,12 +209,26 @@ resource "kubernetes_deployment" "openobserve" {
             }
           }
 
-          # Root creds come from Vault via CSI (synced into k8s secret).
-          # Optional so the Deployment can land before CSI finishes materializing.
-          env_from {
-            secret_ref {
-              name     = "openobserve-secrets"
-              optional = true
+          # Module produces k8s secret keys matching objectNames; remap
+          # to the env-var names OpenObserve reads. basic_b64 lives in
+          # the secret but isn't injected — it's pulled by separate SPCs
+          # (otel-collector, provisioner) from different Vault paths.
+          env {
+            name = "ZO_ROOT_USER_EMAIL"
+            value_from {
+              secret_key_ref {
+                name = module.openobserve_tls_vault.config_secret_name
+                key  = "root_email"
+              }
+            }
+          }
+          env {
+            name = "ZO_ROOT_USER_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = module.openobserve_tls_vault.config_secret_name
+                key  = "root_password"
+              }
             }
           }
 
@@ -140,7 +278,7 @@ resource "kubernetes_deployment" "openobserve" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.openobserve_secret_provider.manifest.metadata.name
+              secretProviderClass = module.openobserve_tls_vault.spc_name
             }
           }
         }
@@ -174,7 +312,7 @@ resource "kubernetes_deployment" "openobserve" {
 
         volume {
           name = "openobserve-tls"
-          secret { secret_name = "openobserve-tls" }
+          secret { secret_name = module.openobserve_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -194,7 +332,7 @@ resource "kubernetes_deployment" "openobserve" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "openobserve-tailscale-state"
+            value = module.openobserve_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -204,7 +342,7 @@ resource "kubernetes_deployment" "openobserve" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.openobserve_tailscale_auth.metadata[0].name
+                name = module.openobserve_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -259,7 +397,7 @@ resource "kubernetes_deployment" "openobserve" {
   }
 
   depends_on = [
-    kubernetes_manifest.openobserve_secret_provider,
+    module.openobserve_tls_vault,
   ]
 
   lifecycle {

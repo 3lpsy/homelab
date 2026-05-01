@@ -35,7 +35,7 @@ per-deployment state paths, age-encrypted S3 backup of state, and a
 | `vault/` | Vault StatefulSet on K3s with an auto-unseal sidecar and the Secrets Store CSI stack. |
 | `vault-conf/` | Vault configuration: K8s auth, KV engine, unseal key secret. |
 | `services/` | All Kubernetes workloads: user-facing services (incl. Home Assistant + Frigate), shared infra (Postgres, Redis, Builder, exit-node proxies, MCP servers), and the monitoring stack (Prometheus, Alertmanager, Grafana, Ntfy, OpenObserve, OTel Collector, node-exporter, kube-state-metrics, Reloader). |
-| `monitoring-conf/` | Grafana dashboards applied via the Grafana provider. |
+| `services-conf/` | Provider-driven config that needs `services/` workloads up first: Grafana dashboards (Grafana provider), Zitadel orgs/projects/OIDC clients (Zitadel provider). |
 
 Service-level details live in each deployment's own `README.md`.
 
@@ -46,7 +46,7 @@ so the first apply has to run in order. Later applies can target a
 single deployment.
 
 ```
-homelab -> cluster -> vault -> vault-conf -> services -> monitoring-conf
+homelab -> cluster -> vault -> vault-conf -> services -> services-conf
 ```
 
 First run requires two manual interruptions:

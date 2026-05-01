@@ -1,20 +1,21 @@
 FROM python:3.14-alpine AS base
 
-# Runtime-only system deps. ffmpeg is shelled out to by ffmpeg-python /
-# mutagen-adjacent codepaths for probing edge-case files.
-RUN apk add --no-cache ffmpeg ca-certificates
+# Runtime needs the ffmpeg shared libs (libavcodec/libavformat/libavutil)
+# for PyAV — they're pulled in by `apk add ffmpeg-libs`. We don't shell
+# out to the ffmpeg binary anymore: audio-stream md5 is computed via
+# PyAV directly.
+RUN apk add --no-cache ffmpeg-libs ca-certificates
 
 
 FROM base AS builder
 
-# Toolchain only used while compiling C extensions (aiohttp accelerators,
-# any litellm transitive deps that ship sdists). Discarded when we copy
-# /install into the runtime stage.
-RUN apk add --no-cache gcc musl-dev libffi-dev
+# Toolchain + ffmpeg dev headers + pkgconfig for building PyAV against
+# the system ffmpeg. aiohttp/litellm transitive sdists also need gcc.
+RUN apk add --no-cache gcc musl-dev libffi-dev ffmpeg-dev pkgconfig
 
 RUN pip install --no-cache-dir --prefix=/install \
         mutagen==1.47.* \
-        ffmpeg-python==0.2.* \
+        "av>=17.0.0,<18" \
         litellm==1.55.* \
         aiohttp==3.10.* \
         jinja2==3.1.*

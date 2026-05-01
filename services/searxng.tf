@@ -1,3 +1,203 @@
+resource "kubernetes_namespace" "searxng" {
+  metadata {
+    name = "searxng"
+  }
+}
+
+resource "kubernetes_service_account" "searxng" {
+  metadata {
+    name      = "searxng"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+  # automount_service_account_token = true here (not false like most other
+  # services) — the searxng-ranker daemon shares this SA and needs API
+  # access to patch the searxng-config ConfigMap. SearXNG itself never
+  # uses the token; presence is harmless.
+  automount_service_account_token = true
+}
+
+resource "random_password" "searxng_secret_key" {
+  length  = 64
+  special = false
+}
+
+module "searxng_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "searxng"
+  namespace            = kubernetes_namespace.searxng.metadata[0].name
+  service_account_name = kubernetes_service_account.searxng.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.searxng_server_user
+}
+
+module "searxng_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "searxng"
+  namespace            = kubernetes_namespace.searxng.metadata[0].name
+  service_account_name = kubernetes_service_account.searxng.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = local.searxng_fqdn
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = {
+    secret_key = random_password.searxng_secret_key.result
+  }
+
+  providers = { acme = acme }
+}
+
+locals {
+  searxng_fqdn = "${var.searxng_domain}.${local.magic_fqdn_suffix}"
+}
+
+resource "kubernetes_config_map" "searxng_config" {
+  metadata {
+    name      = "searxng-config"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+
+  # Seeded by Terraform, mutated continuously by searxng-ranker (reorders
+  # outgoing.proxies and adds per-engine proxies based on live probe data).
+  # Without this, every `terraform plan` would show drift as TF tried to
+  # revert the ranker's writes.
+  lifecycle {
+    ignore_changes = [data]
+  }
+
+  data = {
+    "settings.yml" = templatefile("${path.module}/../data/searxng/settings.yml.tpl", {
+      searxng_fqdn  = local.searxng_fqdn
+      exitnode_keys = sort(keys(local.exitnode_names))
+    })
+  }
+}
+
+resource "kubernetes_config_map" "searxng_nginx_config" {
+  metadata {
+    name      = "searxng-nginx-config"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/searxng.nginx.conf.tpl", {
+      server_domain = local.searxng_fqdn
+    })
+  }
+}
+
+# NetworkPolicies for the `searxng` namespace.
+#
+# Hosts: searxng (with embedded valkey sidecar) + searxng-ranker daemon.
+#
+# Cross-namespace flows:
+#   - searxng-ranker → kube-API (patches SearXNG ConfigMap) — baseline
+#   - searxng-ranker → exitnode-*-proxy.exitnode.svc.cluster.local:8888
+#     (probes exit-node proxies for latency/health)
+#   - searxng → exitnode-*-proxy.exitnode.svc.cluster.local:8888 (per-engine
+#     outgoing proxy chosen from the ranker-rewritten config)
+module "searxng_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.searxng.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
+resource "kubernetes_network_policy" "searxng_to_exitnode" {
+  metadata {
+    name      = "searxng-to-exitnode"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+
+  spec {
+    pod_selector {}
+    policy_types = ["Egress"]
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.exitnode.metadata[0].name
+          }
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "8888"
+      }
+    }
+  }
+}
+
+# Cross-ns ingress: thunderbolt-backend → searxng:443. Replaces the
+# Tailscale-routed egress that thunderbolt-backend used to do via its
+# now-removed sidecar (env SEARXNG_URL). thunderbolt-backend reaches
+# searxng.<hs>.<magic> via host_aliases pointing at the searxng Service
+# ClusterIP; nginx terminates TLS with the same FQDN-valid cert.
+resource "kubernetes_network_policy" "searxng_from_thunderbolt" {
+  metadata {
+    name      = "searxng-from-thunderbolt"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+
+  spec {
+    pod_selector { match_labels = { app = "searxng" } }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.thunderbolt.metadata[0].name
+          }
+        }
+        pod_selector { match_labels = { app = "thunderbolt-backend" } }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "443"
+      }
+    }
+  }
+}
+
+# Cross-ns ingress: mcp-searxng → searxng:443. Replaces the Tailscale-routed
+# egress that the mcp-searxng pod used to do via its now-removed sidecar
+# (env MCP_SEARXNG_URL). The mcp namespace has no baseline NetworkPolicy so
+# no source-side egress allow is needed; this rule is the gate.
+resource "kubernetes_network_policy" "searxng_from_mcp_searxng" {
+  metadata {
+    name      = "searxng-from-mcp-searxng"
+    namespace = kubernetes_namespace.searxng.metadata[0].name
+  }
+
+  spec {
+    pod_selector { match_labels = { app = "searxng" } }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.mcp.metadata[0].name
+          }
+        }
+        pod_selector { match_labels = { app = "mcp-searxng" } }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "443"
+      }
+    }
+  }
+}
+
 resource "kubernetes_deployment" "searxng" {
   metadata {
     name      = "searxng"
@@ -21,8 +221,8 @@ resource "kubernetes_deployment" "searxng" {
           app = "searxng"
         }
         annotations = {
-          "nginx-config-hash"                      = sha1(kubernetes_config_map.searxng_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload"    = "searxng-secrets,searxng-tls"
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.searxng_nginx_config.data["nginx.conf"])
+          "secret.reloader.stakater.com/reload" = "${module.searxng_tls_vault.config_secret_name},${module.searxng_tls_vault.tls_secret_name}"
           # Reloader watches searxng-config and rolls this Deployment whenever
           # the ranker daemon rewrites it.
           "configmap.reloader.stakater.com/reload" = "searxng-config"
@@ -38,7 +238,7 @@ resource "kubernetes_deployment" "searxng" {
           command = [
             "sh", "-c",
             templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
-              secret_file = "searxng_tls_crt"
+              secret_file = "tls_crt"
             })
           ]
           volume_mount {
@@ -78,7 +278,7 @@ resource "kubernetes_deployment" "searxng" {
             name = "SEARXNG_SECRET"
             value_from {
               secret_key_ref {
-                name = "searxng-secrets"
+                name = module.searxng_tls_vault.config_secret_name
                 key  = "secret_key"
               }
             }
@@ -229,7 +429,7 @@ resource "kubernetes_deployment" "searxng" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "searxng-tailscale-state"
+            value = module.searxng_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -239,7 +439,7 @@ resource "kubernetes_deployment" "searxng" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.searxng_tailscale_auth.metadata[0].name
+                name = module.searxng_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -303,7 +503,7 @@ resource "kubernetes_deployment" "searxng" {
         volume {
           name = "searxng-tls"
           secret {
-            secret_name = "searxng-tls"
+            secret_name = module.searxng_tls_vault.tls_secret_name
           }
         }
         volume {
@@ -312,7 +512,7 @@ resource "kubernetes_deployment" "searxng" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.searxng_secret_provider.manifest.metadata.name
+              secretProviderClass = module.searxng_tls_vault.spc_name
             }
           }
         }
@@ -336,7 +536,7 @@ resource "kubernetes_deployment" "searxng" {
   }
 
   depends_on = [
-    kubernetes_manifest.searxng_secret_provider,
+    module.searxng_tls_vault,
   ]
 
   lifecycle {

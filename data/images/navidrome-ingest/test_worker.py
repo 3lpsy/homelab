@@ -2,8 +2,7 @@
 
 Run locally:
     cd data/images/navidrome-ingest
-    pip install mutagen jinja2 pytest pytest-asyncio httpx litellm aiohttp ffmpeg-python
-    python -m pytest test_worker.py -v
+    uv run --group dev pytest test_worker.py -v
 """
 from __future__ import annotations
 
@@ -190,10 +189,13 @@ async def test_poll_once_quarantines_low_confidence(worker_module, monkeypatch):
     dropzone = {"weird.opus": b"\x00\x00\x00"}
     transport, state = _build_server(worker, dropzone)
 
+    async def _no_hash(_p):
+        return None
+    monkeypatch.setattr(worker, "compute_audio_hash", _no_hash)
     monkeypatch.setattr(
         worker,
         "call_llm",
-        lambda **kw: worker.TagResult(artist="A", title="T", album=None, genre=None, year=None, confidence=0.2),
+        lambda *a, **kw: worker.TagResult(artist="A", title="T", album=None, genre=None, year=None, confidence=0.2),
     )
 
     async with httpx.AsyncClient(
@@ -214,10 +216,13 @@ async def test_poll_once_ingests_high_confidence(worker_module, monkeypatch):
     dropzone = {"good.opus": b"\x00\x00\x00"}
     transport, state = _build_server(worker, dropzone)
 
+    async def _no_hash(_p):
+        return None
+    monkeypatch.setattr(worker, "compute_audio_hash", _no_hash)
     monkeypatch.setattr(
         worker,
         "call_llm",
-        lambda **kw: worker.TagResult(artist="ArtistName", title="TrackTitle", album=None, genre=None, year=None, confidence=0.9),
+        lambda *a, **kw: worker.TagResult(artist="ArtistName", title="TrackTitle", album=None, genre=None, year=None, confidence=0.9),
     )
     monkeypatch.setattr(worker, "write_tags", lambda *a, **kw: None)
 
@@ -266,10 +271,13 @@ async def test_poll_once_handles_real_corpus_filenames(worker_module, monkeypatc
     dropzone = {n: b"\x00\x00\x00" for n in samples}
     transport, state = _build_server(worker, dropzone)
 
+    async def _no_hash(_p):
+        return None
+    monkeypatch.setattr(worker, "compute_audio_hash", _no_hash)
     monkeypatch.setattr(
         worker,
         "call_llm",
-        lambda **kw: worker.TagResult(artist="A", title=kw["filename"][:30], album=None, genre=None, year=None, confidence=0.9),
+        lambda *a, **kw: worker.TagResult(artist="A", title=a[0][:30], album=None, genre=None, year=None, confidence=0.9),
     )
     monkeypatch.setattr(worker, "write_tags", lambda *a, **kw: None)
 
@@ -317,3 +325,190 @@ async def test_poll_once_skips_when_list_empty(worker_module):
 
     # No work, no errors
     assert worker.STATS.last_listed == 0
+
+
+# ── Dedup index ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_compute_audio_hash_returns_none_on_garbage(worker_module, tmp_path):
+    """PyAV invocation against a non-audio blob — must return None, not
+    raise."""
+    worker, _ = worker_module
+    bogus = tmp_path / "bogus.opus"
+    bogus.write_bytes(b"\x00" * 64)
+    h = await worker.compute_audio_hash(bogus)
+    assert h is None
+
+
+@pytest.mark.asyncio
+async def test_compute_audio_hash_stable_across_tag_rewrite(worker_module, tmp_path):
+    """Round-trip: encode a tiny silent FLAC, hash it, rewrite tags via
+    mutagen, hash again — both hashes must match because the audio
+    packet stream didn't change."""
+    import av as _av  # noqa: F401  — proves PyAV importable
+    worker, _ = worker_module
+
+    # Encode 0.1s of silence to FLAC. PyAV requires a frame; use a
+    # one-channel s16 frame of zeros.
+    out = tmp_path / "silence.flac"
+    container = _av.open(str(out), mode="w")
+    try:
+        stream = container.add_stream("flac", rate=44100)
+        stream.layout = "mono"
+        # Build a small audio frame of silence.
+        import numpy as np
+        samples = np.zeros((1, 4410), dtype=np.int16)  # 0.1s mono
+        frame = _av.AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+        frame.rate = 44100
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+    finally:
+        container.close()
+
+    h1 = await worker.compute_audio_hash(out)
+    assert h1 is not None
+
+    # Rewrite tags via the worker's own write_tags helper.
+    worker.write_tags(out, artist="Foo", title="Bar", album=None, genre=None, year="1999")
+
+    h2 = await worker.compute_audio_hash(out)
+    assert h2 == h1, "audio-stream md5 must survive tag rewrite"
+
+
+@pytest.mark.asyncio
+async def test_dedup_hit_acks_without_llm_call(worker_module, monkeypatch):
+    """If the audio-stream md5 already exists in the library index, the
+    worker must ack the dropzone file (treated as success), skip LLM +
+    tag-write, and bump total_deduped."""
+    worker, _ = worker_module
+    dropzone = {"already-have-this.opus": b"\x00\x00\x00"}
+    transport, state = _build_server(worker, dropzone)
+
+    fake_hash = "deadbeefdeadbeefdeadbeefdeadbeef"
+
+    async def fake_hash_fn(_path):
+        return fake_hash
+
+    monkeypatch.setattr(worker, "compute_audio_hash", fake_hash_fn)
+    # Seed the index with the same hash → dedup must trigger.
+    worker.INDEX._hashes[fake_hash] = "Existing/Track.opus"
+
+    llm_called = False
+
+    def boom(**_kw):
+        nonlocal llm_called
+        llm_called = True
+        raise AssertionError("call_llm must not run on dedup hit")
+
+    monkeypatch.setattr(worker, "call_llm", boom)
+    monkeypatch.setattr(worker, "write_tags", lambda *a, **kw: None)
+
+    before = worker.STATS.total_deduped
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://ingest-fake/",
+        headers={"Authorization": "Bearer tok"},
+    ) as client:
+        await worker.poll_once(client)
+
+    assert state["acked"] == ["already-have-this.opus"]
+    assert not state["quarantined"]
+    assert not llm_called
+    assert worker.STATS.total_deduped == before + 1
+
+
+@pytest.mark.asyncio
+async def test_dedup_miss_ingests_and_inserts_into_index(worker_module, monkeypatch):
+    """Hash miss must proceed through normal pipeline and insert the new
+    file's hash into the index so a re-pull is then deduped."""
+    worker, _ = worker_module
+    dropzone = {"new-track.opus": b"\x00\x00\x00"}
+    transport, state = _build_server(worker, dropzone)
+
+    fake_hash = "abc123abc123abc123abc123abc12300"
+
+    async def fake_hash_fn(_path):
+        return fake_hash
+
+    monkeypatch.setattr(worker, "compute_audio_hash", fake_hash_fn)
+    monkeypatch.setattr(
+        worker,
+        "call_llm",
+        lambda *a, **kw: worker.TagResult(artist="A", title="T", album=None, genre=None, year=None, confidence=0.9),
+    )
+    monkeypatch.setattr(worker, "write_tags", lambda *a, **kw: None)
+
+    assert fake_hash not in worker.INDEX._hashes
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://ingest-fake/",
+        headers={"Authorization": "Bearer tok"},
+    ) as client:
+        await worker.poll_once(client)
+
+    assert state["acked"] == ["new-track.opus"]
+    assert fake_hash in worker.INDEX._hashes
+    assert worker.INDEX._hashes[fake_hash].endswith("T.opus")
+
+
+@pytest.mark.asyncio
+async def test_dedup_skipped_when_hash_compute_fails(worker_module, monkeypatch):
+    """If ffmpeg fails (returns None) the worker must NOT block the file —
+    it should fall through to the normal LLM + write path. Index is not
+    updated since we have no key."""
+    worker, _ = worker_module
+    dropzone = {"unhashable.opus": b"\x00\x00\x00"}
+    transport, state = _build_server(worker, dropzone)
+
+    async def fake_hash_fn(_path):
+        return None
+
+    monkeypatch.setattr(worker, "compute_audio_hash", fake_hash_fn)
+    monkeypatch.setattr(
+        worker,
+        "call_llm",
+        lambda *a, **kw: worker.TagResult(artist="A", title="T", album=None, genre=None, year=None, confidence=0.9),
+    )
+    monkeypatch.setattr(worker, "write_tags", lambda *a, **kw: None)
+
+    snapshot = dict(worker.INDEX._hashes)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://ingest-fake/",
+        headers={"Authorization": "Bearer tok"},
+    ) as client:
+        await worker.poll_once(client)
+
+    assert state["acked"] == ["unhashable.opus"]
+    assert worker.INDEX._hashes == snapshot  # nothing added
+
+
+@pytest.mark.asyncio
+async def test_library_index_rebuild_walks_root(worker_module, monkeypatch):
+    """Rebuild must walk the music root, hash each audio file, replace the
+    map atomically, and ignore non-audio."""
+    worker, _ = worker_module
+    music = worker.MUSIC_PATH
+    (music / "Artist").mkdir()
+    (music / "Artist" / "song.opus").write_bytes(b"x")
+    (music / "Artist" / "notes.txt").write_bytes(b"ignore me")
+    (music / "Artist" / "track.flac").write_bytes(b"y")
+
+    seen: list[str] = []
+
+    async def fake_hash_fn(path):
+        seen.append(path.name)
+        return f"hash-{path.name}"
+
+    monkeypatch.setattr(worker, "compute_audio_hash", fake_hash_fn)
+
+    await worker.INDEX.rebuild()
+
+    assert sorted(seen) == ["song.opus", "track.flac"]
+    assert worker.INDEX.last_rebuild_size == 2
+    assert any(p.endswith("song.opus") for p in worker.INDEX._hashes.values())

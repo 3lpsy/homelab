@@ -1,3 +1,184 @@
+resource "kubernetes_namespace" "registry" {
+  metadata {
+    name = "registry"
+  }
+}
+
+resource "kubernetes_service_account" "registry" {
+  metadata {
+    name      = "registry"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+# Per-user passwords. Referenced by every BuildKit-job consumer (builder,
+# exitnode, ingest-ui, mcp, navidrome-ingest, nextcloud, otel-collector,
+# searxng-ranker, thunderbolt, tls-rotator) for image-pull dockerconfig.
+# Stays caller-owned because of those cross-file refs.
+resource "random_password" "registry_user_passwords" {
+  for_each = toset(var.registry_users)
+  length   = 32
+  special  = false
+}
+
+module "registry_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "registry"
+  namespace            = kubernetes_namespace.registry.metadata[0].name
+  service_account_name = kubernetes_service_account.registry.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.registry_server_user
+}
+
+# Plaintext users map at registry/config. Read by otel-collector
+# (otel-collector-secrets.tf) as a Vault data source. Hand-rolled because
+# the shape is `{users = {map}}` rather than the module's flat key=value.
+resource "vault_kv_secret_v2" "registry_config" {
+  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+  name  = "registry/config"
+  data_json = jsonencode({
+    users = {
+      for user in var.registry_users :
+      user => random_password.registry_user_passwords[user].result
+    }
+  })
+}
+
+# Bcrypt-hashed htpasswd file for the nginx sidecar's basic-auth. Bcrypt is
+# non-deterministic so every plan re-hashes; ignore_changes prevents the
+# fake drift. Rotation: `terraform apply -replace=vault_kv_secret_v2.registry_htpasswd`.
+resource "vault_kv_secret_v2" "registry_htpasswd" {
+  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+  name  = "registry/htpasswd"
+  data_json = jsonencode({
+    htpasswd = join("\n", [
+      for user in var.registry_users :
+      "${user}:${bcrypt(random_password.registry_user_passwords[user].result)}"
+    ])
+  })
+  lifecycle {
+    ignore_changes = [data_json]
+  }
+}
+
+module "registry_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "registry"
+  namespace            = kubernetes_namespace.registry.metadata[0].name
+  service_account_name = kubernetes_service_account.registry.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.registry_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+  # config_secrets left empty — registry/config is hand-rolled above with a
+  # users-map shape that doesn't fit the module's flat key=value. Module
+  # policy still grants `registry/*` read so the SPC can fetch htpasswd
+  # below.
+
+  extra_secret_objects = [
+    {
+      secret_name = "registry-htpasswd"
+      items = [
+        {
+          object_name = "htpasswd"
+          k8s_key     = "htpasswd"
+          vault_path  = "registry/htpasswd"
+          vault_key   = "htpasswd"
+        }
+      ]
+    }
+  ]
+
+  providers = { acme = acme }
+
+  depends_on = [vault_kv_secret_v2.registry_htpasswd]
+}
+
+resource "kubernetes_persistent_volume_claim" "registry_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "registry-data"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = "50Gi"
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "registry_nginx_config" {
+  metadata {
+    name      = "registry-nginx-config"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/registry.nginx.conf.tpl", {
+      server_domain = "${var.registry_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
+# The Registry is reached two ways:
+#   - Kubelet image pulls — via the host's Tailscale interface
+#     (`registry.MAGIC_DOMAIN` resolves through systemd-resolved →
+#     tailscale0). Host-LOCAL source bypasses NetworkPolicy structurally,
+#     so no rule needed.
+#   - BuildKit Jobs in `builder` ns — push images via the cluster
+#     network. Job pods use host_aliases pinning `registry.<hs>.<magic>`
+#     to the registry Service ClusterIP; this allow is load-bearing.
+module "registry_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.registry.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
+resource "kubernetes_network_policy" "registry_from_builder" {
+  metadata {
+    name      = "registry-from-builder"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+
+  spec {
+    pod_selector {
+      match_labels = {
+        app = "registry"
+      }
+    }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = kubernetes_namespace.builder.metadata[0].name
+          }
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "443"
+      }
+    }
+  }
+}
+
 resource "kubernetes_deployment" "registry" {
   metadata {
     name      = "registry"
@@ -18,7 +199,7 @@ resource "kubernetes_deployment" "registry" {
         labels = { app = "registry" }
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "registry-htpasswd,registry-tls"
+          "secret.reloader.stakater.com/reload" = "registry-htpasswd,${module.registry_tls_vault.tls_secret_name}"
           # Image layers are rebuildable from Dockerfiles in data/images/* via
           # the BuildKit jobs in the builder namespace; backing them up via
           # Velero FSB would double tens of GB for no recovery value.
@@ -119,7 +300,7 @@ resource "kubernetes_deployment" "registry" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.registry_secret_provider.manifest.metadata.name
+              secretProviderClass = module.registry_tls_vault.spc_name
             }
           }
         }
@@ -165,7 +346,7 @@ resource "kubernetes_deployment" "registry" {
         # Nginx Volumes
         volume {
           name = "registry-tls"
-          secret { secret_name = "registry-tls" }
+          secret { secret_name = module.registry_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -189,7 +370,7 @@ resource "kubernetes_deployment" "registry" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "registry-tailscale-state"
+            value = module.registry_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -199,7 +380,7 @@ resource "kubernetes_deployment" "registry" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.registry_tailscale_auth.metadata[0].name
+                name = module.registry_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -261,7 +442,7 @@ resource "kubernetes_deployment" "registry" {
   }
 
   depends_on = [
-    kubernetes_manifest.registry_secret_provider
+    module.registry_tls_vault,
   ]
 
   lifecycle {

@@ -1,3 +1,110 @@
+resource "kubernetes_namespace" "jellyfin" {
+  metadata {
+    name = "jellyfin"
+  }
+}
+
+resource "kubernetes_service_account" "jellyfin" {
+  metadata {
+    name      = "jellyfin"
+    namespace = kubernetes_namespace.jellyfin.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+module "jellyfin_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "jellyfin"
+  namespace            = kubernetes_namespace.jellyfin.metadata[0].name
+  service_account_name = kubernetes_service_account.jellyfin.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.jellyfin_server_user
+}
+
+# TLS-only — no config_secrets, so the SPC carries jellyfin-tls only.
+module "jellyfin_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "jellyfin"
+  namespace            = kubernetes_namespace.jellyfin.metadata[0].name
+  service_account_name = kubernetes_service_account.jellyfin.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.jellyfin_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "jellyfin_config" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "jellyfin-config"
+    namespace = kubernetes_namespace.jellyfin.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.jellyfin_config_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_persistent_volume_claim" "jellyfin_cache" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "jellyfin-cache"
+    namespace = kubernetes_namespace.jellyfin.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.jellyfin_cache_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "jellyfin_nginx_config" {
+  metadata {
+    name      = "jellyfin-nginx-config"
+    namespace = kubernetes_namespace.jellyfin.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/jellyfin.nginx.conf.tpl", {
+      server_domain = "${var.jellyfin_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
+# Single-pod namespace. Config + cache live on PVCs; no DB, no shared cache.
+# Outbound only needs kube-dns + the tailnet sidecar — netpol-baseline covers
+# both. Tailscale traffic exits through the sidecar's NET_ADMIN-managed
+# interface, not via cluster netpol.
+module "jellyfin_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.jellyfin.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
 resource "kubernetes_deployment" "jellyfin" {
   metadata {
     name      = "jellyfin"
@@ -19,7 +126,7 @@ resource "kubernetes_deployment" "jellyfin" {
         labels = { app = "jellyfin" }
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.jellyfin_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "jellyfin-tls"
+          "secret.reloader.stakater.com/reload" = module.jellyfin_tls_vault.tls_secret_name
         }
       }
 
@@ -70,7 +177,7 @@ resource "kubernetes_deployment" "jellyfin" {
           # Pin the API listener so the nginx upstream is stable.
           env {
             name  = "JELLYFIN_PublishedServerUrl"
-            value = "https://${var.jellyfin_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+            value = "https://${var.jellyfin_domain}.${local.magic_fqdn_suffix}"
           }
 
           volume_mount {
@@ -174,7 +281,7 @@ resource "kubernetes_deployment" "jellyfin" {
         # Nginx Volumes
         volume {
           name = "jellyfin-tls"
-          secret { secret_name = "jellyfin-tls" }
+          secret { secret_name = module.jellyfin_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -188,7 +295,7 @@ resource "kubernetes_deployment" "jellyfin" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.jellyfin_secret_provider.manifest.metadata.name
+              secretProviderClass = module.jellyfin_tls_vault.spc_name
             }
           }
         }
@@ -204,7 +311,7 @@ resource "kubernetes_deployment" "jellyfin" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "jellyfin-tailscale-state"
+            value = module.jellyfin_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -214,7 +321,7 @@ resource "kubernetes_deployment" "jellyfin" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.jellyfin_tailscale_auth.metadata[0].name
+                name = module.jellyfin_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -276,7 +383,7 @@ resource "kubernetes_deployment" "jellyfin" {
   }
 
   depends_on = [
-    kubernetes_manifest.jellyfin_secret_provider
+    module.jellyfin_tls_vault,
   ]
 
   lifecycle {

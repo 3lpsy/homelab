@@ -121,7 +121,7 @@ module "delphi-provision-kopia" {
     "pvc-*_registry-proxy_registry-proxy-data",           # combined docker.io + ghcr.io pull-through cache
     "pvc-*_monitoring_prometheus-data",                   # TSDB; regenerated as scrapes resume
     "pvc-*_monitoring_openobserve-data",                  # logs; ingested fresh
-    "pvc-*_monitoring_grafana-data",                      # dashboards from monitoring-conf
+    "pvc-*_monitoring_grafana-data",                      # dashboards from services-conf
     "pvc-*_frigate_frigate-recordings",                   # camera recordings
     "pvc-*_frigate_frigate-config",                       # events DB references excluded recordings
     "pvc-*_pihole_pihole-data",                           # settings via FTLCONF env; query log + gravity DB rebuild

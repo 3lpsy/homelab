@@ -25,6 +25,13 @@ resource "kubernetes_deployment" "thunderbolt_mongo" {
       spec {
         service_account_name = kubernetes_service_account.thunderbolt.metadata[0].name
 
+        # Set pod hostname to the Service name so mongo can identify itself as
+        # an RS member: member host `thunderbolt-mongo:27017` matches /etc/hosts
+        # entry for the pod IP. Without this, mongo sees member host resolve
+        # only to the Service ClusterIP (not a local interface) and declares
+        # the RS config invalid (`info: "Does not have a valid replica set config"`).
+        hostname = "thunderbolt-mongo"
+
         container {
           name  = "mongo"
           image = var.image_mongo

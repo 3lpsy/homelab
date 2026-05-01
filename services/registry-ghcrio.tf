@@ -1,108 +1,40 @@
 # ghcr.io pull-through cache. Lives in the shared `registry-proxy`
 # namespace alongside registry-dockerio. Both pods mount the same PVC
 # (registry-proxy-data) at different subPaths so their on-disk content
-# stays isolated.
+# stays isolated. Shared SA / Role / Vault policy / auth role live in
+# registry-proxy.tf.
 
-resource "kubernetes_secret" "registry_ghcrio_tailscale_state" {
-  metadata {
-    name      = "registry-ghcrio-tailscale-state"
-    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
-  }
-  type = "Opaque"
+module "registry_ghcrio_tailscale" {
+  source = "../templates/tailscale-ingress"
 
-  lifecycle {
-    ignore_changes = [data, type]
-  }
+  name                 = "registry-ghcrio"
+  namespace            = kubernetes_namespace.registry_proxy.metadata[0].name
+  service_account_name = kubernetes_service_account.registry_proxy.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.registry_proxy_server_user
+
+  manage_role = false
 }
 
-resource "headscale_pre_auth_key" "registry_ghcrio_server" {
-  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.registry_proxy_server_user
-  reusable       = true
-  time_to_expire = "3y"
-}
+module "registry_ghcrio_tls_vault" {
+  source = "../templates/service-tls-vault"
 
-resource "kubernetes_secret" "registry_ghcrio_tailscale_auth" {
-  metadata {
-    name      = "registry-ghcrio-tailscale-auth"
-    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
-  }
-  type = "Opaque"
-  data = {
-    TS_AUTHKEY = headscale_pre_auth_key.registry_ghcrio_server.key
-  }
-}
+  service_name         = "registry-ghcrio"
+  namespace            = kubernetes_namespace.registry_proxy.metadata[0].name
+  service_account_name = kubernetes_service_account.registry_proxy.metadata[0].name
 
-module "registry-ghcrio-tls" {
-  source                = "./../templates/infra-tls"
-  account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
-  server_domain         = "${var.registry_ghcrio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.registry_ghcrio_domain}.${local.magic_fqdn_suffix}"
   aws_region            = var.aws_region
   aws_access_key        = var.aws_access_key
   aws_secret_key        = var.aws_secret_key
   recursive_nameservers = var.recursive_nameservers
 
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  manage_vault_auth = false
+  role_name         = vault_kubernetes_auth_backend_role.registry_proxy.role_name
+
   providers = { acme = acme }
-}
-
-resource "vault_kv_secret_v2" "registry_ghcrio_tls" {
-  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
-  name  = "registry-ghcrio/tls"
-  data_json = jsonencode({
-    fullchain_pem = module.registry-ghcrio-tls.fullchain_pem
-    privkey_pem   = module.registry-ghcrio-tls.privkey_pem
-  })
-
-  # tls-rotator owns rotation post-bootstrap.
-  lifecycle {
-    ignore_changes = [data_json]
-  }
-}
-
-resource "kubernetes_manifest" "registry_ghcrio_secret_provider" {
-  manifest = {
-    apiVersion = "secrets-store.csi.x-k8s.io/v1"
-    kind       = "SecretProviderClass"
-    metadata = {
-      name      = "vault-registry-ghcrio"
-      namespace = kubernetes_namespace.registry_proxy.metadata[0].name
-    }
-    spec = {
-      provider = "vault"
-      secretObjects = [
-        {
-          secretName = "registry-ghcrio-tls"
-          type       = "kubernetes.io/tls"
-          data = [
-            { objectName = "tls_crt", key = "tls.crt" },
-            { objectName = "tls_key", key = "tls.key" },
-          ]
-        },
-      ]
-      parameters = {
-        vaultAddress = "http://vault.vault.svc.cluster.local:8200"
-        roleName     = "registry-proxy"
-        objects = yamlencode([
-          {
-            objectName = "tls_crt"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/registry-ghcrio/tls"
-            secretKey  = "fullchain_pem"
-          },
-          {
-            objectName = "tls_key"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/registry-ghcrio/tls"
-            secretKey  = "privkey_pem"
-          },
-        ])
-      }
-    }
-  }
-
-  depends_on = [
-    kubernetes_namespace.registry_proxy,
-    vault_kubernetes_auth_backend_role.registry_proxy,
-    vault_kv_secret_v2.registry_ghcrio_tls,
-    vault_policy.registry_proxy,
-  ]
 }
 
 resource "kubernetes_config_map" "registry_ghcrio_config" {
@@ -126,7 +58,7 @@ resource "kubernetes_config_map" "registry_ghcrio_nginx_config" {
   }
   data = {
     "nginx.conf" = templatefile("${path.module}/../data/nginx/registry-proxy.nginx.conf.tpl", {
-      server_domain = "${var.registry_ghcrio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+      server_domain = "${var.registry_ghcrio_domain}.${local.magic_fqdn_suffix}"
       upstream_port = "5000"
     })
   }
@@ -153,7 +85,7 @@ resource "kubernetes_deployment" "registry_ghcrio" {
         annotations = {
           "registry-config-hash"                = sha1(kubernetes_config_map.registry_ghcrio_config.data["config.yml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_ghcrio_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "registry-ghcrio-tls"
+          "secret.reloader.stakater.com/reload" = module.registry_ghcrio_tls_vault.tls_secret_name
           # Pull-through cache — every layer is regen-able by re-pulling.
           "backup.velero.io/backup-volumes-excludes" = "registry-data"
         }
@@ -274,7 +206,7 @@ resource "kubernetes_deployment" "registry_ghcrio" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "registry-ghcrio-tailscale-state"
+            value = module.registry_ghcrio_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -284,7 +216,7 @@ resource "kubernetes_deployment" "registry_ghcrio" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.registry_ghcrio_tailscale_auth.metadata[0].name
+                name = module.registry_ghcrio_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -343,7 +275,7 @@ resource "kubernetes_deployment" "registry_ghcrio" {
         }
         volume {
           name = "registry-ghcrio-tls"
-          secret { secret_name = "registry-ghcrio-tls" }
+          secret { secret_name = module.registry_ghcrio_tls_vault.tls_secret_name }
         }
         volume {
           name = "secrets-store"
@@ -351,7 +283,7 @@ resource "kubernetes_deployment" "registry_ghcrio" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.registry_ghcrio_secret_provider.manifest.metadata.name
+              secretProviderClass = module.registry_ghcrio_tls_vault.spc_name
             }
           }
         }
@@ -371,7 +303,7 @@ resource "kubernetes_deployment" "registry_ghcrio" {
   }
 
   depends_on = [
-    kubernetes_manifest.registry_ghcrio_secret_provider
+    module.registry_ghcrio_tls_vault,
   ]
 
   lifecycle {

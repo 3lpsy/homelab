@@ -1,3 +1,196 @@
+# zigbee2mqtt frontend + nginx TLS terminator + tailscale sidecar.
+#
+# Z2M reuses homeassist's headscale pre-auth key (both pods share the
+# `homeassist` tailnet user, registering as separate devices `homeassist`
+# and `z2m`). That means tailscale-ingress doesn't fit cleanly here — the
+# module always creates its own pre-auth key + auth Secret. State Secret
+# + Role + RoleBinding stay hand-rolled below.
+#
+# Vault auth: shared `vault_policy.homeassist` (declared in homeassist.tf).
+# This file owns the per-service auth role; tls_vault module call uses
+# manage_vault_auth=false.
+
+resource "kubernetes_service_account" "homeassist_z2m" {
+  metadata {
+    name      = "homeassist-z2m"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "kubernetes_secret" "homeassist_z2m_tailscale_state" {
+  metadata {
+    name      = "homeassist-z2m-tailscale-state"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  type = "Opaque"
+
+  lifecycle {
+    ignore_changes = [data, type]
+  }
+}
+
+resource "kubernetes_role" "homeassist_z2m_tailscale" {
+  metadata {
+    name      = "homeassist-z2m-tailscale"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+
+  rule {
+    api_groups     = [""]
+    resources      = ["secrets"]
+    resource_names = ["homeassist-z2m-tailscale-state"]
+    verbs          = ["get", "update", "patch"]
+  }
+}
+
+resource "kubernetes_role_binding" "homeassist_z2m_tailscale" {
+  metadata {
+    name      = "homeassist-z2m-tailscale"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role.homeassist_z2m_tailscale.metadata[0].name
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account.homeassist_z2m.metadata[0].name
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+}
+
+resource "random_password" "homeassist_z2m_ui" {
+  length  = 32
+  special = false
+}
+
+resource "vault_kubernetes_auth_backend_role" "homeassist_z2m" {
+  backend                          = "kubernetes"
+  role_name                        = "homeassist-z2m"
+  bound_service_account_names      = ["homeassist-z2m"]
+  bound_service_account_namespaces = ["homeassist"]
+  token_policies                   = [vault_policy.homeassist.name]
+  token_ttl                        = 86400
+}
+
+module "homeassist_z2m_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "homeassist-z2m"
+  namespace            = kubernetes_namespace.homeassist.metadata[0].name
+  service_account_name = kubernetes_service_account.homeassist_z2m.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.homeassist_z2m_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+  # Vault path uses a slash separator (homeassist/z2m/config, /tls)
+  # rather than the default homeassist-z2m/*. Keeps the homeassist
+  # subtree contiguous and matches the existing path layout.
+  vault_kv_path = "homeassist/z2m"
+
+  config_secrets = {
+    ui_password = random_password.homeassist_z2m_ui.result
+  }
+
+  extra_config_keys = [
+    {
+      object_name = "z2m_password"
+      vault_path  = "homeassist/mosquitto"
+      vault_key   = "z2m_password"
+    }
+  ]
+
+  manage_vault_auth = false
+  role_name         = vault_kubernetes_auth_backend_role.homeassist_z2m.role_name
+
+  providers = { acme = acme }
+
+  depends_on = [vault_kv_secret_v2.homeassist_mosquitto]
+}
+
+resource "kubernetes_persistent_volume_claim" "homeassist_z2m_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "homeassist-z2m-data"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = "5Gi"
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "homeassist_z2m_config" {
+  metadata {
+    name      = "homeassist-z2m-config"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  data = {
+    # First-boot seed; user-owned thereafter (Z2M frontend writes devices /
+    # groups / friendly-names here). All TF-managed `mqtt.*` and `serial.*`
+    # values come in via `ZIGBEE2MQTT_CONFIG_*` env vars on the main
+    # container — Z2M overrides any matching key in configuration.yaml with
+    # the env value at runtime, never persisting the override to disk. This
+    # sidesteps Z2M's schema migrations rewriting `!include` / `!secret`
+    # references (issues #27077, #21803, #27696). `version: 5` matches Z2M's
+    # current settings schema so migrations are a no-op on first load.
+    "configuration.yaml" = <<-EOT
+      version: 5
+
+      homeassistant:
+        enabled: true
+
+      frontend:
+        enabled: true
+        host: 127.0.0.1
+        port: 8080
+
+      advanced:
+        log_level: info
+        log_output:
+          - console
+        cache_state: true
+        cache_state_persistent: true
+
+      availability:
+        enabled: true
+        active:
+          timeout: 10
+        passive:
+          timeout: 1500
+    EOT
+  }
+}
+
+resource "kubernetes_config_map" "homeassist_z2m_nginx_config" {
+  metadata {
+    name      = "homeassist-z2m-nginx-config"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/homeassist-z2m.nginx.conf.tpl", {
+      server_domain = "${var.homeassist_z2m_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
 resource "kubernetes_deployment" "homeassist_z2m" {
   metadata {
     name      = "homeassist-z2m"
@@ -19,7 +212,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
         annotations = {
           "config-hash"                         = sha1(kubernetes_config_map.homeassist_z2m_config.data["configuration.yaml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.homeassist_z2m_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "homeassist-z2m-secrets,homeassist-z2m-tls"
+          "secret.reloader.stakater.com/reload" = "${module.homeassist_z2m_tls_vault.config_secret_name},${module.homeassist_z2m_tls_vault.tls_secret_name}"
         }
       }
 
@@ -65,7 +258,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             name = "Z2M_UI_PASSWORD"
             value_from {
               secret_key_ref {
-                name = "homeassist-z2m-secrets"
+                name = module.homeassist_z2m_tls_vault.config_secret_name
                 key  = "ui_password"
               }
             }
@@ -144,7 +337,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             name = "ZIGBEE2MQTT_CONFIG_MQTT_PASSWORD"
             value_from {
               secret_key_ref {
-                name = "homeassist-z2m-secrets"
+                name = module.homeassist_z2m_tls_vault.config_secret_name
                 key  = "z2m_password"
               }
             }
@@ -309,7 +502,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
         # Nginx Volumes
         volume {
           name = "homeassist-z2m-tls"
-          secret { secret_name = "homeassist-z2m-tls" }
+          secret { secret_name = module.homeassist_z2m_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -327,7 +520,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.homeassist_z2m_secret_provider.manifest.metadata.name
+              secretProviderClass = module.homeassist_z2m_tls_vault.spc_name
             }
           }
         }
@@ -357,7 +550,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.homeassist_tailscale_auth.metadata[0].name
+                name = module.homeassist_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -419,7 +612,7 @@ resource "kubernetes_deployment" "homeassist_z2m" {
   }
 
   depends_on = [
-    kubernetes_manifest.homeassist_z2m_secret_provider,
+    module.homeassist_z2m_tls_vault,
     kubernetes_deployment.homeassist_mosquitto,
   ]
 

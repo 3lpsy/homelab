@@ -1,3 +1,196 @@
+# Home Assistant pod (HA + nginx TLS terminator + tailscale sidecar).
+#
+# The `homeassist` namespace also hosts homeassist-mosquitto.tf and
+# homeassist-z2m.tf. They share:
+#   - this namespace
+#   - vault_policy.homeassist (declared here, granting `homeassist/*` read)
+#   - per-service vault_kubernetes_auth_backend_role.* (each declared in
+#     its own file, all referencing this policy)
+# Each service's tls_vault module call uses manage_vault_auth=false so the
+# modules don't create competing policies, and pass role_name=<service>
+# so SPCs reference the externally-managed auth role.
+
+resource "kubernetes_namespace" "homeassist" {
+  metadata {
+    name = "homeassist"
+  }
+}
+
+resource "kubernetes_service_account" "homeassist" {
+  metadata {
+    name      = "homeassist"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "random_password" "homeassist_admin" {
+  length  = 32
+  special = false
+}
+
+# Shared policy: every service in this namespace gets read access to its
+# own subtree under `homeassist/*`. mosquitto + z2m reference this same
+# policy from their own vault_kubernetes_auth_backend_role.* below.
+resource "vault_policy" "homeassist" {
+  name = "homeassist-policy"
+
+  policy = <<EOT
+path "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/homeassist/*" {
+  capabilities = ["read"]
+}
+EOT
+}
+
+resource "vault_kubernetes_auth_backend_role" "homeassist" {
+  backend                          = "kubernetes"
+  role_name                        = "homeassist"
+  bound_service_account_names      = [kubernetes_service_account.homeassist.metadata[0].name]
+  bound_service_account_namespaces = [kubernetes_namespace.homeassist.metadata[0].name]
+  token_policies                   = [vault_policy.homeassist.name]
+  token_ttl                        = 86400
+}
+
+module "homeassist_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "homeassist"
+  namespace            = kubernetes_namespace.homeassist.metadata[0].name
+  service_account_name = kubernetes_service_account.homeassist.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.homeassist_server_user
+}
+
+module "homeassist_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "homeassist"
+  namespace            = kubernetes_namespace.homeassist.metadata[0].name
+  service_account_name = kubernetes_service_account.homeassist.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.homeassist_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = {
+    admin_password = random_password.homeassist_admin.result
+  }
+
+  # ha_password lives in homeassist/mosquitto (owned by mosquitto's
+  # vault_kv_secret_v2). Surface it in homeassist-secrets so the seed-mqtt
+  # init container can read it under /mnt/secrets/ha_password.
+  extra_config_keys = [
+    {
+      object_name = "ha_password"
+      vault_path  = "homeassist/mosquitto"
+      vault_key   = "ha_password"
+    }
+  ]
+
+  manage_vault_auth = false
+  role_name         = vault_kubernetes_auth_backend_role.homeassist.role_name
+
+  providers = { acme = acme }
+
+  depends_on = [vault_kv_secret_v2.homeassist_mosquitto]
+}
+
+# NetworkPolicies for the `homeassist` namespace.
+#
+# Hosts: home-assistant, mosquitto MQTT broker, zigbee2mqtt. Most
+# cross-pod traffic is intra-namespace (HA → mosquitto:1883, z2m →
+# mosquitto:1883). Z2M and HA both also expose UIs that are reached
+# externally via Tailscale sidecars (NetPol-invisible).
+#
+# Cross-ns ingress for Frigate → mosquitto:1883 lives in
+# `services/frigate-network.tf` (kept with the rest of frigate's wiring).
+module "homeassist_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.homeassist.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
+resource "kubernetes_persistent_volume_claim" "homeassist_config" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "homeassist-config"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = "20Gi"
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "homeassist_config" {
+  metadata {
+    name      = "homeassist-config"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  data = {
+    # Seed configuration.yaml. The seed-config init container copies this
+    # to /config/configuration.yaml on first boot only — subsequent edits
+    # via the HA UI / file editor live on the PVC and are not overwritten.
+    "configuration.yaml" = <<-EOT
+      default_config:
+
+      homeassistant:
+        time_zone: ${var.homeassist_time_zone}
+
+      http:
+        use_x_forwarded_for: true
+        trusted_proxies:
+          - 127.0.0.1
+          - ::1
+
+      logger:
+        default: info
+
+      automation: !include automations.yaml
+      script: !include scripts.yaml
+      scene: !include scenes.yaml
+    EOT
+  }
+}
+
+resource "kubernetes_config_map" "homeassist_init_scripts" {
+  metadata {
+    name      = "homeassist-init-scripts"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  data = {
+    # Plain script; the password is read at runtime from /mnt/secrets via the
+    # CSI mount, so no secret ever lands in this ConfigMap.
+    "seed-mqtt-broker.py" = file("${path.module}/../data/homeassist/seed-mqtt-broker.py")
+  }
+}
+
+resource "kubernetes_config_map" "homeassist_nginx_config" {
+  metadata {
+    name      = "homeassist-nginx-config"
+    namespace = kubernetes_namespace.homeassist.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/homeassist.nginx.conf.tpl", {
+      server_domain = "${var.homeassist_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
 resource "kubernetes_deployment" "homeassist" {
   metadata {
     name      = "homeassist"
@@ -20,7 +213,7 @@ resource "kubernetes_deployment" "homeassist" {
           "config-hash"                         = sha1(kubernetes_config_map.homeassist_config.data["configuration.yaml"])
           "init-scripts-hash"                   = sha1(kubernetes_config_map.homeassist_init_scripts.data["seed-mqtt-broker.py"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.homeassist_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "homeassist-tls,homeassist-secrets"
+          "secret.reloader.stakater.com/reload" = "${module.homeassist_tls_vault.tls_secret_name},${module.homeassist_tls_vault.config_secret_name}"
         }
       }
 
@@ -122,7 +315,7 @@ resource "kubernetes_deployment" "homeassist" {
               # (HA's unset sentinel), so a UI-set country/location/lat-long
               # is never reverted on later pod restarts.
               if [ ! -f /config/.storage/core.config ] || grep -q '"country": *null' /config/.storage/core.config 2>/dev/null; then
-                printf '%s' '{"version":1,"minor_version":4,"key":"core.config","data":{"latitude":30.2672,"longitude":-97.7431,"elevation":149,"radius":100,"unit_system_v2":"us_customary","location_name":"Home","time_zone":"${var.homeassist_time_zone}","external_url":null,"internal_url":"https://${var.homeassist_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}","currency":"USD","country":"US","language":"en"}}' > /config/.storage/core.config
+                printf '%s' '{"version":1,"minor_version":4,"key":"core.config","data":{"latitude":30.2672,"longitude":-97.7431,"elevation":149,"radius":100,"unit_system_v2":"us_customary","location_name":"Home","time_zone":"${var.homeassist_time_zone}","external_url":null,"internal_url":"https://${var.homeassist_domain}.${local.magic_fqdn_suffix}","currency":"USD","country":"US","language":"en"}}' > /config/.storage/core.config
                 echo "Seeded core.config with US/Austin/Central defaults"
               else
                 echo "core.config already configured, leaving alone"
@@ -271,7 +464,7 @@ resource "kubernetes_deployment" "homeassist" {
         # Nginx Volumes
         volume {
           name = "homeassist-tls"
-          secret { secret_name = "homeassist-tls" }
+          secret { secret_name = module.homeassist_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -285,7 +478,7 @@ resource "kubernetes_deployment" "homeassist" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.homeassist_secret_provider.manifest.metadata.name
+              secretProviderClass = module.homeassist_tls_vault.spc_name
             }
           }
         }
@@ -301,7 +494,7 @@ resource "kubernetes_deployment" "homeassist" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "homeassist-tailscale-state"
+            value = module.homeassist_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -311,7 +504,7 @@ resource "kubernetes_deployment" "homeassist" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.homeassist_tailscale_auth.metadata[0].name
+                name = module.homeassist_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -373,7 +566,7 @@ resource "kubernetes_deployment" "homeassist" {
   }
 
   depends_on = [
-    kubernetes_manifest.homeassist_secret_provider
+    module.homeassist_tls_vault,
   ]
 
   lifecycle {

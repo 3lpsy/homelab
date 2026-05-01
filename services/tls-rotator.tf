@@ -32,7 +32,7 @@ locals {
     # `thunderbolt`, etc. namespaces).
     { name = "nextcloud", domain = "${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "nextcloud/tls" },
     { name = "collabora", domain = "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "nextcloud/collabora-tls" },
-    { name = "immich", domain = "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "nextcloud/immich-tls" },
+    { name = "immich", domain = "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "immich/tls" },
     { name = "registry", domain = "${var.registry_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "registry/tls" },
     { name = "radicale", domain = "${var.radicale_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "radicale/tls" },
     { name = "navidrome", domain = "${var.navidrome_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "navidrome/tls" },

@@ -1,3 +1,152 @@
+resource "kubernetes_namespace" "radicale" {
+  metadata {
+    name = "radicale"
+  }
+}
+
+resource "kubernetes_service_account" "radicale" {
+  metadata {
+    name      = "radicale"
+    namespace = kubernetes_namespace.radicale.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "random_password" "radicale_password" {
+  length  = 32
+  special = false
+}
+
+module "radicale_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "radicale"
+  namespace            = kubernetes_namespace.radicale.metadata[0].name
+  service_account_name = kubernetes_service_account.radicale.metadata[0].name
+  # Headscale user is `calendar`, not `radicale` — historical naming.
+  tailnet_user_id = data.terraform_remote_state.homelab.outputs.tailnet_user_map.calendar_server_user
+}
+
+module "radicale_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "radicale"
+  namespace            = kubernetes_namespace.radicale.metadata[0].name
+  service_account_name = kubernetes_service_account.radicale.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.radicale_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = {
+    radicale_password = random_password.radicale_password.result
+  }
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "radicale_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "radicale-data"
+    namespace = kubernetes_namespace.radicale.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = "1Gi"
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "radicale_config" {
+  metadata {
+    name      = "radicale-config"
+    namespace = kubernetes_namespace.radicale.metadata[0].name
+  }
+  data = {
+    "config" = <<-EOT
+      [server]
+      hosts = 0.0.0.0:5232
+      max_connections = 5
+      max_content_length = 100000000
+      timeout = 30
+
+      [auth]
+      type = http_x_remote_user
+      htpasswd_filename = /etc/radicale/users
+      htpasswd_encryption = md5
+      delay = 1
+
+      [storage]
+      filesystem_folder = /var/lib/radicale/collections
+
+      [rights]
+      type = from_file
+      file = /etc/radicale/rights
+
+      [logging]
+      level = warning
+
+      [web]
+      type = none
+    EOT
+
+    "rights" = <<-EOT
+      [root]
+      user: .+
+      collection:
+      permissions: R
+
+      [principal]
+      user: .+
+      collection: {user}
+      permissions: RW
+
+      [calendars]
+      user: .+
+      collection: {user}/[^/]+
+      permissions: rw
+    EOT
+  }
+}
+
+resource "kubernetes_config_map" "radicale_nginx_config" {
+  metadata {
+    name      = "radicale-nginx-config"
+    namespace = kubernetes_namespace.radicale.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/radicale.nginx.conf.tpl", {
+      server_domain = "${var.radicale_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
+# NetworkPolicies for the `radicale` namespace.
+#
+# Single-pod namespace. Radicale's storage is on a PVC and DB writes go
+# to the shared Postgres in the `nextcloud` namespace via Tailscale (the
+# pod's own TS sidecar carries that traffic; NetPol-invisible).
+module "radicale_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.radicale.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
 resource "kubernetes_deployment" "radicale" {
   metadata {
     name      = "radicale"
@@ -19,7 +168,7 @@ resource "kubernetes_deployment" "radicale" {
         annotations = {
           "config-hash"                         = sha1("${kubernetes_config_map.radicale_config.data["config"]}|${kubernetes_config_map.radicale_config.data["rights"]}")
           "nginx-config-hash"                   = sha1(kubernetes_config_map.radicale_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "radicale-secrets,radicale-tls"
+          "secret.reloader.stakater.com/reload" = "${module.radicale_tls_vault.config_secret_name},${module.radicale_tls_vault.tls_secret_name}"
         }
       }
 
@@ -42,6 +191,12 @@ resource "kubernetes_deployment" "radicale" {
           }
         }
 
+        # APR-MD5 hashes the Vault-managed password into both
+        # /etc/radicale/users (for radicale's own basic-auth) and
+        # /etc/nginx-auth/htpasswd (for the nginx sidecar's basic-auth).
+        # Single user "jim" is hardcoded — multi-user expansion would
+        # need var.radicale_users + for_each random_password (see
+        # registry's pattern via extra_secret_objects).
         init_container {
           name  = "setup-auth"
           image = var.image_python
@@ -66,7 +221,7 @@ resource "kubernetes_deployment" "radicale" {
             name = "RADICALE_PASS"
             value_from {
               secret_key_ref {
-                name = "radicale-secrets"
+                name = module.radicale_tls_vault.config_secret_name
                 key  = "radicale_password"
               }
             }
@@ -182,7 +337,7 @@ resource "kubernetes_deployment" "radicale" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.radicale_secret_provider.manifest.metadata.name
+              secretProviderClass = module.radicale_tls_vault.spc_name
             }
           }
         }
@@ -223,7 +378,7 @@ resource "kubernetes_deployment" "radicale" {
         # Nginx Volumes
         volume {
           name = "radicale-tls"
-          secret { secret_name = "radicale-tls" }
+          secret { secret_name = module.radicale_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -247,7 +402,7 @@ resource "kubernetes_deployment" "radicale" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "radicale-tailscale-state"
+            value = module.radicale_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -257,7 +412,7 @@ resource "kubernetes_deployment" "radicale" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.radicale_tailscale_auth.metadata[0].name
+                name = module.radicale_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -319,7 +474,7 @@ resource "kubernetes_deployment" "radicale" {
   }
 
   depends_on = [
-    kubernetes_manifest.radicale_secret_provider
+    module.radicale_tls_vault,
   ]
 
   lifecycle {

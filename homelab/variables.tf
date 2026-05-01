@@ -87,6 +87,7 @@ variable "tailnet_users" {
     jellyfin_server_user    = "media"
     syncthing_server_user   = "syncthing"
     ingest_server_user      = "ingest"
+    podcast_server_user     = "podcast"
 
   }
 }

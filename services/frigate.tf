@@ -1,3 +1,199 @@
+resource "kubernetes_namespace" "frigate" {
+  metadata {
+    name = "frigate"
+  }
+}
+
+# Per-cam derived form: env_key is the sanitized uppercase token used as
+# the suffix of FRIGATE_RTSP_PASSWORD_* (Frigate's `{FRIGATE_*}` config
+# substitution requires a static identifier, so we precompute it here).
+locals {
+  frigate_cams = {
+    for name, cam in var.frigate_cameras : name => merge(cam, {
+      env_key = upper(replace(name, "/[^a-zA-Z0-9]/", "_"))
+    })
+  }
+  frigate_cam_passwords = {
+    for name, cam in var.frigate_cameras : "rtsp_password_${name}" => cam.password
+  }
+}
+
+resource "kubernetes_service_account" "frigate" {
+  metadata {
+    name      = "frigate"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+# Pull-secret for the in-cluster registry; only the seed-model init
+# container needs it (frigate-model image lives in the local registry).
+# Frigate itself, nginx, tailscale, busybox all pull from public registries
+# / pull-through caches and don't need this credential.
+resource "kubernetes_secret" "frigate_registry_pull_secret" {
+  metadata {
+    name      = "registry-pull-secret"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  type = "kubernetes.io/dockerconfigjson"
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        "${local.thunderbolt_registry}" = {
+          username = "internal"
+          password = random_password.registry_user_passwords["internal"].result
+          auth     = base64encode("internal:${random_password.registry_user_passwords["internal"].result}")
+        }
+      }
+    })
+  }
+}
+
+# Vault-tracked admin password for Frigate's built-in auth. Terraform is
+# the source of truth — `random_password.frigate_admin` -> Vault -> CSI
+# -> synced k8s secret -> seed-admin-user init -> /config/frigate.db.
+#
+# Retrieval:
+#   vault kv get -field=admin_password secret/frigate/config
+#
+# Rotation:
+#   ./terraform.sh services apply -replace=random_password.frigate_admin
+#   (Vault picks up the new value, Reloader rolls the pod, the init
+#   container upserts the new PBKDF2 hash into Frigate's user table.)
+#
+# Frigate has no upstream CLI/env hook for password seeding, so the init
+# container talks to its SQLite db directly. See seed-admin-user below for
+# the schema-aware seeding script. UI password changes are NOT supported —
+# they'd be overwritten on the next pod restart.
+resource "random_password" "frigate_admin" {
+  length  = 32
+  special = false
+}
+
+module "frigate_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "frigate"
+  namespace            = kubernetes_namespace.frigate.metadata[0].name
+  service_account_name = kubernetes_service_account.frigate.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.frigate_server_user
+}
+
+module "frigate_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "frigate"
+  namespace            = kubernetes_namespace.frigate.metadata[0].name
+  service_account_name = kubernetes_service_account.frigate.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.frigate_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = merge(
+    {
+      admin_password = random_password.frigate_admin.result
+      # Same plaintext as `frigate_password` under homeassist/mosquitto —
+      # both keys are written from the single random_password resource in
+      # homeassist-mosquitto.tf, so they cannot drift. Mounted here under
+      # frigate's own Vault path to avoid granting frigate's vault role
+      # read on homeassist/mosquitto.
+      mqtt_password = random_password.homeassist_mqtt_frigate.result
+    },
+    local.frigate_cam_passwords,
+  )
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "frigate_config" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "frigate-config"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.frigate_config_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+# Recordings + clip exports live here. Sized large because Frigate continuous
+# recording fills disk fast; split from `frigate-config` so swapping in a
+# network-backed storage class (TrueNAS / democratic-csi) later only touches
+# this PVC, not the small config one.
+resource "kubernetes_persistent_volume_claim" "frigate_recordings" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "frigate-recordings"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.frigate_recordings_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "frigate_config" {
+  metadata {
+    name      = "frigate-config"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  data = {
+    # Day-1 config: no cameras, AMD VAAPI hwaccel for decode, CPU detector.
+    # When cameras land, edit data/frigate/config.yml.tpl in place and
+    # re-apply — Reloader rolls the deployment when the ConfigMap hash
+    # changes (config-hash pod annotation below).
+    "config.yml" = templatefile("${path.module}/../data/frigate/config.yml.tpl", {
+      cameras = local.frigate_cams
+    })
+  }
+}
+
+resource "kubernetes_config_map" "frigate_nginx_config" {
+  metadata {
+    name      = "frigate-nginx-config"
+    namespace = kubernetes_namespace.frigate.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/frigate.nginx.conf.tpl", {
+      server_domain = "${var.frigate_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
+# Single-pod namespace (frigate + nginx + tailscale sidecars in one pod).
+# No cross-namespace traffic today. Camera ingress is RTSP/ONVIF over the
+# LAN, which doesn't traverse the cluster network.
+module "frigate_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.frigate.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
 resource "kubernetes_deployment" "frigate" {
   metadata {
     name      = "frigate"
@@ -19,7 +215,12 @@ resource "kubernetes_deployment" "frigate" {
         annotations = {
           "config-hash"                         = sha1(kubernetes_config_map.frigate_config.data["config.yml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.frigate_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "frigate-tls,frigate-secrets"
+          # Roll the pod when the model-builder Dockerfile changes; the
+          # image tag stays `:latest`, so kubelet won't otherwise notice
+          # a fresh build of frigate-model. The seed-model init container
+          # copies /model.onnx out of that image on every restart.
+          "model-image-hash" = sha1(file("${path.module}/../data/images/frigate-model/Dockerfile"))
+          "secret.reloader.stakater.com/reload" = "${module.frigate_tls_vault.tls_secret_name},${module.frigate_tls_vault.config_secret_name}"
           # Recordings are large + ephemeral by design; events DB is rebuilt on
           # restore as cameras start producing new footage. Excluded from FSB.
           "backup.velero.io/backup-volumes-excludes" = "frigate-recordings,frigate-config"
@@ -28,6 +229,10 @@ resource "kubernetes_deployment" "frigate" {
 
       spec {
         service_account_name = kubernetes_service_account.frigate.metadata[0].name
+
+        image_pull_secrets {
+          name = kubernetes_secret.frigate_registry_pull_secret.metadata[0].name
+        }
 
         # Host is Fedora: video=39, render=105 (mode 0666 on renderD128 means
         # render membership isn't strictly required, but harmless). card0 is
@@ -52,6 +257,23 @@ resource "kubernetes_deployment" "frigate" {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
             read_only  = true
+          }
+        }
+
+        # Copies the YOLOv9-tiny ONNX artifact baked into the
+        # frigate-model image into /config/model_cache/. Frigate's ONNX
+        # detector requires an explicit model.path and ships no default;
+        # the model-builder Job (frigate-jobs.tf) runs once via BuildKit
+        # to produce this artifact image. Re-runs on every pod start are
+        # cheap (image is alpine + ~10MB ONNX, fully cached after first
+        # pull) and idempotent — `cp -f` always lands the latest version.
+        init_container {
+          name    = "seed-model"
+          image   = local.frigate_model_image
+          command = ["sh", "-c", "mkdir -p /config/model_cache && cp -f /model.onnx /config/model_cache/yolo.onnx"]
+          volume_mount {
+            name       = "frigate-config"
+            mount_path = "/config"
           }
         }
 
@@ -81,6 +303,18 @@ resource "kubernetes_deployment" "frigate" {
           name  = "frigate"
           image = var.image_frigate
 
+          # Without privileged the container's cgroup device whitelist
+          # blocks open() on /dev/dri/renderD128 and /dev/kfd even though
+          # the files are visible (filesystem perms via supplemental_groups
+          # are necessary but not sufficient — k8s separately gates *use*
+          # of host devices). Symptom: ffmpeg "No VA display found" and
+          # Frigate's radeon stats poller "Operation not permitted".
+          # Proper fix is the AMD GPU device plugin; privileged is the
+          # one-liner workaround for single-node homelab.
+          security_context {
+            privileged = true
+          }
+
           port {
             container_port = 8971
             name           = "https-auth"
@@ -89,6 +323,56 @@ resource "kubernetes_deployment" "frigate" {
           env {
             name  = "TZ"
             value = var.homeassist_time_zone
+          }
+
+          # ROCm targets gfx1030 by default; Rembrandt 680M reports gfx1035
+          # which is not in AMD's official support matrix. The override tells
+          # the HSA runtime to treat the iGPU as gfx1030, which is the
+          # well-known workaround that gets ROCm working on Rembrandt APUs.
+          # If you swap delphi for hardware with a properly-supported GPU
+          # (RDNA2/3 discrete), this can be removed.
+          env {
+            name  = "HSA_OVERRIDE_GFX_VERSION"
+            value = "10.3.0"
+          }
+
+          # Force AMD's mesa VA-API driver. The rocm image bundles
+          # mesa-va-drivers (radeonsi), but ffmpeg's autoprobe sometimes
+          # picks the Intel iHD driver path first and fails with
+          # "No VA display found for /dev/dri/renderD128".
+          env {
+            name  = "LIBVA_DRIVER_NAME"
+            value = "radeonsi"
+          }
+
+          # Per-cam RTSP password env vars; referenced from config.yml as
+          # `{FRIGATE_RTSP_PASSWORD_<KEY>}`. Sourced from the Vault-synced
+          # config Secret so the rendered ConfigMap stays plaintext-clean
+          # (only the username + IP are inlined in URLs).
+          dynamic "env" {
+            for_each = local.frigate_cams
+            content {
+              name = "FRIGATE_RTSP_PASSWORD_${env.value.env_key}"
+              value_from {
+                secret_key_ref {
+                  name = module.frigate_tls_vault.config_secret_name
+                  key  = "rtsp_password_${env.key}"
+                }
+              }
+            }
+          }
+
+          # MQTT broker creds for the `frigate` user on Mosquitto in the
+          # homeassist namespace. Referenced from config.yml as
+          # `{FRIGATE_MQTT_PASSWORD}`.
+          env {
+            name = "FRIGATE_MQTT_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = module.frigate_tls_vault.config_secret_name
+                key  = "mqtt_password"
+              }
+            }
           }
 
           # Frigate ffmpeg uses /dev/shm for inter-process frame buffers.
@@ -118,6 +402,12 @@ resource "kubernetes_deployment" "frigate" {
             name       = "dri"
             mount_path = "/dev/dri"
           }
+          # ROCm compute device. /dev/dri/renderD128 alone is not enough —
+          # the HSA runtime opens /dev/kfd to enqueue compute kernels.
+          volume_mount {
+            name       = "kfd"
+            mount_path = "/dev/kfd"
+          }
           # Pins the CSI secrets-store volume so the synced `frigate-tls`
           # k8s secret stays alive for the nginx sidecar; Frigate itself
           # never reads from this path.
@@ -132,11 +422,14 @@ resource "kubernetes_deployment" "frigate" {
             limits   = { cpu = "4000m", memory = "4Gi" }
           }
 
+          # ROCm init + first-run YOLO-NAS model download into the config
+          # PVC takes 1-3 minutes; probes need to allow that without the
+          # kubelet flapping the pod.
           liveness_probe {
             tcp_socket {
               port = 8971
             }
-            initial_delay_seconds = 60
+            initial_delay_seconds = 180
             period_seconds        = 30
             timeout_seconds       = 10
             failure_threshold     = 5
@@ -146,7 +439,7 @@ resource "kubernetes_deployment" "frigate" {
             tcp_socket {
               port = 8971
             }
-            initial_delay_seconds = 30
+            initial_delay_seconds = 120
             period_seconds        = 10
           }
         }
@@ -184,6 +477,13 @@ resource "kubernetes_deployment" "frigate" {
             type = "Directory"
           }
         }
+        volume {
+          name = "kfd"
+          host_path {
+            path = "/dev/kfd"
+            type = "CharDevice"
+          }
+        }
 
         # Nginx
         container {
@@ -215,7 +515,7 @@ resource "kubernetes_deployment" "frigate" {
         # Nginx Volumes
         volume {
           name = "frigate-tls"
-          secret { secret_name = "frigate-tls" }
+          secret { secret_name = module.frigate_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -229,7 +529,7 @@ resource "kubernetes_deployment" "frigate" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.frigate_secret_provider.manifest.metadata.name
+              secretProviderClass = module.frigate_tls_vault.spc_name
             }
           }
         }
@@ -245,7 +545,7 @@ resource "kubernetes_deployment" "frigate" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "frigate-tailscale-state"
+            value = module.frigate_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -255,7 +555,7 @@ resource "kubernetes_deployment" "frigate" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.frigate_tailscale_auth.metadata[0].name
+                name = module.frigate_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -317,7 +617,11 @@ resource "kubernetes_deployment" "frigate" {
   }
 
   depends_on = [
-    kubernetes_manifest.frigate_secret_provider
+    module.frigate_tls_vault,
+    # Block deployment until the model image exists in the registry —
+    # otherwise the seed-model init container ImagePullBackoffs on first
+    # apply.
+    module.frigate_model_build,
   ]
 
   lifecycle {

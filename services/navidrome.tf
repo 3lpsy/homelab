@@ -1,3 +1,118 @@
+resource "kubernetes_namespace" "navidrome" {
+  metadata {
+    name = "navidrome"
+  }
+}
+
+resource "kubernetes_service_account" "navidrome" {
+  metadata {
+    name      = "navidrome"
+    namespace = kubernetes_namespace.navidrome.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "random_password" "navidrome_password" {
+  length  = 32
+  special = false
+}
+
+module "navidrome_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "navidrome"
+  namespace            = kubernetes_namespace.navidrome.metadata[0].name
+  service_account_name = kubernetes_service_account.navidrome.metadata[0].name
+  # Headscale user is `music`, not `navidrome` — historical naming.
+  tailnet_user_id = data.terraform_remote_state.homelab.outputs.tailnet_user_map.music_server_user
+}
+
+module "navidrome_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "navidrome"
+  namespace            = kubernetes_namespace.navidrome.metadata[0].name
+  service_account_name = kubernetes_service_account.navidrome.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.navidrome_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = {
+    navidrome_password = random_password.navidrome_password.result
+  }
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "navidrome_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "navidrome-data"
+    namespace = kubernetes_namespace.navidrome.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.navidrome_data_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_persistent_volume_claim" "navidrome_music" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "navidrome-music"
+    namespace = kubernetes_namespace.navidrome.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.navidrome_music_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "navidrome_nginx_config" {
+  metadata {
+    name      = "navidrome-nginx-config"
+    namespace = kubernetes_namespace.navidrome.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/navidrome.nginx.conf.tpl", {
+      server_domain = "${var.navidrome_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
+# Single-pod namespace. Library bytes are on a PVC; no DB, no shared cache.
+# Outbound only needs kube-dns + the tailnet sidecar — netpol-baseline covers
+# both.
+module "navidrome_netpol_baseline" {
+  source = "../templates/netpol-baseline"
+
+  namespace    = kubernetes_namespace.navidrome.metadata[0].name
+  pod_cidr     = var.k8s_pod_cidr
+  service_cidr = var.k8s_service_cidr
+}
+
 resource "kubernetes_deployment" "navidrome" {
   metadata {
     name      = "navidrome"
@@ -18,7 +133,7 @@ resource "kubernetes_deployment" "navidrome" {
         labels = { app = "navidrome" }
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.navidrome_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "navidrome-secrets,navidrome-tls"
+          "secret.reloader.stakater.com/reload" = "${module.navidrome_tls_vault.config_secret_name},${module.navidrome_tls_vault.tls_secret_name}"
         }
       }
 
@@ -95,7 +210,7 @@ resource "kubernetes_deployment" "navidrome" {
             name = "ND_DEVAUTOCREATEADMINPASSWORD"
             value_from {
               secret_key_ref {
-                name = "navidrome-secrets"
+                name = module.navidrome_tls_vault.config_secret_name
                 key  = "navidrome_password"
               }
             }
@@ -158,7 +273,7 @@ resource "kubernetes_deployment" "navidrome" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.navidrome_secret_provider.manifest.metadata.name
+              secretProviderClass = module.navidrome_tls_vault.spc_name
             }
           }
         }
@@ -193,7 +308,7 @@ resource "kubernetes_deployment" "navidrome" {
         # Nginx Volumes
         volume {
           name = "navidrome-tls"
-          secret { secret_name = "navidrome-tls" }
+          secret { secret_name = module.navidrome_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -213,7 +328,7 @@ resource "kubernetes_deployment" "navidrome" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "navidrome-tailscale-state"
+            value = module.navidrome_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -223,7 +338,7 @@ resource "kubernetes_deployment" "navidrome" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.navidrome_tailscale_auth.metadata[0].name
+                name = module.navidrome_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -285,7 +400,7 @@ resource "kubernetes_deployment" "navidrome" {
   }
 
   depends_on = [
-    kubernetes_manifest.navidrome_secret_provider
+    module.navidrome_tls_vault,
   ]
 
   lifecycle {

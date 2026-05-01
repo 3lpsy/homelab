@@ -1,3 +1,122 @@
+resource "kubernetes_service_account" "grafana" {
+  metadata {
+    name      = "grafana"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  automount_service_account_token = false
+}
+
+resource "random_password" "grafana_admin" {
+  length  = 32
+  special = false
+}
+
+module "grafana_tailscale" {
+  source = "../templates/tailscale-ingress"
+
+  name                 = "grafana"
+  namespace            = kubernetes_namespace.monitoring.metadata[0].name
+  service_account_name = kubernetes_service_account.grafana.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.grafana_server_user
+}
+
+module "grafana_tls_vault" {
+  source = "../templates/service-tls-vault"
+
+  service_name         = "grafana"
+  namespace            = kubernetes_namespace.monitoring.metadata[0].name
+  service_account_name = kubernetes_service_account.grafana.metadata[0].name
+
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.grafana_domain}.${local.magic_fqdn_suffix}"
+  aws_region            = var.aws_region
+  aws_access_key        = var.aws_access_key
+  aws_secret_key        = var.aws_secret_key
+  recursive_nameservers = var.recursive_nameservers
+
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  config_secrets = {
+    admin_password = random_password.grafana_admin.result
+  }
+
+  providers = { acme = acme }
+}
+
+resource "kubernetes_persistent_volume_claim" "grafana_data" {
+  lifecycle {
+    prevent_destroy = true
+  }
+  metadata {
+    name      = "grafana-data"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "local-path"
+    resources {
+      requests = {
+        storage = var.grafana_storage_size
+      }
+    }
+  }
+  wait_until_bound = false
+}
+
+resource "kubernetes_config_map" "grafana_datasources" {
+  metadata {
+    name      = "grafana-datasources"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  data = {
+    "datasources.yaml" = yamlencode({
+      apiVersion = 1
+      datasources = [{
+        name      = "Prometheus"
+        type      = "prometheus"
+        url       = "http://prometheus:9090"
+        access    = "proxy"
+        isDefault = true
+      }]
+    })
+  }
+}
+
+resource "kubernetes_config_map" "grafana_dashboard_provisioning" {
+  metadata {
+    name      = "grafana-dashboard-provisioning"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  data = {
+    "dashboards.yaml" = yamlencode({
+      apiVersion = 1
+      providers = [{
+        name            = "default"
+        orgId           = 1
+        folder          = ""
+        type            = "file"
+        disableDeletion = false
+        editable        = true
+        options = {
+          path = "/var/lib/grafana/dashboards"
+        }
+      }]
+    })
+  }
+}
+
+resource "kubernetes_config_map" "grafana_nginx_config" {
+  metadata {
+    name      = "grafana-nginx-config"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+  }
+  data = {
+    "nginx.conf" = templatefile("${path.module}/../data/nginx/grafana.nginx.conf.tpl", {
+      server_domain = "${var.grafana_domain}.${local.magic_fqdn_suffix}"
+    })
+  }
+}
+
 resource "kubernetes_deployment" "grafana" {
   metadata {
     name      = "grafana"
@@ -20,8 +139,8 @@ resource "kubernetes_deployment" "grafana" {
           "datasources-hash"                    = sha1(kubernetes_config_map.grafana_datasources.data["datasources.yaml"])
           "dashboards-hash"                     = sha1(kubernetes_config_map.grafana_dashboard_provisioning.data["dashboards.yaml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.grafana_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "grafana-secrets,grafana-tls"
-          # Dashboards + datasources are provisioned by monitoring-conf via
+          "secret.reloader.stakater.com/reload" = "${module.grafana_tls_vault.config_secret_name},${module.grafana_tls_vault.tls_secret_name}"
+          # Dashboards + datasources are provisioned by services-conf via
           # the Grafana provider; only Grafana's session/user state lives in
           # this PVC. Lost on restore = users re-login, no real loss.
           "backup.velero.io/backup-volumes-excludes" = "grafana-data"
@@ -78,7 +197,7 @@ resource "kubernetes_deployment" "grafana" {
           }
           env {
             name  = "GF_SERVER_ROOT_URL"
-            value = "https://${var.grafana_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+            value = "https://${var.grafana_domain}.${local.magic_fqdn_suffix}"
           }
           env {
             name  = "GF_SECURITY_ADMIN_USER"
@@ -88,7 +207,7 @@ resource "kubernetes_deployment" "grafana" {
             name = "GF_SECURITY_ADMIN_PASSWORD"
             value_from {
               secret_key_ref {
-                name = "grafana-secrets"
+                name = module.grafana_tls_vault.config_secret_name
                 key  = "admin_password"
               }
             }
@@ -104,7 +223,7 @@ resource "kubernetes_deployment" "grafana" {
           }
           # Empty dir at the path the `file` dashboard provider polls every
           # 30s. Without this, grafana spams `Cannot read directory` ERRORs.
-          # Actual dashboards are provisioned via API by the monitoring-conf
+          # Actual dashboards are provisioned via API by the services-conf
           # deployment, not through this path.
           volume_mount {
             name       = "grafana-dashboards-empty"
@@ -176,7 +295,7 @@ resource "kubernetes_deployment" "grafana" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.grafana_secret_provider.manifest.metadata.name
+              secretProviderClass = module.grafana_tls_vault.spc_name
             }
           }
         }
@@ -210,7 +329,7 @@ resource "kubernetes_deployment" "grafana" {
         # Nginx Volumes
         volume {
           name = "grafana-tls"
-          secret { secret_name = "grafana-tls" }
+          secret { secret_name = module.grafana_tls_vault.tls_secret_name }
         }
         volume {
           name = "nginx-config"
@@ -230,7 +349,7 @@ resource "kubernetes_deployment" "grafana" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "grafana-tailscale-state"
+            value = module.grafana_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -240,7 +359,7 @@ resource "kubernetes_deployment" "grafana" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.grafana_tailscale_auth.metadata[0].name
+                name = module.grafana_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -296,8 +415,8 @@ resource "kubernetes_deployment" "grafana" {
   }
 
   depends_on = [
-    kubernetes_manifest.grafana_secret_provider,
-    kubernetes_deployment.prometheus
+    module.grafana_tls_vault,
+    kubernetes_deployment.prometheus,
   ]
 
   lifecycle {

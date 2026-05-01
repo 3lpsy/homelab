@@ -4,12 +4,20 @@ Poll loop:
   1. GET /internal/dropzone/list                      — what's pending
   2. For each file:
        GET  /internal/dropzone/file/<id>              — download bytes
+       compute audio-stream md5 → if already in library, ack as dupe
        probe + LLM tag
        if confidence >= threshold:
            write tags + os.rename into /music/<artist>/<title>.<ext>
            POST /internal/dropzone/ack/<id>
        else:
            POST /internal/dropzone/quarantine/<id> {"reason": ...}
+
+Dedup index:
+  An in-memory map of audio-stream md5 → relative library path. The
+  ingestor rewrites tags via mutagen, which mutates file bytes — so the
+  raw file md5 is unstable across re-tag. ffmpeg's `-f md5` over the
+  decoded audio stream (`-map 0:a`) ignores tag chunks and stays stable.
+  Index rebuilds on startup and every INDEX_REBUILD_INTERVAL seconds.
 
 Logging policy:
   - Filenames are not PII; we log them.
@@ -34,6 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import av
 import httpx
 import jinja2
 import litellm
@@ -78,6 +87,8 @@ INGEST_INTERNAL_TOKEN = os.environ.get("INGEST_INTERNAL_TOKEN", "")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "30"))
 POLL_TIMEOUT = float(os.environ.get("POLL_TIMEOUT", "20"))
 DOWNLOAD_TIMEOUT = float(os.environ.get("DOWNLOAD_TIMEOUT", "300"))
+INDEX_REBUILD_INTERVAL = float(os.environ.get("INDEX_REBUILD_INTERVAL", "3600"))
+HASH_TIMEOUT = float(os.environ.get("HASH_TIMEOUT", "60"))
 
 AUDIO_EXTENSIONS = {".opus", ".mp3", ".flac", ".m4a", ".ogg", ".wav", ".aac"}
 
@@ -480,6 +491,139 @@ def is_audio(name: str) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Audio-stream hash + library dedup index
+# ─────────────────────────────────────────────────────────────────────────
+
+# Hash the raw audio packet bytes via PyAV (libavformat). No decode —
+# we just iterate demuxed packets and feed `bytes(packet)` into md5.
+# Stable across mutagen re-tag because only the ID3/Vorbis container
+# chunks change, not the encoded audio packets themselves. Runs in a
+# worker thread because PyAV's demux loop is blocking.
+def _audio_hash_blocking(path: Path) -> str | None:
+    import hashlib
+    try:
+        container = av.open(str(path))
+    except av.FFmpegError as e:
+        logger.warning("compute_audio_hash open failed file=%s err=%s", path, e)
+        return None
+    try:
+        audio_streams = [s for s in container.streams if s.type == "audio"]
+        if not audio_streams:
+            logger.warning("compute_audio_hash no audio stream file=%s", path)
+            return None
+        h = hashlib.md5()
+        for packet in container.demux(audio_streams[0]):
+            data = bytes(packet)
+            if data:
+                h.update(data)
+        digest = h.hexdigest()
+        if digest == hashlib.md5(b"").hexdigest():
+            # No packets read at all — treat as failure rather than collide
+            # every empty/broken file under one hash.
+            logger.warning("compute_audio_hash empty packet stream file=%s", path)
+            return None
+        return digest
+    except av.FFmpegError as e:
+        logger.warning("compute_audio_hash demux failed file=%s err=%s", path, e)
+        return None
+    finally:
+        container.close()
+
+
+async def compute_audio_hash(path: Path) -> str | None:
+    """Return md5 hex of the audio packet stream, or None on failure.
+
+    Bounded by HASH_TIMEOUT seconds; the blocking PyAV work runs in a
+    thread. Tag chunks (ID3v2, Vorbis comments, MP4 atoms) are skipped
+    by design since we hash demuxed packets, not the file bytes.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_audio_hash_blocking, path),
+            timeout=HASH_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("compute_audio_hash timeout file=%s", path)
+        return None
+
+
+class LibraryIndex:
+    """In-memory audio-stream-md5 -> relative library path index.
+
+    Rebuilt on startup and on a timer. Per-ingest inserts mutate it under
+    a lock so a rebuild can't race with an `add()` from `process_one`.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._hashes: dict[str, str] = {}  # md5 -> relpath
+        self._lock = asyncio.Lock()
+        self.last_rebuild_at: float = 0.0
+        self.last_rebuild_size: int = 0
+
+    async def contains(self, audio_md5: str) -> str | None:
+        async with self._lock:
+            return self._hashes.get(audio_md5)
+
+    async def add(self, path: Path, audio_md5: str) -> None:
+        try:
+            rel = str(path.relative_to(self.root))
+        except ValueError:
+            rel = str(path)
+        async with self._lock:
+            self._hashes[audio_md5] = rel
+
+    async def rebuild(self) -> None:
+        """Walk the music root, hash every audio file, replace the map."""
+        start = time.time()
+        new_map: dict[str, str] = {}
+        files = [p for p in self.root.rglob("*") if p.is_file() and is_audio(p.name)]
+        for p in files:
+            h = await compute_audio_hash(p)
+            if h is None:
+                continue
+            try:
+                rel = str(p.relative_to(self.root))
+            except ValueError:
+                rel = str(p)
+            # Last-writer-wins on collision: surface in logs.
+            if h in new_map and new_map[h] != rel:
+                logger.info("index: dupe in library hash=%s a=%s b=%s", h, new_map[h], rel)
+            new_map[h] = rel
+        async with self._lock:
+            self._hashes = new_map
+            self.last_rebuild_at = time.time()
+            self.last_rebuild_size = len(new_map)
+        logger.info(
+            "index rebuilt size=%d files=%d elapsed=%.1fs",
+            len(new_map), len(files), time.time() - start,
+        )
+
+
+INDEX = LibraryIndex(MUSIC_PATH)
+
+
+async def index_refresh_loop(stop: asyncio.Event) -> None:
+    """Rebuild the dedup index on a timer.
+
+    Initial rebuild runs in `lifespan` before the poll loop starts so the
+    first pull cycle already has an up-to-date library map. After that we
+    refresh in the background; per-ingest `add()` keeps the map fresh
+    between rebuilds.
+    """
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=INDEX_REBUILD_INTERVAL)
+            return  # stop fired
+        except asyncio.TimeoutError:
+            pass
+        try:
+            await INDEX.rebuild()
+        except Exception:  # noqa: BLE001
+            logger.exception("index rebuild failed")
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Pipeline (per file)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -506,6 +650,23 @@ async def process_one(client: httpx.AsyncClient, entry: dict[str, Any]) -> dict[
 
         size = tmp_path.stat().st_size
         logger.info("fetched file=%s size=%d", filename, size)
+
+        audio_hash = await compute_audio_hash(tmp_path)
+        if audio_hash is not None:
+            existing = await INDEX.contains(audio_hash)
+            if existing is not None:
+                logger.info(
+                    "dedup hit file=%s hash=%s existing=%s — acking without ingest",
+                    filename, audio_hash, existing,
+                )
+                ack = await client.post(f"/internal/dropzone/ack/{file_id}", timeout=POLL_TIMEOUT)
+                ack.raise_for_status()
+                return {
+                    "file": filename,
+                    "status": "deduped",
+                    "hash": audio_hash,
+                    "existing": existing,
+                }
 
         tags = read_existing_tags(tmp_path)
         probe = probe_audio(tmp_path)
@@ -553,6 +714,8 @@ async def process_one(client: httpx.AsyncClient, entry: dict[str, Any]) -> dict[
             "ingested file=%s -> %s artist=%s title=%s confidence=%.2f",
             filename, final.relative_to(MUSIC_PATH), tag_result.artist, tag_result.title, tag_result.confidence,
         )
+        if audio_hash is not None:
+            await INDEX.add(final, audio_hash)
 
         ack = await client.post(f"/internal/dropzone/ack/{file_id}", timeout=POLL_TIMEOUT)
         ack.raise_for_status()
@@ -578,6 +741,7 @@ class WorkerStats:
     last_listed: int = 0
     total_ingested: int = 0
     total_quarantined: int = 0
+    total_deduped: int = 0
     total_errors: int = 0
 
 
@@ -613,6 +777,8 @@ async def poll_once(client: httpx.AsyncClient) -> None:
             continue
         if result.get("status") == "ingested":
             STATS.total_ingested += 1
+        elif result.get("status") == "deduped":
+            STATS.total_deduped += 1
         elif result.get("status") in {"quarantined", "failed"}:
             STATS.total_quarantined += 1
 
@@ -643,7 +809,10 @@ async def health(request: web.Request) -> web.Response:
         "last_listed": STATS.last_listed,
         "total_ingested": STATS.total_ingested,
         "total_quarantined": STATS.total_quarantined,
+        "total_deduped": STATS.total_deduped,
         "total_errors": STATS.total_errors,
+        "index_size": INDEX.last_rebuild_size,
+        "index_last_rebuild_at": INDEX.last_rebuild_at,
     })
 
 
@@ -660,6 +829,14 @@ async def lifespan() -> Any:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
 
+    # Initial dedup-index rebuild — block until done so the first pull
+    # already has a populated map. With an empty library this is ~instant.
+    try:
+        await INDEX.rebuild()
+    except Exception:  # noqa: BLE001
+        logger.exception("initial index rebuild failed; continuing with empty index")
+
+    index_task = asyncio.create_task(index_refresh_loop(stop))
     poll_task = asyncio.create_task(poll_loop(stop))
 
     app = web.Application()
@@ -678,6 +855,11 @@ async def lifespan() -> Any:
         except asyncio.TimeoutError:
             logger.warning("poll loop did not exit within 10s; cancelling")
             poll_task.cancel()
+        try:
+            await asyncio.wait_for(index_task, timeout=5)
+        except asyncio.TimeoutError:
+            logger.warning("index refresh loop did not exit within 5s; cancelling")
+            index_task.cancel()
         await runner.cleanup()
 
 

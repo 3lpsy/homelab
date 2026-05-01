@@ -123,7 +123,10 @@ resource "kubernetes_manifest" "openobserve_bootstrap_secret_provider" {
   depends_on = [
     kubernetes_namespace.monitoring,
     vault_kubernetes_auth_backend_role.openobserve_bootstrap,
-    vault_kv_secret_v2.openobserve_config,
+    # Was vault_kv_secret_v2.openobserve_config (now lives inside the
+    # openobserve_tls_vault module). Depend on the whole module so the
+    # config write completes before this SPC reads from the same path.
+    module.openobserve_tls_vault,
     vault_policy.openobserve_bootstrap,
   ]
 }

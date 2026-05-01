@@ -1,108 +1,43 @@
 # docker.io pull-through cache. Lives in the shared `registry-proxy`
 # namespace alongside registry-ghcrio. Both pods mount the same PVC
 # (registry-proxy-data) at different subPaths so their on-disk content
-# stays isolated.
+# stays isolated. Shared SA / Role / Vault policy / auth role live in
+# registry-proxy.tf.
 
-resource "kubernetes_secret" "registry_dockerio_tailscale_state" {
-  metadata {
-    name      = "registry-dockerio-tailscale-state"
-    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
-  }
-  type = "Opaque"
+module "registry_dockerio_tailscale" {
+  source = "../templates/tailscale-ingress"
 
-  lifecycle {
-    ignore_changes = [data, type]
-  }
+  name                 = "registry-dockerio"
+  namespace            = kubernetes_namespace.registry_proxy.metadata[0].name
+  service_account_name = kubernetes_service_account.registry_proxy.metadata[0].name
+  tailnet_user_id      = data.terraform_remote_state.homelab.outputs.tailnet_user_map.registry_proxy_server_user
+
+  # Role/RoleBinding live in registry-proxy.tf (one Role lists every
+  # state Secret; this module just creates the state Secret + auth key).
+  manage_role = false
 }
 
-resource "headscale_pre_auth_key" "registry_dockerio_server" {
-  user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.registry_proxy_server_user
-  reusable       = true
-  time_to_expire = "3y"
-}
+module "registry_dockerio_tls_vault" {
+  source = "../templates/service-tls-vault"
 
-resource "kubernetes_secret" "registry_dockerio_tailscale_auth" {
-  metadata {
-    name      = "registry-dockerio-tailscale-auth"
-    namespace = kubernetes_namespace.registry_proxy.metadata[0].name
-  }
-  type = "Opaque"
-  data = {
-    TS_AUTHKEY = headscale_pre_auth_key.registry_dockerio_server.key
-  }
-}
+  service_name         = "registry-dockerio"
+  namespace            = kubernetes_namespace.registry_proxy.metadata[0].name
+  service_account_name = kubernetes_service_account.registry_proxy.metadata[0].name
 
-module "registry-dockerio-tls" {
-  source                = "./../templates/infra-tls"
-  account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
-  server_domain         = "${var.registry_dockerio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+  acme_account_key_pem  = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
+  tls_domain            = "${var.registry_dockerio_domain}.${local.magic_fqdn_suffix}"
   aws_region            = var.aws_region
   aws_access_key        = var.aws_access_key
   aws_secret_key        = var.aws_secret_key
   recursive_nameservers = var.recursive_nameservers
 
+  vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
+
+  # Shared registry-proxy Vault policy + auth role live in registry-proxy.tf.
+  manage_vault_auth = false
+  role_name         = vault_kubernetes_auth_backend_role.registry_proxy.role_name
+
   providers = { acme = acme }
-}
-
-resource "vault_kv_secret_v2" "registry_dockerio_tls" {
-  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
-  name  = "registry-dockerio/tls"
-  data_json = jsonencode({
-    fullchain_pem = module.registry-dockerio-tls.fullchain_pem
-    privkey_pem   = module.registry-dockerio-tls.privkey_pem
-  })
-
-  # tls-rotator owns rotation post-bootstrap.
-  lifecycle {
-    ignore_changes = [data_json]
-  }
-}
-
-resource "kubernetes_manifest" "registry_dockerio_secret_provider" {
-  manifest = {
-    apiVersion = "secrets-store.csi.x-k8s.io/v1"
-    kind       = "SecretProviderClass"
-    metadata = {
-      name      = "vault-registry-dockerio"
-      namespace = kubernetes_namespace.registry_proxy.metadata[0].name
-    }
-    spec = {
-      provider = "vault"
-      secretObjects = [
-        {
-          secretName = "registry-dockerio-tls"
-          type       = "kubernetes.io/tls"
-          data = [
-            { objectName = "tls_crt", key = "tls.crt" },
-            { objectName = "tls_key", key = "tls.key" },
-          ]
-        },
-      ]
-      parameters = {
-        vaultAddress = "http://vault.vault.svc.cluster.local:8200"
-        roleName     = "registry-proxy"
-        objects = yamlencode([
-          {
-            objectName = "tls_crt"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/registry-dockerio/tls"
-            secretKey  = "fullchain_pem"
-          },
-          {
-            objectName = "tls_key"
-            secretPath = "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/registry-dockerio/tls"
-            secretKey  = "privkey_pem"
-          },
-        ])
-      }
-    }
-  }
-
-  depends_on = [
-    kubernetes_namespace.registry_proxy,
-    vault_kubernetes_auth_backend_role.registry_proxy,
-    vault_kv_secret_v2.registry_dockerio_tls,
-    vault_policy.registry_proxy,
-  ]
 }
 
 resource "kubernetes_config_map" "registry_dockerio_config" {
@@ -126,7 +61,7 @@ resource "kubernetes_config_map" "registry_dockerio_nginx_config" {
   }
   data = {
     "nginx.conf" = templatefile("${path.module}/../data/nginx/registry-proxy.nginx.conf.tpl", {
-      server_domain = "${var.registry_dockerio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+      server_domain = "${var.registry_dockerio_domain}.${local.magic_fqdn_suffix}"
       upstream_port = "5000"
     })
   }
@@ -153,7 +88,7 @@ resource "kubernetes_deployment" "registry_dockerio" {
         annotations = {
           "registry-config-hash"                = sha1(kubernetes_config_map.registry_dockerio_config.data["config.yml"])
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_dockerio_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "registry-dockerio-tls"
+          "secret.reloader.stakater.com/reload" = module.registry_dockerio_tls_vault.tls_secret_name
           # Pull-through cache — every layer is regen-able by re-pulling.
           "backup.velero.io/backup-volumes-excludes" = "registry-data"
         }
@@ -278,7 +213,7 @@ resource "kubernetes_deployment" "registry_dockerio" {
           }
           env {
             name  = "TS_KUBE_SECRET"
-            value = "registry-dockerio-tailscale-state"
+            value = module.registry_dockerio_tailscale.state_secret_name
           }
           env {
             name  = "TS_USERSPACE"
@@ -288,7 +223,7 @@ resource "kubernetes_deployment" "registry_dockerio" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.registry_dockerio_tailscale_auth.metadata[0].name
+                name = module.registry_dockerio_tailscale.auth_secret_name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -347,7 +282,7 @@ resource "kubernetes_deployment" "registry_dockerio" {
         }
         volume {
           name = "registry-dockerio-tls"
-          secret { secret_name = "registry-dockerio-tls" }
+          secret { secret_name = module.registry_dockerio_tls_vault.tls_secret_name }
         }
         volume {
           name = "secrets-store"
@@ -355,7 +290,7 @@ resource "kubernetes_deployment" "registry_dockerio" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.registry_dockerio_secret_provider.manifest.metadata.name
+              secretProviderClass = module.registry_dockerio_tls_vault.spc_name
             }
           }
         }
@@ -375,7 +310,7 @@ resource "kubernetes_deployment" "registry_dockerio" {
   }
 
   depends_on = [
-    kubernetes_manifest.registry_dockerio_secret_provider
+    module.registry_dockerio_tls_vault,
   ]
 
   lifecycle {

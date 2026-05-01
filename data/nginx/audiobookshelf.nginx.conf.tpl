@@ -1,0 +1,59 @@
+events {
+  worker_connections 1024;
+}
+http {
+  log_format redacted '$remote_addr - - [$time_local] '
+                      '"$request_method $uri $server_protocol" $status $body_bytes_sent';
+
+  map $http_user_agent $loggable {
+    default            1;
+    "~*kube-probe/"    0;
+  }
+  access_log /dev/stdout redacted if=$loggable;
+  error_log /dev/stderr crit;
+
+  # Required for /socket.io websocket upgrade — playback-progress sync
+  # depends on it.
+  map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+  }
+
+  upstream audiobookshelf {
+    server localhost:80;
+  }
+
+  server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${server_domain};
+
+    ssl_certificate     /etc/nginx/certs/tls.crt;
+    ssl_certificate_key /etc/nginx/certs/tls.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Cover uploads + OPML imports.
+    client_max_body_size 100m;
+
+    # NOTE: do NOT add CORS headers here. ABS docs explicitly warn that
+    # CORS middleware breaks login.
+    location / {
+      proxy_pass        http://audiobookshelf/;
+      proxy_set_header  Host $http_host;
+      proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header  X-Forwarded-Proto $scheme;
+      proxy_set_header  X-Real-IP $remote_addr;
+
+      proxy_http_version 1.1;
+      proxy_set_header   Upgrade $http_upgrade;
+      proxy_set_header   Connection $connection_upgrade;
+
+      proxy_read_timeout 600s;
+      proxy_send_timeout 600s;
+    }
+  }
+}

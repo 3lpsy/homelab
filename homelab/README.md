@@ -3,7 +3,7 @@
 Foundation deployment. Creates all AWS infrastructure, provisions the
 Headscale control server, joins it to its own tailnet, and defines the
 tailnet users. Every downstream deployment (cluster, vault, vault-conf,
-services, monitoring-conf) reads this deployment's state
+services, services-conf) reads this deployment's state
 via `terraform_remote_state`.
 
 ## Architecture
