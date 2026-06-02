@@ -1,0 +1,100 @@
+events {
+  worker_connections 1024;
+}
+
+http {
+  # NOTE: error_log is set to crit by default in the shared logging block —
+  # nginx's error_log captures the full upstream URI on 502/connect-failed,
+  # which would defeat the access_log redaction when a backend drops.
+  ${nginx_logging_block}
+
+  server {
+    listen 443 ssl;
+    # HTTP/2 lets many MCP sessions share a single TCP connection.
+    # Without this, Firefox's 6-connection-per-host HTTP/1.1 limit starves
+    # MCPs once >3 persistent SSE streams are open (each MCP client holds
+    # a long-lived GET for event delivery).
+    http2 on;
+    server_name ${server_domain};
+
+    ssl_certificate     /etc/nginx/certs/tls.crt;
+    ssl_certificate_key /etc/nginx/certs/tls.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    client_max_body_size 100M;
+
+    proxy_connect_timeout 600;
+    proxy_send_timeout    600;
+    proxy_read_timeout    600;
+    send_timeout          600;
+
+    # OAuth protected-resource metadata (RFC 9728). MCP HTTP clients probe
+    # this before sending requests; returning an empty authorization_servers
+    # list signals "bearer-only, no OAuth flow" so the client sends the
+    # static Authorization header instead of running OAuth discovery.
+    location = /.well-known/oauth-protected-resource {
+      default_type application/json;
+      return 200 '{"resource":"https://$host/","bearer_methods_supported":["header"],"authorization_servers":[]}';
+    }
+
+    location ~ ^/(?<svc>[a-z0-9-]+)/\.well-known/oauth-protected-resource$ {
+      default_type application/json;
+      return 200 '{"resource":"https://$host/$svc/","bearer_methods_supported":["header"],"authorization_servers":[]}';
+    }
+
+%{ for name, svc in services ~}
+    # ${name} — upstream_path=${svc.upstream_path}
+    location /${name}/ {
+      # CORS: auth rides the `Authorization` header (or `?api_key=` query
+      # arg), never cookies. `Allow-Credentials` is deliberately omitted so
+      # a malicious origin can't trick a browser into sending cookies with
+      # a cross-origin MCP request. Origin reflection without credentials
+      # still lets arbitrary pages probe the endpoint, but they cannot
+      # exfiltrate auth the user didn't explicitly put in the request.
+      if ($request_method = OPTIONS) {
+        add_header 'Access-Control-Allow-Origin'      $http_origin always;
+        add_header 'Access-Control-Allow-Methods'     'GET, POST, OPTIONS, DELETE' always;
+        add_header 'Access-Control-Allow-Headers'     'Content-Type, Accept, Authorization, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID' always;
+        add_header 'Access-Control-Max-Age'           1728000;
+        add_header 'Content-Length'                   0;
+        add_header 'Content-Type'                     'text/plain; charset=UTF-8';
+        return 204;
+      }
+
+      add_header 'Access-Control-Allow-Origin'      $http_origin always;
+      add_header 'Access-Control-Expose-Headers'    'Mcp-Session-Id, Mcp-Protocol-Version' always;
+
+      # upstream_path is where the backend mounts its MCP endpoint.
+      # All fastmcp v2 servers here use path="/", so this is "/" today —
+      # the variable stays per-service to keep the door open for any
+      # future backend that mounts elsewhere.
+      proxy_pass http://${name}.mcp.svc.cluster.local:8000${svc.upstream_path};
+      proxy_http_version 1.1;
+      # Rewrite Host/Origin so each backend's TrustedHostMiddleware (DNS
+      # rebinding protection) accepts the request.
+      proxy_set_header Host ${name}.mcp.svc.cluster.local:8000;
+      proxy_set_header Origin "http://${name}.mcp.svc.cluster.local:8000";
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+
+      # Map backend-issued redirects back to the external URL.
+      proxy_redirect http://${name}.mcp.svc.cluster.local:8000${svc.upstream_path}  https://$host/${name}/;
+      proxy_redirect https://${name}.mcp.svc.cluster.local:8000${svc.upstream_path} https://$host/${name}/;
+
+      # SSE / streamable-http.
+      proxy_set_header Connection '';
+      proxy_buffering off;
+      chunked_transfer_encoding on;
+    }
+
+%{ endfor ~}
+    location / {
+      return 404;
+    }
+  }
+}

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<opml version="1.0">
+  <head>
+    <title>Audiobookshelf example subscriptions</title>
+  </head>
+  <body>
+    <outline text="The Daily" type="rss" xmlUrl="https://feeds.simplecast.com/Sl5CSM3S"/>
+  </body>
+</opml>

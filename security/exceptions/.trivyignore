@@ -1,0 +1,28 @@
+# Trivy ignore file — list of vuln / misconfig / secret rule IDs to suppress.
+# One ID per line. Comments start with `#`.
+#
+# Add an entry only after triaging the finding via upstream docs / source.
+# Mirror the rationale in security/SECURITY.md (Trivy exceptions table).
+#
+# Examples:
+#   CVE-2023-12345   # accepted: only triggers in non-default config
+#   AVD-KSV-0014     # accepted: see SECURITY.md row
+
+# --- libraw23t64 in nextcloud:latest debian 13.4 base ---
+# 18 rows. No fixed version available upstream as of 2026-05. Will resolve
+# when nextcloud:latest rebases against a debian point release that backports.
+CVE-2026-20884
+CVE-2026-24450
+CVE-2026-24660
+
+# --- mesa GPU userspace bundled in frigate:stable-rocm debian 12 base ---
+# 38 rows. Unfixed in debian 12; frigate hasn't rebased to debian 13.
+CVE-2026-40393
+
+# --- ffmpeg in frigate + jellyfin upstream images ---
+# 46 rows. Upstream image refresh cadence; not actionable from the homelab side.
+CVE-2026-40962
+
+# --- sqlite3 in frigate / immich-ml / immich-postgres / pgvector debian 12 ---
+# 5 rows. Unfixed in debian 12; will clear when the upstream images rebase.
+CVE-2025-7458

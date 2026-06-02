@@ -1,0 +1,3414 @@
+{
+  "version": 8,
+  "dashboardId": "homelab",
+  "title": "Homelab",
+  "description": "Single-pane homelab observability \u2014 pod logs, host journald, edge nginx, security, cluster issues.",
+  "role": "",
+  "owner": "",
+  "tabs": [
+    {
+      "tabId": "overview",
+      "name": "Overview",
+      "panels": [
+        {
+          "id": "ov-m-records",
+          "type": "metric",
+          "title": "Pod records",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Records",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 1
+          }
+        },
+        {
+          "id": "ov-m-errors",
+          "type": "metric",
+          "title": "Error records",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Errors",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 45,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 2
+          }
+        },
+        {
+          "id": "ov-m-pods",
+          "type": "metric",
+          "title": "Active pods",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(distinct k8s_pod_name) AS y_axis_1 FROM \"pods\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Pods",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 3
+          }
+        },
+        {
+          "id": "ov-m-ns",
+          "type": "metric",
+          "title": "Active namespaces",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(distinct k8s_namespace_name) AS y_axis_1 FROM \"pods\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Namespaces",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 4
+          }
+        },
+        {
+          "id": "ov-volume",
+          "type": "stacked",
+          "title": "Pod log volume by namespace",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, k8s_namespace_name AS breakdown_1, count(*) AS y_axis_1 FROM \"pods\" GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "Namespace",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 5
+          }
+        },
+        {
+          "id": "ov-errs-table",
+          "type": "table",
+          "title": "Recent errors",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT _timestamp, k8s_namespace_name AS namespace, k8s_pod_name AS pod, body AS message FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%' ORDER BY _timestamp DESC LIMIT 15",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "_timestamp",
+                    "column": "_timestamp",
+                    "color": null
+                  },
+                  {
+                    "label": "Namespace",
+                    "alias": "namespace",
+                    "column": "namespace",
+                    "color": null
+                  },
+                  {
+                    "label": "Pod",
+                    "alias": "pod",
+                    "column": "pod",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 180,
+            "h": 20,
+            "i": 6
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "errors",
+      "name": "Errors",
+      "panels": [
+        {
+          "id": "er-m-total",
+          "type": "metric",
+          "title": "Errors (window)",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Errors",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 7
+          }
+        },
+        {
+          "id": "er-m-pods",
+          "type": "metric",
+          "title": "Pods with errors",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(distinct k8s_pod_name) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Pods",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 45,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 8
+          }
+        },
+        {
+          "id": "er-m-ns",
+          "type": "metric",
+          "title": "Namespaces affected",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(distinct k8s_namespace_name) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "NS",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 9
+          }
+        },
+        {
+          "id": "er-m-rate",
+          "type": "metric",
+          "title": "Error rate (per min, avg)",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*)/60 AS y_axis_1 FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "/min",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 10
+          }
+        },
+        {
+          "id": "er-time",
+          "type": "stacked",
+          "title": "Errors over time by namespace",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, k8s_namespace_name AS breakdown_1, count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%' GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "Namespace",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 11
+          }
+        },
+        {
+          "id": "er-feed",
+          "type": "table",
+          "title": "Live error feed",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT _timestamp, k8s_namespace_name AS namespace, k8s_pod_name AS pod, k8s_container_name AS container, body AS message FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%' ORDER BY _timestamp DESC LIMIT 50",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "_timestamp",
+                    "column": "_timestamp",
+                    "color": null
+                  },
+                  {
+                    "label": "Namespace",
+                    "alias": "namespace",
+                    "column": "namespace",
+                    "color": null
+                  },
+                  {
+                    "label": "Pod",
+                    "alias": "pod",
+                    "column": "pod",
+                    "color": null
+                  },
+                  {
+                    "label": "Container",
+                    "alias": "container",
+                    "column": "container",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 180,
+            "h": 28,
+            "i": 12
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "queries",
+      "name": "Queries",
+      "panels": [
+        {
+          "id": "queries-md",
+          "type": "markdown",
+          "title": "Saved searches",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [],
+          "markdownContent": "## Quick search shortcuts\n\n_Click a link below to open the OpenObserve search view with the query pre-populated. Default time range: 1h \u2014 adjust in the search UI._\n\n\n### Error hunting\n- [All errors (pods)](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICclZXJyb3IlJyBPUiBib2R5IExJS0UgJyVFUlJPUiUnIE9SIGJvZHkgTElLRSAnJUVycm9yJScgT1IgYm9keSBMSUtFICclcGFuaWMlJyBPUiBib2R5IExJS0UgJyVQQU5JQyUnIE9SIGJvZHkgTElLRSAnJUZBVEFMJScgT1IgYm9keSBMSUtFICclZmF0YWwlJyBPUiBib2R5IExJS0UgJyVFeGNlcHRpb24lJyBPUiBib2R5IExJS0UgJyVleGNlcHRpb24lJyBPUiBib2R5IExJS0UgJyVUcmFjZWJhY2slJyBPUkRFUiBCWSBfdGltZXN0YW1wIERFU0M%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [Panics + fatals only](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICclcGFuaWM6JScgT1IgYm9keSBMSUtFICclRkFUQUwlJyBPUiBib2R5IExJS0UgJyVmYXRhbCUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [Warnings](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICcld2FybiUnIE9SIGJvZHkgTElLRSAnJVdBUk4lJyBPUiBib2R5IExJS0UgJyVXYXJuaW5nJScgT1JERVIgQlkgX3RpbWVzdGFtcCBERVND&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [Exceptions / tracebacks](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICclRXhjZXB0aW9uJScgT1IgYm9keSBMSUtFICclZXhjZXB0aW9uJScgT1IgYm9keSBMSUtFICclVHJhY2ViYWNrJScgT1JERVIgQlkgX3RpbWVzdGFtcCBERVND&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n\n### Crashes / OOMs\n- [OOMs](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICclT09NS2lsbGVkJScgT1IgYm9keSBMSUtFICclb3V0IG9mIG1lbW9yeSUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [CrashLoopBackOff](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICclQ3Jhc2hMb29wQmFja09mZiUnIE9SIGJvZHkgTElLRSAnJUJhY2stb2ZmIHJlc3RhcnRpbmcgZmFpbGVkIGNvbnRhaW5lciUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [Image-pull failures](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAicG9kcyIgV0hFUkUgYm9keSBMSUtFICclSW1hZ2VQdWxsQmFja09mZiUnIE9SIGJvZHkgTElLRSAnJUVyckltYWdlUHVsbCUnIE9SIGJvZHkgTElLRSAnJW1hbmlmZXN0IHVua25vd24lJyBPUiBib2R5IExJS0UgJyVGYWlsZWQgdG8gcHVsbCBpbWFnZSUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n\n### Auth & security\n- [SSH failures (headscale host)](/web/logs?stream_type=logs&stream=headscale_host&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAiaGVhZHNjYWxlX2hvc3QiIFdIRVJFIGJvZHkgTElLRSAnJUZhaWxlZCBwYXNzd29yZCUnIE9SIGJvZHkgTElLRSAnJUludmFsaWQgdXNlciUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `headscale_host`\n- [SSH failures (k3s host)](/web/logs?stream_type=logs&stream=k3s_host&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAiazNzX2hvc3QiIFdIRVJFIGJvZHkgTElLRSAnJUZhaWxlZCBwYXNzd29yZCUnIE9SIGJvZHkgTElLRSAnJUludmFsaWQgdXNlciUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `k3s_host`\n- [Headscale auth events](/web/logs?stream_type=logs&stream=headscale_host&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAiaGVhZHNjYWxlX2hvc3QiIFdIRVJFIHN5c3RlbWRfdW5pdCA9ICdoZWFkc2NhbGUuc2VydmljZScgT1JERVIgQlkgX3RpbWVzdGFtcCBERVND&org_identifier=default&refresh=0&show_histogram=true) \u2014 `headscale_host`\n- [Nginx 5xx](/web/logs?stream_type=logs&stream=nginx_access&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAibmdpbnhfYWNjZXNzIiBXSEVSRSBib2R5IExJS0UgJyUiIDVfXyAlJyBPUkRFUiBCWSBfdGltZXN0YW1wIERFU0M%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `nginx_access`\n- [Nginx 4xx](/web/logs?stream_type=logs&stream=nginx_access&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAibmdpbnhfYWNjZXNzIiBXSEVSRSBib2R5IExJS0UgJyUiIDRfXyAlJyBPUkRFUiBCWSBfdGltZXN0YW1wIERFU0M%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `nginx_access`\n\n### Host / infra\n- [K3s systemd journal](/web/logs?stream_type=logs&stream=k3s_host&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAiazNzX2hvc3QiIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `k3s_host`\n- [K3s unit failures](/web/logs?stream_type=logs&stream=k3s_host&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAiazNzX2hvc3QiIFdIRVJFIGJvZHkgTElLRSAnJUZhaWxlZCUnIE9SIGJvZHkgTElLRSAnJWZhaWxlZCB3aXRoIGV4aXQgY29kZSUnIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `k3s_host`\n- [Headscale journald](/web/logs?stream_type=logs&stream=headscale_host&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAiaGVhZHNjYWxlX2hvc3QiIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `headscale_host`\n- [Nginx access (all)](/web/logs?stream_type=logs&stream=nginx_access&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAibmdpbnhfYWNjZXNzIiBPUkRFUiBCWSBfdGltZXN0YW1wIERFU0M%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `nginx_access`\n- [Nginx errors (all)](/web/logs?stream_type=logs&stream=nginx_error&period=1h&sql_mode=true&query=U0VMRUNUICogRlJPTSAibmdpbnhfZXJyb3IiIE9SREVSIEJZIF90aW1lc3RhbXAgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `nginx_error`\n\n### Noise analysis\n- [Top noisy pods](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUIGs4c19uYW1lc3BhY2VfbmFtZSBBUyBuYW1lc3BhY2UsIGs4c19wb2RfbmFtZSBBUyBwb2QsIGNvdW50KCopIEFTIHJlY29yZHMgRlJPTSAicG9kcyIgR1JPVVAgQlkgbmFtZXNwYWNlLCBwb2QgT1JERVIgQlkgcmVjb3JkcyBERVNDIExJTUlUIDUw&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [Volume by namespace](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUIGs4c19uYW1lc3BhY2VfbmFtZSBBUyBuYW1lc3BhY2UsIGNvdW50KCopIEFTIHJlY29yZHMgRlJPTSAicG9kcyIgR1JPVVAgQlkgbmFtZXNwYWNlIE9SREVSIEJZIHJlY29yZHMgREVTQw%3D%3D&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`\n- [Volume by container](/web/logs?stream_type=logs&stream=pods&period=1h&sql_mode=true&query=U0VMRUNUIGs4c19uYW1lc3BhY2VfbmFtZSBBUyBuYW1lc3BhY2UsIGs4c19jb250YWluZXJfbmFtZSBBUyBjb250YWluZXIsIGNvdW50KCopIEFTIHJlY29yZHMgRlJPTSAicG9kcyIgR1JPVVAgQlkgbmFtZXNwYWNlLCBjb250YWluZXIgT1JERVIgQlkgcmVjb3JkcyBERVNDIExJTUlUIDUw&org_identifier=default&refresh=0&show_histogram=true) \u2014 `pods`",
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 180,
+            "h": 40,
+            "i": 13
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "kubernetes",
+      "name": "Kubernetes",
+      "panels": [
+        {
+          "id": "k8s-m-records",
+          "type": "metric",
+          "title": "Total records",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 14
+          }
+        },
+        {
+          "id": "k8s-m-crashes",
+          "type": "metric",
+          "title": "Crash signals",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%panic:%' OR body LIKE '%OOMKilled%' OR body LIKE '%CrashLoopBackOff%' OR body LIKE '%segmentation fault%' OR body LIKE '%runtime error%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 45,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 15
+          }
+        },
+        {
+          "id": "k8s-m-imgpull",
+          "type": "metric",
+          "title": "Image-pull issues",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%ImagePullBackOff%' OR body LIKE '%ErrImagePull%' OR body LIKE '%manifest unknown%' OR body LIKE '%Failed to pull image%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 16
+          }
+        },
+        {
+          "id": "k8s-m-restarts",
+          "type": "metric",
+          "title": "Restart-tagged pods",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(distinct k8s_pod_name) AS y_axis_1 FROM \"pods\" WHERE k8s_container_restart_count > 0",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 17
+          }
+        },
+        {
+          "id": "k8s-volume",
+          "type": "stacked",
+          "title": "Volume by namespace",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, k8s_namespace_name AS breakdown_1, count(*) AS y_axis_1 FROM \"pods\" GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "Namespace",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 18
+          }
+        },
+        {
+          "id": "k8s-errs-pod",
+          "type": "table",
+          "title": "Errors by pod",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT k8s_namespace_name AS namespace, k8s_pod_name AS pod, count(*) AS errors FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%' GROUP BY namespace, pod ORDER BY errors DESC LIMIT 25",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Namespace",
+                    "alias": "namespace",
+                    "column": "namespace",
+                    "color": null
+                  },
+                  {
+                    "label": "Pod",
+                    "alias": "pod",
+                    "column": "pod",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Errors",
+                    "alias": "errors",
+                    "column": "errors",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 90,
+            "h": 14,
+            "i": 19
+          }
+        },
+        {
+          "id": "k8s-errs-container",
+          "type": "table",
+          "title": "Errors by container",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT k8s_namespace_name AS namespace, k8s_container_name AS container, count(*) AS errors FROM \"pods\" WHERE body LIKE '%error%' OR body LIKE '%ERROR%' OR body LIKE '%Error%' OR body LIKE '%panic%' OR body LIKE '%PANIC%' OR body LIKE '%FATAL%' OR body LIKE '%fatal%' OR body LIKE '%Exception%' OR body LIKE '%exception%' OR body LIKE '%Traceback%' GROUP BY namespace, container ORDER BY errors DESC LIMIT 25",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Namespace",
+                    "alias": "namespace",
+                    "column": "namespace",
+                    "color": null
+                  },
+                  {
+                    "label": "Container",
+                    "alias": "container",
+                    "column": "container",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Errors",
+                    "alias": "errors",
+                    "column": "errors",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 24,
+            "w": 90,
+            "h": 14,
+            "i": 20
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "k3s_host",
+      "name": "K3s Host",
+      "panels": [
+        {
+          "id": "k3s-m-records",
+          "type": "metric",
+          "title": "Journald records",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"k3s_host\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 60,
+            "h": 8,
+            "i": 21
+          }
+        },
+        {
+          "id": "k3s-m-failures",
+          "type": "metric",
+          "title": "Unit failures",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"k3s_host\" WHERE body LIKE '%Failed%' OR body LIKE '%failed with exit code%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 60,
+            "y": 0,
+            "w": 60,
+            "h": 8,
+            "i": 22
+          }
+        },
+        {
+          "id": "k3s-m-ssh",
+          "type": "metric",
+          "title": "SSH events",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"k3s_host\" WHERE systemd_unit = 'sshd.service'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 120,
+            "y": 0,
+            "w": 60,
+            "h": 8,
+            "i": 23
+          }
+        },
+        {
+          "id": "k3s-volume",
+          "type": "stacked",
+          "title": "Journald volume by unit",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, systemd_unit AS breakdown_1, count(*) AS y_axis_1 FROM \"k3s_host\" GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "Unit",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 24
+          }
+        },
+        {
+          "id": "k3s-failures-table",
+          "type": "table",
+          "title": "Unit failure signals",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT systemd_unit AS unit, count(*) AS signals FROM \"k3s_host\" WHERE body LIKE '%Failed%' OR body LIKE '%failed with exit code%' GROUP BY unit ORDER BY signals DESC LIMIT 25",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Unit",
+                    "alias": "unit",
+                    "column": "unit",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Signals",
+                    "alias": "signals",
+                    "column": "signals",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 180,
+            "h": 14,
+            "i": 25
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "headscale_edge",
+      "name": "Headscale Edge",
+      "panels": [
+        {
+          "id": "hs-m-requests",
+          "type": "metric",
+          "title": "Nginx requests",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"nginx_access\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 26
+          }
+        },
+        {
+          "id": "hs-m-errors",
+          "type": "metric",
+          "title": "Nginx errors",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"nginx_error\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_error",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 45,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 27
+          }
+        },
+        {
+          "id": "hs-m-ssh",
+          "type": "metric",
+          "title": "SSH auth failures",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"headscale_host\" WHERE body LIKE '%Failed password%' OR body LIKE '%Invalid user%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 28
+          }
+        },
+        {
+          "id": "hs-m-auth",
+          "type": "metric",
+          "title": "Headscale auth events",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"headscale_host\" WHERE systemd_unit = 'headscale.service' AND (body LIKE '%auth%' OR body LIKE '%registration%' OR body LIKE '%logout%')",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 29
+          }
+        },
+        {
+          "id": "hs-access-rate",
+          "type": "line",
+          "title": "Nginx access rate",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"nginx_access\" GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 30
+          }
+        },
+        {
+          "id": "hs-status",
+          "type": "table",
+          "title": "Nginx response status distribution",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT\n            CASE\n              WHEN body LIKE '% 2__ %' OR body LIKE '%\" 2__ %' THEN '2xx'\n              WHEN body LIKE '% 3__ %' OR body LIKE '%\" 3__ %' THEN '3xx'\n              WHEN body LIKE '% 4__ %' OR body LIKE '%\" 4__ %' THEN '4xx'\n              WHEN body LIKE '% 5__ %' OR body LIKE '%\" 5__ %' THEN '5xx'\n              ELSE 'other'\n            END AS status_class,\n            count(*) AS requests\n          FROM \"nginx_access\" GROUP BY status_class ORDER BY requests DESC",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Status",
+                    "alias": "status_class",
+                    "column": "status_class",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Requests",
+                    "alias": "requests",
+                    "column": "requests",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 90,
+            "h": 14,
+            "i": 31
+          }
+        },
+        {
+          "id": "hs-auth-feed",
+          "type": "table",
+          "title": "Headscale auth events",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT _timestamp, body AS message\n          FROM \"headscale_host\"\n          WHERE systemd_unit = 'headscale.service'\n            AND (body LIKE '%auth%' OR body LIKE '%registration%' OR body LIKE '%login%' OR body LIKE '%logout%')\n          ORDER BY _timestamp DESC LIMIT 25",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "_timestamp",
+                    "column": "_timestamp",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 24,
+            "w": 90,
+            "h": 14,
+            "i": 32
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "security",
+      "name": "Security",
+      "panels": [
+        {
+          "id": "sec-m-ssh",
+          "type": "metric",
+          "title": "SSH failures",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"headscale_host\"\n           WHERE body LIKE '%Failed password%' OR body LIKE '%Invalid user%' OR body LIKE '%authentication failure%' ",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 33
+          }
+        },
+        {
+          "id": "sec-m-4xx",
+          "type": "metric",
+          "title": "Nginx 4xx",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"nginx_access\" WHERE body LIKE '%\" 4__ %'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 45,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 34
+          }
+        },
+        {
+          "id": "sec-m-5xx",
+          "type": "metric",
+          "title": "Nginx 5xx",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"nginx_access\" WHERE body LIKE '%\" 5__ %'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 35
+          }
+        },
+        {
+          "id": "sec-m-headscale",
+          "type": "metric",
+          "title": "Headscale auth events",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"headscale_host\" WHERE systemd_unit = 'headscale.service'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 36
+          }
+        },
+        {
+          "id": "sec-ssh-time",
+          "type": "line",
+          "title": "SSH auth failures over time",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"headscale_host\"\n           WHERE body LIKE '%Failed password%' OR body LIKE '%Invalid user%'\n           GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 37
+          }
+        },
+        {
+          "id": "sec-top-ips",
+          "type": "table",
+          "title": "Top nginx 4xx/5xx clients",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT SPLIT_PART(body, ' ', 1) AS client_ip, count(*) AS bad_requests\n           FROM \"nginx_access\"\n           WHERE body LIKE '%\" 4__ %' OR body LIKE '%\" 5__ %'\n           GROUP BY client_ip ORDER BY bad_requests DESC LIMIT 20",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Client IP",
+                    "alias": "client_ip",
+                    "column": "client_ip",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Bad requests",
+                    "alias": "bad_requests",
+                    "column": "bad_requests",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 90,
+            "h": 14,
+            "i": 38
+          }
+        },
+        {
+          "id": "sec-auth-feed",
+          "type": "table",
+          "title": "Recent auth events",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT _timestamp, systemd_unit AS unit, body AS message\n           FROM \"headscale_host\"\n           WHERE body LIKE '%Failed password%' OR body LIKE '%Invalid user%'\n              OR body LIKE '%authentication failure%' OR body LIKE '%Accepted%'\n              OR (systemd_unit = 'headscale.service' AND body LIKE '%auth%')\n           ORDER BY _timestamp DESC LIMIT 30",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "_timestamp",
+                    "column": "_timestamp",
+                    "color": null
+                  },
+                  {
+                    "label": "Unit",
+                    "alias": "unit",
+                    "column": "unit",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 24,
+            "w": 90,
+            "h": 14,
+            "i": 39
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "cluster_issues",
+      "name": "Cluster Issues",
+      "panels": [
+        {
+          "id": "ci-m-panics",
+          "type": "metric",
+          "title": "Panics",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%panic:%' OR body LIKE '%goroutine %' OR body LIKE '%runtime error%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 40
+          }
+        },
+        {
+          "id": "ci-m-ooms",
+          "type": "metric",
+          "title": "OOMs",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%OOMKilled%' OR body LIKE '%out of memory%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 45,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 41
+          }
+        },
+        {
+          "id": "ci-m-crashloop",
+          "type": "metric",
+          "title": "Crashloop signals",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%CrashLoopBackOff%' OR body LIKE '%Back-off restarting failed container%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 42
+          }
+        },
+        {
+          "id": "ci-m-imgpull",
+          "type": "metric",
+          "title": "Image-pull failures",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\" WHERE body LIKE '%ImagePullBackOff%' OR body LIKE '%ErrImagePull%' OR body LIKE '%manifest unknown%' OR body LIKE '%Failed to pull image%'",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Value",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 0,
+            "w": 45,
+            "h": 8,
+            "i": 43
+          }
+        },
+        {
+          "id": "ci-time",
+          "type": "stacked",
+          "title": "Issue signals over time",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, k8s_namespace_name AS breakdown_1, count(*) AS y_axis_1\n            FROM \"pods\" WHERE (body LIKE '%panic:%' OR body LIKE '%goroutine %' OR body LIKE '%runtime error%') OR (body LIKE '%OOMKilled%' OR body LIKE '%out of memory%') OR (body LIKE '%CrashLoopBackOff%' OR body LIKE '%Back-off restarting failed container%') OR (body LIKE '%ImagePullBackOff%' OR body LIKE '%ErrImagePull%' OR body LIKE '%manifest unknown%' OR body LIKE '%Failed to pull image%')\n            GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [
+                  {
+                    "label": "Namespace",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 44
+          }
+        },
+        {
+          "id": "ci-feed",
+          "type": "table",
+          "title": "Recent issue events",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT _timestamp, k8s_namespace_name AS namespace, k8s_pod_name AS pod, body AS message\n            FROM \"pods\" WHERE (body LIKE '%panic:%' OR body LIKE '%goroutine %' OR body LIKE '%runtime error%') OR (body LIKE '%OOMKilled%' OR body LIKE '%out of memory%') OR (body LIKE '%CrashLoopBackOff%' OR body LIKE '%Back-off restarting failed container%') OR (body LIKE '%ImagePullBackOff%' OR body LIKE '%ErrImagePull%' OR body LIKE '%manifest unknown%' OR body LIKE '%Failed to pull image%')\n            ORDER BY _timestamp DESC LIMIT 50",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "_timestamp",
+                    "column": "_timestamp",
+                    "color": null
+                  },
+                  {
+                    "label": "Namespace",
+                    "alias": "namespace",
+                    "column": "namespace",
+                    "color": null
+                  },
+                  {
+                    "label": "Pod",
+                    "alias": "pod",
+                    "column": "pod",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Message",
+                    "alias": "message",
+                    "column": "message",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 180,
+            "h": 20,
+            "i": 45
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "logging_health",
+      "name": "Logging Health",
+      "panels": [
+        {
+          "id": "lh-m-pods",
+          "type": "metric",
+          "title": "pods",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"pods\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Records",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 36,
+            "h": 8,
+            "i": 46
+          }
+        },
+        {
+          "id": "lh-m-k3s",
+          "type": "metric",
+          "title": "k3s_host",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"k3s_host\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Records",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 36,
+            "y": 0,
+            "w": 36,
+            "h": 8,
+            "i": 47
+          }
+        },
+        {
+          "id": "lh-m-headscale",
+          "type": "metric",
+          "title": "headscale_host",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"headscale_host\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Records",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 72,
+            "y": 0,
+            "w": 36,
+            "h": 8,
+            "i": 48
+          }
+        },
+        {
+          "id": "lh-m-nginx-access",
+          "type": "metric",
+          "title": "nginx_access",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"nginx_access\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Records",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 108,
+            "y": 0,
+            "w": 36,
+            "h": 8,
+            "i": 49
+          }
+        },
+        {
+          "id": "lh-m-nginx-error",
+          "type": "metric",
+          "title": "nginx_error",
+          "description": "",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "default"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM \"nginx_error\"",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_error",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Records",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 144,
+            "y": 0,
+            "w": 36,
+            "h": 8,
+            "i": 50
+          }
+        },
+        {
+          "id": "lh-pods",
+          "type": "line",
+          "title": "pods records/min",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"pods\" GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "pods",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 8,
+            "w": 180,
+            "h": 16,
+            "i": 51
+          }
+        },
+        {
+          "id": "lh-k3s",
+          "type": "line",
+          "title": "k3s_host records/min",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"k3s_host\" GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "k3s_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 24,
+            "w": 90,
+            "h": 16,
+            "i": 52
+          }
+        },
+        {
+          "id": "lh-headscale",
+          "type": "line",
+          "title": "headscale_host records/min",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"headscale_host\" GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "headscale_host",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 24,
+            "w": 90,
+            "h": 16,
+            "i": 53
+          }
+        },
+        {
+          "id": "lh-nginx-access",
+          "type": "line",
+          "title": "nginx_access records/min",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"nginx_access\" GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_access",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 40,
+            "w": 90,
+            "h": 16,
+            "i": 54
+          }
+        },
+        {
+          "id": "lh-nginx-error",
+          "type": "line",
+          "title": "nginx_error records/min",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "legends_position": "bottom",
+            "decimals": 0,
+            "unit": "default",
+            "line_thickness": 1.5,
+            "line_interpolation": "smooth"
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp) AS x_axis_1, count(*) AS y_axis_1 FROM \"nginx_error\" GROUP BY x_axis_1 ORDER BY x_axis_1",
+              "vrlFunctionQuery": "",
+              "customQuery": true,
+              "fields": {
+                "stream": "nginx_error",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Time",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null,
+                    "treatAsNonTimestamp": false
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Count",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "breakdown": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "",
+                "layer_type": "scatter",
+                "weight_fixed": 1,
+                "limit": 0,
+                "min": 0,
+                "max": 100,
+                "time_shift": []
+              },
+              "joins": []
+            }
+          ],
+          "layout": {
+            "x": 90,
+            "y": 40,
+            "w": 90,
+            "h": 16,
+            "i": 55
+          }
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "showDynamicFilters": true,
+    "list": []
+  },
+  "defaultDatetimeDuration": {
+    "type": "relative",
+    "relativeTimePeriod": "1h"
+  }
+}

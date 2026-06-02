@@ -1,0 +1,34 @@
+module nut-upsmon-local 1.0;
+
+require {
+    type nut_upsmon_t;
+    type nut_upsdrvctl_t;
+    type nut_upsd_t;
+    type nut_conf_t;
+    class capability { dac_override sys_ptrace };
+    class file { execute execute_no_trans };
+}
+
+# Fedora 44's shipped nut SELinux policy is incomplete for the NUT shutdown path.
+# Rules below were harvested from an `upsmon -c fsd` drill (permissive nut_upsmon_t)
+# plus NUT issue #3230 (same Fedora+SELinux scenario). All are scoped self/nut-*.
+
+# upsmon writes its pidfile into /run/nut as root (not the dir's owner) → needs
+# dac_override (the dir is nut:dialout 0770). Without it `writepid` fails and the
+# `upsmon -c fsd` / `upsmon -c reload` signalling breaks. Hits BOTH nodes (the
+# secondary runs upsmon too), so this module loads on primary AND secondary.
+allow nut_upsmon_t self:capability dac_override;
+
+# upsdrvctl (driver controller) hits the same run-dir access on the
+# shutdown/killpower path — surfaced by the FSD drill on the primary.
+allow nut_upsdrvctl_t self:capability dac_override;
+
+# upssched runs in nut_upsmon_t and executes the CMDSCRIPT /etc/ups/upssched-cmd
+# (labeled nut_conf_t) when the 10-min on-battery backstop timer fires. A direct
+# `upsmon -c fsd` doesn't exercise this, but the backstop needs it under
+# enforcing (per #3230). Pre-staged so the backstop works without a second drill.
+allow nut_upsmon_t nut_conf_t:file { execute execute_no_trans };
+
+# upsd's systemd/upsnotify probe trips sys_ptrace; cosmetic (upsd functions
+# without it), so silence the AVC rather than grant the broad capability.
+dontaudit nut_upsd_t self:capability sys_ptrace;

@@ -1,0 +1,27 @@
+[package]
+name = "mcp-k8s"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mcp-common = { path = "../mcp-common" }
+rmcp = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+tracing = { workspace = true }
+kube = { workspace = true }
+k8s-openapi = { workspace = true }
+http = { workspace = true }
+jiff = { workspace = true }
+# Both `aws-lc-rs` and `ring` providers end up compiled into this binary
+# (kube-client pulls rustls with its default `aws-lc-rs` feature, AND we
+# enable kube's `ring` feature). rustls 0.23 refuses to auto-pick when both
+# are present, so we install one explicitly at startup. Keep this in sync
+# with the `aws_lc_rs` import in `main.rs`.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

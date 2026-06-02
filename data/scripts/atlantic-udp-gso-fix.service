@@ -1,0 +1,12 @@
+[Unit]
+Description=Disable broken UDP segmentation offload on atlantic-driver NICs (WireGuard/tailscale throughput)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/atlantic-udp-gso-fix.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

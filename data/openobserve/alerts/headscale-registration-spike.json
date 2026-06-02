@@ -1,0 +1,23 @@
+{
+  "name": "headscale-registration-spike",
+  "stream_type": "logs",
+  "stream_name": "headscale_host",
+  "is_real_time": false,
+  "query_condition": {
+    "query_type": "sql",
+    "sql": "SELECT count(*) AS total FROM \"headscale_host\" WHERE body LIKE '%registration%' OR body LIKE '%register%'"
+  },
+  "trigger_condition": {
+    "period": 10,
+    "operator": ">=",
+    "threshold": 30,
+    "frequency": 5,
+    "frequency_type": "minutes",
+    "silence": 60
+  },
+  "destinations": ["ntfy"],
+  "description": "Headscale client registration storm (>=30 events in 10m).",
+  "enabled": true,
+  "row_template": "",
+  "tz_offset": 0
+}

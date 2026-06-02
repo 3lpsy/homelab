@@ -1,0 +1,62 @@
+# Verdaccio config for the `npm` read-only, anonymous, 7-day-cooldown cache.
+#
+# Pure uplink cache of registry.npmjs.org — NO private packages, NO publishing.
+# The 7-day minimum-age gate (verdaccio-plugin-delay-filter, baked into the
+# custom image at data/images/verdaccio/Dockerfile) hides every version
+# published less than 7 days ago and recomputes dist-tags/`latest`, so a
+# freshly-published (potentially compromised) version cannot be installed
+# until it has survived a week — a supply-chain blast-radius reducer.
+#
+# Plugin key is `plugin-delay-filter` (verdaccio strips the `verdaccio-`
+# prefix from `verdaccio-plugin-delay-filter`). The built-in
+# @verdaccio/package-filter is Verdaccio 8 only, so we use the standalone
+# plugin on stable Verdaccio 6.x.
+
+storage: /verdaccio/storage
+
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    # -1 disables self-registration. Combined with `publish: nobody` below the
+    # registry is fully read-only: no user can be created, nothing can be written.
+    max_users: -1
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    cache: true        # cache upstream tarballs on disk for repeat installs
+    maxage: 10m        # metadata freshness window (independent of the 7d gate)
+    max_fails: 2
+    fail_timeout: 5m
+
+filters:
+  plugin-delay-filter:
+    minAgeDays: 7      # HARD REQUIREMENT: block versions younger than 7 days
+
+packages:
+  '@*/*':
+    access: $all       # anonymous read (no login required)
+    publish: nobody    # never writable
+    unpublish: nobody
+    proxy: npmjs
+  '**':
+    access: $all
+    publish: nobody
+    unpublish: nobody
+    proxy: npmjs
+
+# Drop the npm-audit bridge — this is a pure cache, not an audit endpoint.
+middlewares:
+  audit:
+    enabled: false
+
+web:
+  enable: true
+  title: npm cache (7d cooldown)
+
+log:
+  type: stdout
+  format: pretty
+  level: http
+
+listen: 0.0.0.0:4873

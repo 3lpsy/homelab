@@ -1,0 +1,23 @@
+{
+  "name": "ssh-auth-failures",
+  "stream_type": "logs",
+  "stream_name": "headscale_host",
+  "is_real_time": false,
+  "query_condition": {
+    "query_type": "sql",
+    "sql": "SELECT count(*) AS total FROM \"headscale_host\" WHERE body LIKE '%Failed password%' OR body LIKE '%Invalid user%'"
+  },
+  "trigger_condition": {
+    "period": 5,
+    "operator": ">=",
+    "threshold": 5,
+    "frequency": 5,
+    "frequency_type": "minutes",
+    "silence": 30
+  },
+  "destinations": ["ntfy"],
+  "description": "Failed SSH auth attempts on the headscale host (>=5 in 5m).",
+  "enabled": true,
+  "row_template": "",
+  "tz_offset": 0
+}

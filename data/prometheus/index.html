@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoring</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1c2128;
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --accent: #f97316;
+      --accent-hover: #ea580c;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2.25rem);
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    p.sub {
+      color: var(--muted);
+      margin: 0 0 2.5rem;
+      font-size: 0.95rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      width: 100%;
+      max-width: 720px;
+    }
+    @media (min-width: 640px) {
+      .grid { grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    }
+    a.card {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 1.75rem 1.5rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--fg);
+      text-decoration: none;
+      transition: border-color .15s ease, transform .1s ease, background .15s ease;
+      min-height: 8rem;
+    }
+    a.card:hover, a.card:focus-visible {
+      border-color: var(--accent);
+      background: #232a33;
+      outline: none;
+    }
+    a.card:active { transform: translateY(1px); }
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .card-desc {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+    footer {
+      margin-top: 3rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Monitoring</h1>
+    <p class="sub">Pick a console.</p>
+    <div class="grid">
+      <a class="card" href="/prometheus/">
+        <span class="card-title">Prometheus</span>
+        <span class="card-desc">Metrics, queries, scrape targets, recording &amp; alert rules.</span>
+      </a>
+      <a class="card" href="/alertmanager/">
+        <span class="card-title">Alertmanager</span>
+        <span class="card-desc">Active alerts, silences, notification routing.</span>
+      </a>
+    </div>
+    <footer>signed in via SSO</footer>
+  </main>
+</body>
+</html>

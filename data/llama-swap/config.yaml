@@ -1,0 +1,140 @@
+# llama-swap model catalog (docs/LLM.md "Option 1": both cards layer-split,
+# one model resident at a time, swap on demand). Mounted RO at
+# /etc/llama-swap/config.yaml by services/llm.tf.
+#
+# How it routes: an OpenAI-compatible request's `model` field selects the
+# `models:` key here (or an `aliases` entry). llama-swap ensures that key's
+# llama-server process is alive (loading it, unloading the previous one if
+# VRAM is needed) and proxies to it. ${PORT} is auto-allocated per model from
+# startPort upward; ${bin}/${models_dir} are macros expanded below.
+#
+# LiteLLM is the only programmatic client (services/litellm.tf renders these
+# keys into model_list as `openai/<key>` with api_base = the in-cluster llm
+# endpoint). To add a model: add a key here, the matching GGUF to the download
+# Job (services/llm-jobs.tf), and an alias to var.llm_models.
+
+healthCheckTimeout: 300     # seconds to wait for a model to become healthy. A
+                            # ~30GB Q6_K cold load to VRAM over Vulkan (disk read
+                            # + upload across both cards) can exceed the 120s
+                            # default; 300 leaves headroom. Warm loads (PVC page
+                            # cache) are far faster.
+logLevel: info
+startPort: 5800             # ${PORT} starts here, +1 per spawned model.
+
+macros:
+  bin: "/usr/local/bin/llama-server"
+  models_dir: "/models"
+  # Both cards, layer-split (-sm layer). NOT -sm row: row-split makes MoE
+  # experts straddle cards and eats PCIe per token — the R9700s have no
+  # NVLink/xGMI. Flash attention on; -ub/-b boost MoE prefill throughput.
+  span_both: "-ngl 999 -sm layer -ts 1,1 -fa on -ub 2048 -b 16384 --host 0.0.0.0 --port ${PORT}"
+  # Qwen3 official samplers — two presets because we run a mix of modes:
+  #   - thinking      (--reasoning-budget -1): temp 0.6 / top-p 0.95 / top-k 20 / min-p 0
+  #   - non-thinking  (--reasoning-budget 0, or instruct): temp 0.7 / top-p 0.8 / top-k 20 / min-p 0
+  # The 0.6-vs-0.7 / 0.95-vs-0.8 split is Qwen's own recommendation per mode.
+  # Sampler choice is model-family + mode specific, NOT GPU-specific — the
+  # R9700s don't affect it. Qwen explicitly warns against greedy (temp 0). NOTE:
+  # a client that sends its own temperature/top_p overrides these server
+  # defaults; they still apply for params opencode/LiteLLM omit (notably top-k /
+  # min-p, which clients rarely send) — so this is a real floor, not dead config.
+  qwen_sampler_thinking: "--temp 0.6 --top-p 0.95 --top-k 20 --min-p 0"
+  qwen_sampler_no_reasoning: "--temp 0.7 --top-p 0.8 --top-k 20 --min-p 0"
+
+# Per-request context = (-c / --parallel): llama.cpp splits the total -c across
+# the parallel sequence slots, so usable context PER REQUEST is -c divided by
+# --parallel. Keep that quotient >= each model's context_window in
+# var.llm_models, or requests near the advertised limit 400. The 64k-window
+# models therefore use `-c 131072 --parallel 2` (= 65536/request, 2 concurrent;
+# ~13GB KV, comfortable on 64GB VRAM).
+#
+# Reasoning control (verified against llama.cpp tools/server/README + Qwen docs):
+#   --reasoning-budget -1       = unlimited Qwen3 <think> channel (reasoning ON)
+#   --reasoning-budget  0       = think channel disabled
+#   --reasoning-format deepseek = parse <think>…</think> into reasoning_content so
+#     the tool-call parser only scans the POST-think span. Accepted values are
+#     none|deepseek|deepseek-legacy — `auto` is the default *behavior* but is NOT
+#     a valid CLI argument (it errors), so we pass deepseek explicitly.
+# Only qwen3.6-35b-a3b runs thinking (budget -1 + deepseek); reasoning-format
+# there is what stops the original stall (reasoning tokens → stop token, no
+# tool_call). The dense Qwen3 utility models (qwen3-4b, qwen3-1.7b) ALSO carry
+# --reasoning-format deepseek despite budget 0: their jinja template scaffolds
+# an empty <think></think> even with thinking off, and with no parser the bare
+# </think> leaks into content (observed polluting opencode title generation).
+# deepseek strips that empty wrapper into reasoning_content → clean content.
+# NOTE for THIS model (Unsloth UD build, exposed to llama.cpp #20260 where prose
+# between </think> and <tool_call> can break the peg-native grammar root ::=
+# tool-call even WITH deepseek): VERIFIED WORKING on build b9297 (2026-05) via
+# direct curl — reasoning_content split out and tool_calls extracted cleanly,
+# #20260 did not reproduce. It is input-dependent though, so if a complex
+# multi-tool turn ever stalls (<think> → stop, no tool_call), the fix is a
+# corrected chat template (--chat-template-file) forbidding prose before
+# <tool_call>, not a flag.
+# The utility models stay --reasoning-budget 0: qwen3-4b (small_model =
+# titles/commit-msg/explore) and qwen3-1.7b (bulk) — thinking only adds latency
+# to one-shot subtasks and re-exposes the tool-stall on the tool-using explore
+# subagent. They pair budget 0 with --reasoning-format deepseek (see above) to
+# strip the empty think wrapper. qwen3-coder (Instruct) + gemma (non-Qwen
+# template) emit no think tags, so budget 0 is a true no-op there — no
+# reasoning-format needed.
+
+models:
+  # ── Headline: Qwen3.6-35B-A3B MoE, Q6_K, spans both cards ──
+  # The default agentic model. --jinja activates tool-calling (off otherwise).
+  "qwen3.6-35b-a3b":
+    cmd: |
+      ${bin}
+      -m ${models_dir}/Qwen3.6-35B-A3B-UD-Q6_K.gguf
+      ${span_both}
+      -c 131072 --parallel 2
+      --jinja --reasoning-budget -1 --reasoning-format deepseek
+      ${qwen_sampler_thinking}
+    ttl: 600
+    aliases:
+      - "qwen3-30b"
+
+  # ── Coding specialist (same footprint; swaps with the headline) ──
+  "qwen3-coder-30b":
+    cmd: |
+      ${bin}
+      -m ${models_dir}/Qwen3-Coder-30B-A3B-Instruct-Q6_K.gguf
+      ${span_both}
+      -c 131072 --parallel 2
+      --jinja --reasoning-budget 0
+      ${qwen_sampler_no_reasoning} --repeat-penalty 1.05
+    ttl: 600
+
+  # ── Small 4B (cheap subtasks: titles, explore/commit-msg subagents) ──
+  "qwen3-4b":
+    cmd: |
+      ${bin}
+      -m ${models_dir}/Qwen3-4B-Q8_0.gguf
+      -ngl 999 -fa on --host 0.0.0.0 --port ${PORT}
+      -c 131072 --parallel 4
+      --jinja --reasoning-budget 0 --reasoning-format deepseek
+      ${qwen_sampler_no_reasoning}
+    ttl: 300
+
+  # ── Tiny 1.7B (fast utility / bulk) ──
+  "qwen3-1.7b":
+    cmd: |
+      ${bin}
+      -m ${models_dir}/Qwen3-1.7B-Q8_0.gguf
+      -ngl 999 -fa on --host 0.0.0.0 --port ${PORT}
+      -c 16384
+      --jinja --reasoning-budget 0 --reasoning-format deepseek
+      ${qwen_sampler_no_reasoning}
+    ttl: 300
+
+  # ── Gemma 4 31B dense multimodal (Q5_K_M) + vision via mmproj ──
+  # The lineup's vision-capable model. --mmproj loads the projector so the
+  # OpenAI /v1/chat/completions image_url content type works. Spans both cards.
+  "gemma-4-31b":
+    cmd: |
+      ${bin}
+      -m ${models_dir}/gemma-4-31B-it-Q5_K_M.gguf
+      --mmproj ${models_dir}/gemma-4-mmproj-F16.gguf
+      ${span_both}
+      -c 131072 --parallel 2
+      --jinja --reasoning-budget 0
+      --temp 1.0 --top-p 0.95 --top-k 64 --min-p 0
+    ttl: 600
