@@ -6,7 +6,7 @@ monkeypatch, lego via subprocess monkeypatch.
 
 Run with:
 
-  uv run --with pytest --with cryptography --with boto3 \\
+  uv run --exclude-newer '7 days' --with pytest --with cryptography --with boto3 \\
          pytest data/images/tls-rotator/test_rotate.py
 """
 from __future__ import annotations

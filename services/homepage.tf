@@ -65,7 +65,6 @@ locals {
     rustical_fqdn         = "${var.rustical_domain}.${local.magic_fqdn_suffix}"
     radicale_fqdn         = "${var.radicale_domain}.${local.magic_fqdn_suffix}"
     ingest_syncthing_fqdn = "${var.ingest_syncthing_domain}.${local.magic_fqdn_suffix}"
-    ingest_ui_fqdn        = "${var.ingest_ui_domain}.${local.magic_fqdn_suffix}"
     immich_fqdn           = "${var.immich_domain}.${local.magic_fqdn_suffix}"
     jellyfin_fqdn         = "${var.jellyfin_domain}.${local.magic_fqdn_suffix}"
     qbt_fqdn              = "${var.qbt_domain}.${local.magic_fqdn_suffix}"

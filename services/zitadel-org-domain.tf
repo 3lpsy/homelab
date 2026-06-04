@@ -31,6 +31,8 @@ locals {
     file("${path.module}/../data/scripts/zitadel-domain-verify.py"),
     local.zitadel_domain_verify_pod_spec_sentinel,
     local.zitadel_org_short_domain,
+    # Roll the (immutable) Job name when the runner image changes.
+    var.python_base_image,
   ])), 0, 8)
 
   zitadel_domain_verify_job_name = "zitadel-domain-verify-${local.zitadel_domain_verify_script_hash}"
@@ -186,10 +188,11 @@ resource "kubernetes_manifest" "zitadel_domain_verify_job" {
           containers = [
             {
               name  = "verify"
-              image = var.image_python
+              image = var.python_base_image
               command = ["sh", "-c",
-                # Pinned versions — keeps Job behavior stable across pip-index churn.
-                "pip install --quiet --no-cache-dir requests==2.32.3 boto3==1.35.99 dnspython==2.7.0 && exec python /scripts/zitadel-domain-verify.py"
+                # Pinned versions via uv `--with`; `--exclude-newer` enforces the
+                # 7-day publish cooldown (all PyPI, dated → safe to cool).
+                "exec uv run --exclude-newer '${var.pip_proxy_cooldown_value}' --with requests==2.32.3 --with boto3==1.35.99 --with dnspython==2.7.0 /scripts/zitadel-domain-verify.py"
               ]
               env = [
                 {

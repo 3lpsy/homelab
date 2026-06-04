@@ -29,7 +29,7 @@ resource "kubernetes_service_account" "registry_proxy" {
 # only public images, but the npm (Verdaccio + delay-filter) and crates pods
 # run custom images built into the in-cluster registry, so their pods need
 # imagePullSecrets. Reuses the deployment-global local.registry_fqdn /
-# local.registry_internal_password (defined in otel-collector-secrets.tf,
+# local.registry_internal_password (defined in otel-collector.tf,
 # sourced from Vault `registry/config`).
 resource "kubernetes_secret" "registry_proxy_pull_secret" {
   metadata {

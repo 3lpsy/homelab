@@ -5,8 +5,8 @@ each alert into a human-readable notification with emoji, severity-based
 priority, and label details, then forwards to ntfy via its JSON publish API.
 The Authorization header from the incoming request is passed through to ntfy.
 
-Usage:
-    python3 ntfy-bridge.py --ntfy-url https://ntfy.example.com --ntfy-topic homelab [--port 8085]
+Usage (stdlib-only; --no-project skips dependency resolution):
+    uv run --no-project ntfy-bridge.py --ntfy-url https://ntfy.example.com --ntfy-topic homelab [--port 8085]
 """
 
 from __future__ import annotations

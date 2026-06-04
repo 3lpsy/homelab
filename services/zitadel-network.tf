@@ -279,7 +279,7 @@ resource "kubernetes_network_policy" "oidc_from_audiobookshelf" {
   depends_on = [module.oidc_netpol_baseline]
 }
 
-# Mirror of services/immich-v2.tf:`immich_to_oidc`. Immich's OIDC handler
+# Mirror of services/immich.tf:`immich_to_oidc`. Immich's OIDC handler
 # calls Zitadel's discovery, JWKS, /oauth/v2/token, and /oidc/v1/userinfo
 # endpoints during the auth-code dance.
 resource "kubernetes_network_policy" "oidc_from_immich" {
@@ -646,7 +646,7 @@ resource "kubernetes_network_policy" "oidc_from_pihole" {
 }
 
 # Cross-namespace egress: zitadel pod (pat-sync sidecar) → vault:8201.
-# Mirrors services/tls-rotator-network.tf:`tls_rotator_to_vault`. The
+# Mirrors services/tls-rotator.tf:`tls_rotator_to_vault`. The
 # pat-sync sidecar reads /zitadel/bootstrap/{login-client,tf-provider}.pat
 # from the bootstrap PVC and pushes them into Vault KV. Without this allow,
 # the baseline's internet-egress (which excludes the cluster service CIDR)
@@ -731,7 +731,7 @@ resource "kubernetes_network_policy" "oidc_from_pdf" {
   depends_on = [module.oidc_netpol_baseline]
 }
 
-# Mirror of services/headlamp-network.tf:`headlamp_to_oidc`. Headlamp's
+# Mirror of services/headlamp.tf:`headlamp_to_oidc`. Headlamp's
 # server speaks OIDC code+PKCE against Zitadel for UI sign-in.
 resource "kubernetes_network_policy" "oidc_from_headlamp" {
   metadata {

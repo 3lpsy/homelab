@@ -19,4 +19,11 @@ locals {
   # imported by all 7 build jobs. Without this, each per-server module would
   # derive its own `<image>:cache` and rebuild the dep layer from scratch.
   mcp_rs_cache_ref = "${local.thunderbolt_registry}/mcp-rs:cache"
+
+  # crates.io → in-cluster chilled-crates proxy, passed as the CRATES_REGISTRY
+  # build_arg to every mcp-rs build (the Dockerfile turns it into Cargo env-config
+  # so both `cargo chef cook` and `cargo build` fetch through the gate). Same
+  # sparse-index URL form the opencode runtime cargo config uses (opencode.tf).
+  # See docs/DEP_SAFETY.md.
+  mcp_rs_crates_registry = "sparse+https://${var.crates_domain}.${local.magic_fqdn_suffix}/index/"
 }

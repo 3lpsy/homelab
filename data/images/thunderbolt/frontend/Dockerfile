@@ -43,7 +43,26 @@ RUN git clone --depth=1 --branch="${THUNDERBOLT_REF}" https://github.com/thunder
 # the guard and includes the session cookie. Re-add a patch only if a future
 # upstream change reintroduces an OIDC-hostile default.
 
-RUN bun install --frozen-lockfile
+# npm registry → in-cluster Verdaccio proxy (7-day supply-chain gate). build_arg
+# from services/thunderbolt.tf (tracks var.npm_domain); the build pod resolves
+# the FQDN via the npm host_alias in local.buildkit_job_shared. BUN_CONFIG_REGISTRY
+# is bun's native registry knob. We NUKE the upstream lockfile and install WITHOUT
+# --frozen-lockfile so bun re-resolves the whole tree against Verdaccio: every
+# package (tarballs included) comes through the gate, and it dodges the "pinned
+# version <7 days old → hidden by the cooldown → frozen install fails" trap.
+# Trade-off: the build is no longer pinned to upstream's exact lock (versions can
+# drift between rebuilds; the cooldown still bounds them to ≥7-day-old).
+# See docs/DEP_SAFETY.md.
+ARG NPM_REGISTRY
+ENV BUN_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+# BUN_CONFIG_MAX_HTTP_REQUESTS=8 (default ~48-256): throttle bun's parallel
+# registry requests so single-threaded Verdaccio + the per-request cooldown filter
+# can serve each promptly — unthrottled, the giant packuments saturate it and
+# bun's own fetch timeout abandons stragglers ("failed to resolve"). Set INLINE
+# (build-scoped), NOT a persistent ENV — this image's runtime is nginx but the
+# backend image runs bun and must not be HTTP-throttled at runtime. Tunable up.
+RUN rm -f /app/bun.lock /app/bun.lockb && BUN_CONFIG_MAX_HTTP_REQUESTS=8 bun install
 RUN bunx vite build && find dist -name '*.map' -delete
 
 # Stage 2: nginx serving SPA + COEP/COOP headers

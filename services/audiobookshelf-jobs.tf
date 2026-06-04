@@ -32,6 +32,8 @@ resource "kubernetes_config_map" "audiobookshelf_seed" {
 resource "kubernetes_job" "audiobookshelf_seed" {
   metadata {
     name = "audiobookshelf-seed-${substr(sha1(join("|", [
+      # Roll the (immutable) Job name when the runner image changes.
+      var.python_base_image,
       local.audiobookshelf_seed_script,
       local.audiobookshelf_opml_blob,
       join(",", var.audiobookshelf_users),
@@ -98,11 +100,11 @@ resource "kubernetes_job" "audiobookshelf_seed" {
 
         container {
           name  = "seed"
-          image = var.image_audiobookshelf_seed
+          image = var.python_base_image
           image_pull_policy = "Always"
 
-          # Stdlib-only Python — no apk add / pip install needed.
-          command = ["python3", "/etc/abs-seed/seed.py"]
+          # Stdlib-only Python — uv run on the shared python-base image.
+          command = ["uv", "run", "--no-project", "/etc/abs-seed/seed.py"]
 
           env {
             name  = "ABS_URL"

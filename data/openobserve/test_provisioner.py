@@ -8,7 +8,7 @@ Velero backups in S3).
 
 Run with:
 
-  uv run --with pytest pytest data/openobserve/test_provisioner.py
+  uv run --exclude-newer '7 days' --with pytest pytest data/openobserve/test_provisioner.py
 """
 from __future__ import annotations
 

@@ -112,7 +112,7 @@ resource "kubernetes_network_policy" "opencode_to_git" {
 }
 
 # Cross-ns egress: opencode → mcp:443 (mcp-shared nginx gateway). Mirror
-# ingress lives in services/mcp-shared-network.tf as
+# ingress lives in services/mcp-shared.tf as
 # mcp-shared-from-opencode.
 resource "kubernetes_network_policy" "opencode_to_mcp_shared" {
   metadata {

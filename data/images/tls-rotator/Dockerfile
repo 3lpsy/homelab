@@ -1,5 +1,13 @@
 FROM python:3.14-alpine
 
+# uv for the cooldown-aware install + the `uv run` entrypoint. Pinned to the
+# in-tree uv version (matches data/images/frigate-model).
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /bin/uv
+# 7-day PyPI publish cooldown — uv refuses any dep published more recently.
+# Threaded from var.pip_proxy_cooldown_value via the BuildKit build-arg.
+ARG UV_EXCLUDE_NEWER="7 days"
+ENV UV_EXCLUDE_NEWER=${UV_EXCLUDE_NEWER}
+
 ARG LEGO_VERSION=4.19.2
 
 # lego: static go binary, fetched from upstream releases (no apk package).
@@ -14,7 +22,7 @@ RUN apk add --no-cache curl ca-certificates \
  && chmod +x /usr/local/bin/lego \
  && lego --version
 
-RUN pip install --no-cache-dir \
+RUN uv pip install --system --no-cache \
       "boto3>=1.34,<2" \
       "cryptography>=44,<46"
 
@@ -29,4 +37,4 @@ RUN addgroup -g 1000 rotator && adduser -D -u 1000 -G rotator rotator \
  && mkdir -p /work && chown -R 1000:1000 /work /app
 USER 1000:1000
 
-ENTRYPOINT ["python3", "/app/rotate.py"]
+ENTRYPOINT ["uv", "run", "--no-project", "python3", "/app/rotate.py"]

@@ -201,13 +201,12 @@ resource "kubernetes_deployment" "radicale" {
         # registry's pattern via extra_secret_objects).
         init_container {
           name  = "setup-auth"
-          image = var.image_python
+          image = var.python_base_image
           image_pull_policy = "Always"
           command = [
             "sh", "-c",
             <<-EOT
-              pip install --quiet passlib[bcrypt]
-              python -c "
+              uv run --exclude-newer '${var.pip_proxy_cooldown_value}' --with 'passlib[bcrypt]' python -c "
               import os
               from passlib.hash import apr_md5_crypt
               p = os.environ['RADICALE_PASS']

@@ -14,9 +14,27 @@ module "opencode_build" {
     "entrypoint.sh" = file("${path.module}/../data/opencode/entrypoint.sh")
   }
 
+  # npm registry → in-cluster Verdaccio proxy. Same FQDN the runtime .npmrc
+  # uses; the build pod resolves it via the npm host_alias threaded through
+  # local.buildkit_job_shared. bun + pnpm both read NPM_CONFIG_REGISTRY from
+  # this. See docs/DEP_SAFETY.md.
+  build_args = {
+    NPM_REGISTRY = "https://${local.opencode_npm_proxy_fqdn}/"
+    # crates.io → chilled-crates sparse index (same form as the runtime cargo
+    # config + the mcp-rs builds). Gates the image-build cargo path.
+    CRATES_REGISTRY = "sparse+https://${local.opencode_crates_proxy_fqdn}/index/"
+    # 7-day PyPI publish cooldown for every uv invocation (build + runtime).
+    UV_EXCLUDE_NEWER = var.pip_proxy_cooldown_value
+  }
+
+  # Heavy: §2b now compiles the cargo dev tools FROM SOURCE (cargo install
+  # dioxus-cli/udeps/expand/audit/just) instead of cargo-binstall — dioxus-cli in
+  # particular pulls hundreds of crates and needs lots of RAM. Sized generously
+  # for artemis. If you don't need dioxus, dropping it from the Dockerfile §2b
+  # would shrink this a lot.
   resources = {
-    requests = { cpu = "200m", memory = "512Mi" }
-    limits   = { cpu = "2", memory = "2Gi" }
+    requests = { cpu = "2", memory = "4Gi" }
+    limits   = { cpu = "8", memory = "16Gi" }
   }
   timeout = "10m"
 

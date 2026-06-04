@@ -10,7 +10,7 @@ Covers the critical contracts:
 
 Run with:
 
-  uv run --with pytest --with requests --with boto3 --with dnspython \\
+  uv run --exclude-newer '7 days' --with pytest --with requests --with boto3 --with dnspython \\
     pytest data/scripts/test_zitadel_domain_verify.py
 """
 from __future__ import annotations

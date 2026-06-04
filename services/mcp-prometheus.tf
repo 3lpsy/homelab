@@ -6,7 +6,7 @@ module "mcp_prometheus_build" {
 
   context_files = {}
   context_dirs  = local.mcp_rs_files
-  build_args    = { BIN = "mcp-prometheus" }
+  build_args    = { BIN = "mcp-prometheus", CRATES_REGISTRY = local.mcp_rs_crates_registry }
   cache_ref     = local.mcp_rs_cache_ref
 
   shared = local.buildkit_job_shared

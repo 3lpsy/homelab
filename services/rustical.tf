@@ -283,9 +283,9 @@ resource "kubernetes_deployment" "rustical" {
         # implemented upstream.
         init_container {
           name    = "seed-defaults"
-          image   = var.image_python
+          image   = var.python_base_image
           image_pull_policy = "Always"
-          command = ["python3", "/seed/rustical-seed.py"]
+          command = ["uv", "run", "--no-project", "/seed/rustical-seed.py"]
 
           env {
             name  = "RUSTICAL_DB_PATH"

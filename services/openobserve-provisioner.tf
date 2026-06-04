@@ -25,6 +25,8 @@ locals {
   }
 
   oo_provisioner_input_hash = substr(sha256(join("", concat(
+    # Roll the (immutable) Job name when the runner image changes.
+    [var.python_base_image],
     [file("${path.module}/../data/openobserve/provisioner.py")],
     [for f in local.oo_provisioner_dashboard_files : file("${path.module}/../data/openobserve/dashboards/${f}")],
     [for f in local.oo_provisioner_alert_files : file("${path.module}/../data/openobserve/alerts/${f}")],
@@ -194,8 +196,8 @@ resource "kubernetes_manifest" "openobserve_provisioner_job" {
           containers = [
             {
               name    = "provisioner"
-              image   = var.image_python
-              command = ["python3", "/scripts/provisioner.py"]
+              image   = var.python_base_image
+              command = ["uv", "run", "--no-project", "/scripts/provisioner.py"]
               env = [
                 { name = "OO_URL", value = "http://openobserve.${kubernetes_namespace.openobserve.metadata[0].name}.svc.cluster.local:5080" },
                 { name = "OO_ORG", value = var.openobserve_org },

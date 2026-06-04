@@ -26,8 +26,9 @@ module "frigate_model_build" {
   # Bump MODEL_SIZE to `e` for max accuracy. These flow into the Dockerfile ARGs
   # and the module folds them into the rebuild hash.
   build_args = {
-    MODEL_SIZE = "c"
-    IMG_SIZE   = "640"
+    MODEL_SIZE       = "c"
+    IMG_SIZE         = "640"
+    UV_EXCLUDE_NEWER = var.pip_proxy_cooldown_value
   }
 
   shared = local.buildkit_job_shared

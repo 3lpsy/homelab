@@ -11,6 +11,10 @@ module "searxng_ranker_build" {
     "Dockerfile" = file("${path.module}/../data/images/searxng-ranker/Dockerfile")
   }
 
+  build_args = {
+    UV_EXCLUDE_NEWER = var.pip_proxy_cooldown_value
+  }
+
   shared = local.buildkit_job_shared
 
   depends_on = [

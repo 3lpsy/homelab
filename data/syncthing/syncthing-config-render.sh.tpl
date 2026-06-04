@@ -16,7 +16,9 @@ fi
 mkdir -p "$OUT_DIR"
 
 # Generate bcrypt hash. Syncthing accepts $2a$/$2b$ bcrypt strings in <password>.
-HASH=$(python3 - <<'PY'
+# uv supplies bcrypt at run time; --exclude-newer enforces the 7-day publish
+# cooldown (PyPI, dated → safe). ${pip_cooldown} is templatefile()-rendered.
+HASH=$(uv run --exclude-newer '${pip_cooldown}' --with bcrypt python - <<'PY'
 import bcrypt, pathlib
 p = pathlib.Path("/mnt/secrets/gui_password").read_text().strip().encode()
 print(bcrypt.hashpw(p, bcrypt.gensalt(rounds=10)).decode())

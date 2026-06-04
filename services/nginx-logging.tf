@@ -21,7 +21,6 @@ locals {
     "homeassist-z2m",
     "homepage",
     "immich",
-    "ingest-ui",
     "jellyfin",
     "litellm",
     "llm",

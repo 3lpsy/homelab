@@ -44,8 +44,8 @@ variable "resources" {
     limits   = object({ cpu = string, memory = string })
   })
   default = {
-    requests = { cpu = "200m", memory = "512Mi" }
-    limits   = { cpu = "2", memory = "2Gi" }
+    requests = { cpu = "1", memory = "2Gi" }
+    limits   = { cpu = "6", memory = "8Gi" }
   }
 }
 
@@ -72,7 +72,18 @@ variable "shared" {
     registry_dockerio_cluster_ip = string
     registry_ghcrio_fqdn         = string
     registry_ghcrio_cluster_ip   = string
-    image_buildkit               = string
+    # npm (Verdaccio) + crates.io (chilled-crates) package proxies. Unlike the
+    # OCI mirrors above, these aren't wired through buildkitd.toml — they gate
+    # `npm`/`bun`/`cargo` fetches inside RUN steps, which read .npmrc /
+    # .cargo/config.toml, not buildkitd config. The host_aliases below make the
+    # proxy FQDNs resolve to their ClusterIP inside the build pod's netns (which
+    # rootless RUN steps share), so package fetches land on the in-cluster proxy.
+    # See docs/DEP_SAFETY.md.
+    npm_fqdn           = string
+    npm_cluster_ip     = string
+    crates_fqdn        = string
+    crates_cluster_ip  = string
+    image_buildkit     = string
     # Used by the stage-context init container that materializes the
     # build-context ConfigMap into a real (non-symlink) directory.
     image_busybox = string

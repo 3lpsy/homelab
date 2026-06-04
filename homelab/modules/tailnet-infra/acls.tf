@@ -65,7 +65,6 @@ locals {
     "group:searxng-server"        = ["${var.tailnet_users["searxng_server_user"]}@"]
     "group:jellyfin-server"       = ["${var.tailnet_users["jellyfin_server_user"]}@"]
     "group:syncthing-server"      = ["${var.tailnet_users["syncthing_server_user"]}@"]
-    "group:ingest-server"         = ["${var.tailnet_users["ingest_server_user"]}@"]
     "group:podcast-server"        = ["${var.tailnet_users["podcast_server_user"]}@"]
     "group:oidc-server"           = ["${var.tailnet_users["oidc_server_user"]}@"]
     "group:headlamp-server"       = ["${var.tailnet_users["headlamp_server_user"]}@"]
@@ -122,19 +121,9 @@ locals {
     },
   ]
 
-  # ingest-ui — personal devices upload files / submit yt-dlp URLs.
-  acls_ingest = [
-    {
-      action = "accept"
-      src    = ["group:personal", "group:provisioner", "group:personal-laptop", "group:devbox"]
-      dst    = ["group:ingest-server:443"]
-    },
-  ]
-
   # qbt WebUI — no app auth, so tailnet reachability IS the gate.
   # Locked to the personal user only (+ provisioner mirror). The qbt node
-  # is its own headscale user (group:qbt-server), so it does NOT inherit
-  # the broader acls_ingest grant.
+  # is its own headscale user (group:qbt-server).
   acls_qbt = [
     {
       action = "accept"
@@ -435,7 +424,6 @@ locals {
         "group:thunderbolt-server:443",
         "group:ntfy-server:443",
         "group:pihole-server:443",
-        "group:ingest-server:443",
         # Needed when the roaming device is ON the tailnet (at home) —
         # any OIDC-app login (Grafana, Nextcloud, Homeassist, etc.)
         # redirects the browser to oidc.<magic>, which resolves via
@@ -536,7 +524,6 @@ locals {
     local.acls_mcp,
     local.acls_searxng,
     local.acls_oidc,
-    local.acls_ingest,
     local.acls_qbt,
     local.acls_exitnodes,
     local.acls_pod_network,

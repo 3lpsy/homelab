@@ -9,7 +9,7 @@ Verifies the contracts that matter operationally:
 
 Run with:
 
-  uv run --with pytest pytest data/scripts/test_read_k3s_token.py
+  uv run --exclude-newer '7 days' --with pytest pytest data/scripts/test_read_k3s_token.py
 """
 from __future__ import annotations
 

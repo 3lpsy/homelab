@@ -13,8 +13,8 @@ resource "kubernetes_service_account" "registry" {
 }
 
 # Per-user passwords. Referenced by every BuildKit-job consumer (builder,
-# exitnode, ingest-ui, mcp, navidrome-ingest, nextcloud, otel-collector,
-# searxng-ranker, thunderbolt, tls-rotator) for image-pull dockerconfig.
+# exitnode, mcp, nextcloud, otel-collector, searxng-ranker, thunderbolt,
+# tls-rotator) for image-pull dockerconfig.
 # Stays caller-owned because of those cross-file refs.
 resource "random_password" "registry_user_passwords" {
   for_each = toset(var.registry_users)
@@ -32,7 +32,7 @@ module "registry_tailscale" {
 }
 
 # Plaintext users map at registry/config. Read by otel-collector
-# (otel-collector-secrets.tf) as a Vault data source. Hand-rolled because
+# (otel-collector.tf) as a Vault data source. Hand-rolled because
 # the shape is `{users = {map}}` rather than the module's flat key=value.
 resource "vault_kv_secret_v2" "registry_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
@@ -337,13 +337,15 @@ resource "kubernetes_deployment" "registry" {
           }
 
           resources {
-            # Bumped from 200m/128Mi: under heavy concurrent BuildKit push
-            # load (cache export from many builds at once), the previous
-            # limit caused `net/http: TLS handshake timeout` errors on
-            # builders. TLS handshakes are CPU-bound; 1 CPU absorbs the
-            # bursts, 256Mi covers parallel connection state.
-            requests = { cpu = "100m", memory = "128Mi" }
-            limits   = { cpu = "1", memory = "256Mi" }
+            # registry-nginx terminates TLS + proxies blob pushes. With
+            # proxy_request_buffering OFF (see registry.nginx.conf.tpl) large
+            # layer PUTs stream straight to the registry instead of buffering to
+            # RAM — but a full mass-rebuild still pushes many big layers at once,
+            # and 256Mi got OOMKilled (exit 137, crashloop → builders saw
+            # `connection reset by peer` / `connection refused` on push). 1Gi +
+            # 2 CPU absorbs the concurrent TLS + streaming load.
+            requests = { cpu = "200m", memory = "256Mi" }
+            limits   = { cpu = "2", memory = "1Gi" }
           }
         }
 

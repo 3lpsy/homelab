@@ -59,9 +59,12 @@ locals {
       replace(name, "mcp-", "") => {
         type = "remote"
         url  = "https://${local.mcp_shared_fqdn}/${name}/?api_key={env:MCP_API_KEY}"
-        # memory is default-on (persistent knowledge graph — high value, low
-        # schema cost); the other remotes stay opt-in.
-        enabled = contains(["mcp-memory"], name)
+        # Only searxng is default-on among the remotes — web search is high
+        # value for the coding workflow. The rest (incl. memory) stay off:
+        # each adds a per-turn schema tax to context, and on the A3B primary
+        # memory's recalls inject graph nodes that work against the context
+        # budget. Toggle any on per session when its value beats that cost.
+        enabled = contains(["mcp-searxng"], name)
       }
     },
     {
@@ -73,7 +76,11 @@ locals {
       "sequential-thinking" = {
         type    = "local"
         command = ["bunx", "@modelcontextprotocol/server-sequential-thinking"]
-        enabled = true
+        # Default off: redundant on the thinking 35b primary (native <think>
+        # channel already reasons step-by-step, and its external thoughts
+        # would persist in context un-stripped). Toggle on for the
+        # non-thinking coder model on hard reasoning tasks.
+        enabled = false
       }
       # Anthropic-official git server. 12 structured tools (status, diff,
       # commit, add, reset, log, branch, checkout, show, ...). Local-only
@@ -81,7 +88,8 @@ locals {
       # ssh://git@git.<magic>/<owner>/<repo>.git) are pushed/pulled via the
       # bare git CLI using the ed25519 key in /home/user/.ssh, not through this
       # MCP. uvx is in the image via layer 3 (uv installer). Schema cost
-      # ~2k tokens; default off so it costs nothing until toggled per session.
+      # ~2k tokens; the only MCP default-on — structured git is high-value for
+      # the coding workflow and worth the per-turn cost.
       # https://github.com/modelcontextprotocol/servers/tree/main/src/git
       "git" = {
         type    = "local"
@@ -625,6 +633,14 @@ resource "kubernetes_config_map" "opencode_pkg_proxy_config" {
       [registries.chilled-crates]
       index = "sparse+https://${local.opencode_crates_proxy_fqdn}/index/"
     EOT
+
+    # uv (Python) publish-age cooldown — the PyPI analogue of the npm/crates
+    # 7-day gate. Mounted at /etc/uv/uv.toml (system-level: read by every uv
+    # invocation, any user, any cwd — the fallback when the env var isn't set,
+    # e.g. non-interactive calls). exclude-newer takes a rolling duration that uv
+    # resolves against "now" even from a config file, so this stays a true 7-day
+    # window. Env (UV_EXCLUDE_NEWER in /etc/bash.bashrc) still wins for shells.
+    "uv.toml" = "exclude-newer = \"${var.pip_proxy_cooldown_value}\"\n"
   }
 }
 
@@ -967,6 +983,13 @@ resource "kubernetes_deployment" "opencode" {
             name       = "pkg-proxy-config"
             mount_path = "/usr/local/cargo/config.toml"
             sub_path   = "cargo-config.toml"
+            read_only  = true
+          }
+          # uv → 7-day PyPI cooldown, system-level config for all users / any cwd.
+          volume_mount {
+            name       = "pkg-proxy-config"
+            mount_path = "/etc/uv/uv.toml"
+            sub_path   = "uv.toml"
             read_only  = true
           }
 

@@ -117,7 +117,8 @@ resource "kubernetes_config_map" "ingest_syncthing_render_script" {
   }
   data = {
     "render-config.sh" = templatefile("${path.module}/../data/syncthing/syncthing-config-render.sh.tpl", {
-      gui_user = "admin"
+      gui_user     = "admin"
+      pip_cooldown = var.pip_proxy_cooldown_value
     })
   }
 }
@@ -172,14 +173,13 @@ resource "kubernetes_deployment" "ingest_syncthing" {
         # template. Also bcrypt-write /etc/nginx/htpasswd for the GUI proxy.
         init_container {
           name  = "render-config"
-          image = var.image_python
+          image = var.python_base_image
           image_pull_policy = "Always"
           command = [
             "sh", "-c",
             <<-EOT
-              pip install --quiet bcrypt
               sh /scripts/render-config.sh
-              python3 -c "
+              uv run --exclude-newer '${var.pip_proxy_cooldown_value}' --with bcrypt python -c "
               import bcrypt, pathlib
               p = pathlib.Path('/mnt/secrets/gui_password').read_text().strip().encode()
               h = bcrypt.hashpw(p, bcrypt.gensalt(rounds=10)).decode()

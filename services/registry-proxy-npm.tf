@@ -6,35 +6,21 @@
 # registry-proxy.tf. Pod shape mirrors registry-dockerio.tf: app + nginx TLS
 # sidecar + tailscale ingress sidecar.
 #
-# Supply-chain gate: the verdaccio-plugin-delay-filter (baked into the custom
-# image, data/images/verdaccio/Dockerfile) hides every npm version published
-# < 7 days ago, so a freshly-compromised release can't be installed until it
-# has survived a week. Pure uplink cache of registry.npmjs.org — no private
-# packages, no publishing (publish: nobody, max_users: -1).
+# Supply-chain gate: the BUILT-IN @verdaccio/package-filter (bundled since
+# verdaccio 6.4.0) hides every npm version published < 7 days ago, so a
+# freshly-compromised release can't be installed until it has survived a week.
+# Enabled purely via filters in data/registry-proxy/verdaccio.config.yaml — so we
+# run the STOCK upstream image, no custom build. Pure uplink cache of
+# registry.npmjs.org — no private packages, no publishing (publish: nobody,
+# max_users: -1).
 
 locals {
-  verdaccio_image = "${local.thunderbolt_registry}/verdaccio:latest"
-}
-
-# Custom Verdaccio image with the delay-filter plugin installed. Unpinned
-# runtime tag (the base + plugin versions are pinned inside the Dockerfile);
-# rebuild triggers on Dockerfile hash.
-module "verdaccio_build" {
-  source = "./../templates/buildkit-job"
-
-  name      = "verdaccio"
-  image_ref = local.verdaccio_image
-
-  context_files = {
-    "Dockerfile" = file("${path.module}/../data/images/verdaccio/Dockerfile")
-  }
-
-  shared = local.buildkit_job_shared
-
-  depends_on = [
-    kubernetes_secret.builder_registry_pull_secret,
-    kubernetes_config_map.builder_buildkitd_config,
-  ]
+  # Stock upstream Verdaccio, pulled through the in-cluster docker.io mirror
+  # (containerd registries.yaml on the node). No custom image/build anymore — the
+  # 7-day gate is the bundled @verdaccio/package-filter (since 6.4.0), enabled in
+  # config. Tag `6` floats to the latest 6.x; image_pull_policy Always re-pulls on
+  # every pod start to pick up patch releases.
+  verdaccio_image = "verdaccio/verdaccio:6"
 }
 
 module "npm_tailscale" {
@@ -138,7 +124,9 @@ resource "kubernetes_deployment" "npm" {
       spec {
         service_account_name = kubernetes_service_account.registry_proxy.metadata[0].name
 
-        # Custom Verdaccio image lives in the in-cluster registry.
+        # In-cluster-registry pull secret, kept to match the sibling registry-proxy
+        # pods. The images here (verdaccio, nginx, tailscale, busybox) are all stock
+        # docker.io pulled via the in-cluster mirror, so it's not strictly required.
         image_pull_secrets {
           name = kubernetes_secret.registry_proxy_pull_secret.metadata[0].name
         }
@@ -178,6 +166,17 @@ resource "kubernetes_deployment" "npm" {
             name           = "http"
           }
 
+          # Raise V8's heap ceiling to use the 3Gi limit below. The delay-filter
+          # plugin parses + re-serializes whole packuments on every request;
+          # opencode-ai's platform packages are 13-14 MB JSON each and bun fetches
+          # ~13 concurrently, which V8 inflates into hundreds of MB of heap and
+          # OOMKilled the old 1Gi container. Without this, V8's default cap could
+          # heap-crash before the cgroup limit is even reached.
+          env {
+            name  = "NODE_OPTIONS"
+            value = "--max-old-space-size=2560"
+          }
+
           volume_mount {
             name       = "verdaccio-storage"
             mount_path = "/verdaccio/storage"
@@ -190,8 +189,12 @@ resource "kubernetes_deployment" "npm" {
           }
 
           resources {
-            requests = { cpu = "100m", memory = "256Mi" }
-            limits   = { cpu = "1", memory = "1Gi" }
+            # 1Gi OOMKilled (exit 137) under opencode-ai's concurrent giant
+            # packuments + delay-filter re-serialization. 3Gi gives V8 room
+            # (NODE_OPTIONS caps heap at 2560MB, leaving ~512MB for download
+            # buffers + non-heap). cpu 2 speeds the single-threaded filter parse.
+            requests = { cpu = "200m", memory = "512Mi" }
+            limits   = { cpu = "2", memory = "3Gi" }
           }
 
           liveness_probe {
@@ -347,7 +350,6 @@ resource "kubernetes_deployment" "npm" {
 
   depends_on = [
     module.npm_tls_vault,
-    module.verdaccio_build,
   ]
 
   lifecycle {

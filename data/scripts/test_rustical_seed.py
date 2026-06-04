@@ -9,7 +9,7 @@ Verifies the contracts that matter operationally:
 
 Run with:
 
-  uv run --with pytest pytest data/scripts/test_rustical_seed.py
+  uv run --exclude-newer '7 days' --with pytest pytest data/scripts/test_rustical_seed.py
 """
 from __future__ import annotations
 

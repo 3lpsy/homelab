@@ -55,7 +55,7 @@ resource "kubernetes_network_policy" "openobserve_bootstrap_to_vault" {
 # Cross-ns egress: openobserve-provisioner Job → ntfy (ntfy ns) :8080.
 # Provisioner POSTs a test alert to ntfy.<ntfy-ns>.svc:8080 when wiring
 # an OO alert destination. Mirror ingress lives in
-# services/ntfy-network.tf as ntfy-from-openobserve-provisioner.
+# services/ntfy.tf as ntfy-from-openobserve-provisioner.
 resource "kubernetes_network_policy" "openobserve_provisioner_to_ntfy" {
   metadata {
     name      = "openobserve-provisioner-to-ntfy"
@@ -89,7 +89,7 @@ resource "kubernetes_network_policy" "openobserve_provisioner_to_ntfy" {
 
 # Cross-ns ingress: otel-collector (otel-collector ns) → openobserve :5080.
 # OTLP/HTTP at /api/<org>/v1/{logs,metrics,traces}. Mirror egress lives in
-# services/otel-collector-network.tf as otel-collector-to-openobserve.
+# services/otel-collector.tf as otel-collector-to-openobserve.
 resource "kubernetes_network_policy" "openobserve_from_otel_collector" {
   metadata {
     name      = "openobserve-from-otel-collector"

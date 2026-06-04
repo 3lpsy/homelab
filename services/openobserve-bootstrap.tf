@@ -151,6 +151,8 @@ locals {
   openobserve_bootstrap_script_hash = substr(sha256(join("\n", [
     file("${path.module}/../data/openobserve/bootstrap-accounts.py"),
     local.openobserve_bootstrap_pod_spec_sentinel,
+    # Roll the (immutable) Job name when the runner image changes.
+    var.python_base_image,
   ])), 0, 8)
   openobserve_bootstrap_job_name = "openobserve-bootstrap-${local.openobserve_bootstrap_script_hash}"
 }
@@ -210,8 +212,8 @@ resource "kubernetes_manifest" "openobserve_bootstrap_job" {
           containers = [
             {
               name    = "bootstrap"
-              image   = var.image_python
-              command = ["python3", "/scripts/bootstrap-accounts.py"]
+              image   = var.python_base_image
+              command = ["uv", "run", "--no-project", "/scripts/bootstrap-accounts.py"]
               env = [
                 { name = "VAULT_ADDR", value = local.vault_tailnet_url },
                 { name = "VAULT_ROLE", value = "openobserve-bootstrap" },

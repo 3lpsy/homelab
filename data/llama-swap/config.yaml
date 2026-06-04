@@ -44,8 +44,16 @@ macros:
 # the parallel sequence slots, so usable context PER REQUEST is -c divided by
 # --parallel. Keep that quotient >= each model's context_window in
 # var.llm_models, or requests near the advertised limit 400. The 64k-window
-# models therefore use `-c 131072 --parallel 2` (= 65536/request, 2 concurrent;
-# ~13GB KV, comfortable on 64GB VRAM).
+# models (qwen3-coder, gemma) use `-c 131072 --parallel 2` (= 65536/request,
+# 2 concurrent; ~13GB fp16 KV, comfortable on 64GB VRAM).
+#
+# The headline qwen3.6-35b-a3b runs `-c 262144 --parallel 2` = 131072/request
+# (2 concurrent) — double the window — paid for with q8_0 KV quant
+# (--cache-type-{k,v} q8_0, legal because -fa is on). fp16 at 262144 would be
+# ~26GB KV (too tight beside the ~30GB Q6_K weights); q8_0 halves it to ~13GB,
+# so total ~43GB / 64GB. Model native ctx is 262144 (n_ctx_train) — no YaRN
+# needed at 131072. q8_0 costs ~0.5% ppl, imperceptible. context_window in
+# var.llm_models is 131072 to match (fans out to opencode limit.context).
 #
 # Reasoning control (verified against llama.cpp tools/server/README + Qwen docs):
 #   --reasoning-budget -1       = unlimited Qwen3 <think> channel (reasoning ON)
@@ -85,7 +93,7 @@ models:
       ${bin}
       -m ${models_dir}/Qwen3.6-35B-A3B-UD-Q6_K.gguf
       ${span_both}
-      -c 131072 --parallel 2
+      -c 262144 --parallel 2 --cache-type-k q8_0 --cache-type-v q8_0
       --jinja --reasoning-budget -1 --reasoning-format deepseek
       ${qwen_sampler_thinking}
     ttl: 600

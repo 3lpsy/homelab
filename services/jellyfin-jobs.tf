@@ -85,6 +85,8 @@ resource "kubernetes_config_map" "jellyfin_seed" {
 resource "kubernetes_job" "jellyfin_seed" {
   metadata {
     name = "jellyfin-seed-${substr(sha1(join("|", [
+      # Roll the (immutable) Job name when the runner image changes.
+      var.python_base_image,
       local.jellyfin_seed_script,
       local.jellyfin_users_csv,
       local.jellyfin_admin_users_csv,
@@ -142,10 +144,10 @@ resource "kubernetes_job" "jellyfin_seed" {
 
         container {
           name              = "seed"
-          image             = var.image_jellyfin_seed
+          image             = var.python_base_image
           image_pull_policy = "Always"
 
-          command = ["python3", "/etc/jellyfin-seed/seed.py"]
+          command = ["uv", "run", "--no-project", "/etc/jellyfin-seed/seed.py"]
 
           env {
             name  = "JELLYFIN_URL"

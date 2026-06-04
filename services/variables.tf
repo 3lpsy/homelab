@@ -168,7 +168,7 @@ variable "crates_domain" {
 # mirror's manifest TTL can't serve a stale build); bump to roll a new release.
 variable "image_crates_proxy" {
   type    = string
-  default = "ghcr.io/3lpsy/chilled-crates:0.2.5"
+  default = "ghcr.io/3lpsy/chilled-crates:0.3.1"
 }
 
 # crates-proxy cooldown wiring. The fork (3lpsy/chilled-crates) reads
@@ -186,6 +186,12 @@ variable "crates_proxy_cooldown_value" {
   type        = string
   description = "Duration-suffix value for crates_proxy_cooldown_env (s/m/h/d/w). 7d per the supply-chain cooldown requirement."
   default     = "7d"
+}
+
+variable "pip_proxy_cooldown_value" {
+  type        = string
+  description = "Relative duration for UV_EXCLUDE_NEWER — the PyPI publish-age cooldown (humantime, e.g. \"7 days\" / \"P7D\"). 7d per the supply-chain cooldown requirement; the PyPI analogue of crates_proxy_cooldown_value since there is no pip caching proxy."
+  default     = "7 days"
 }
 
 # chilled-crates reads LOG_LEVEL (error|warn|info|debug|trace|off; default info).
@@ -311,6 +317,22 @@ variable "image_tailscale" {
 variable "image_nginx" {
   type    = string
   default = "nginx:alpine"
+}
+
+# Shared base image for in-cluster Python jobs/sidecars: the public astral uv +
+# CPython image (uv + Python 3.14), pulled via the node's ghcr.io mirror — so it
+# needs NO private-registry pull secret (unlike a custom-built image in the
+# in-cluster registry, which is why these system pods couldn't pull it). Pinned
+# to uv 0.10.4 to match the BuildKit-built images (frigate, bucket-A).
+#
+# Bucket-D consumers run stdlib-only scripts via `uv run --no-project`, so the
+# 7-day publish cooldown is irrelevant there (nothing is resolved). Bucket-E
+# consumers that resolve third-party deps at pod start set UV_EXCLUDE_NEWER as a
+# container env (var.pip_proxy_cooldown_value) — the cooldown is not baked into
+# this upstream image.
+variable "python_base_image" {
+  type    = string
+  default = "ghcr.io/astral-sh/uv:0.10.4-python3.14-alpine"
 }
 
 # Digest-pinned sidecar images for bootstrap-critical pods only (registry +
@@ -543,128 +565,27 @@ variable "ingest_syncthing_trusted_devices" {
   }
 }
 
-variable "ingest_ui_domain" {
-  type    = string
-  default = "ingest"
-}
-
-variable "ingest_ui_users" {
-  description = "List of basic-auth user names for ingest-ui. Each gets its own random_password and Vault KV entry under ingest-ui/users/<name>. Add to extend; remove with `terraform apply -replace=...` or by destroying the per-user vault_kv_secret_v2."
-  type        = list(string)
-  default     = ["manual"]
-}
-
-variable "ytdlp_cookies" {
-  description = <<-EOT
-    Optional Netscape-format cookies file content for yt-dlp. YouTube's
-    bot detection now blocks anonymous downloads on many videos with
-    "Sign in to confirm you're not a bot". Passing a logged-in session's
-    cookies bypasses this gate.
-
-    Export from your browser (e.g. via "Get cookies.txt LOCALLY" or
-    similar extension) while logged into youtube.com, then set:
-
-      export TF_VAR_ytdlp_cookies='# Netscape HTTP Cookie File
-      # http://curl.haxx.se/rfc/cookie_spec.html
-      .youtube.com\tTRUE\t/\tFALSE\t1234567890\tSID\tabcdef...
-      ...rest of your cookies...'
-
-    (Tab-separated, single-quoted to preserve newlines.) Empty default
-    leaves cookies disabled — yt-dlp will still try mweb/tv player
-    clients which sometimes work without a session.
-
-    Cookies expire periodically; rotate by re-exporting from the browser
-    and re-applying.
-  EOT
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "navidrome_ingest_model" {
-  description = <<-EOT
-    LiteLLM alias used to tag dropzone files. Must reliably emit OpenAI
-    tool-calls for the structured output schema — small instruct-only
-    models (e.g. default-qwen-3.5-4b) tend to skip the tool call and dump
-    JSON-ish text instead, which falls into the parse_tags_from_text
-    fallback and usually gets confidence=0.00 -> quarantine.
-
-    Available aliases live in var.llm_models. The headline
-    coding-qwen-3.6-35b-a3b (Qwen3.6-35B-A3B MoE, Q6_K) is tool-call
-    capable and the most reliable local choice for this structured task.
-  EOT
-  type        = string
-  default     = "coding-qwen-3.6-35b-a3b"
-}
-
-variable "navidrome_ingest_duplicate_mode" {
-  description = <<-EOT
-    What to do when an incoming file's audio-stream md5 already exists in
-    the library:
-      "skip"      — drop the new file, treat as success. Default.
-      "overwrite" — run the new file through LLM tagging, delete the old
-                    library entry, and replace it with the new (freshly-
-                    tagged) file. Useful for fixing bad tags by re-uploading.
-  EOT
-  type        = string
-  default     = "skip"
-  validation {
-    condition     = contains(["skip", "overwrite"], var.navidrome_ingest_duplicate_mode)
-    error_message = "navidrome_ingest_duplicate_mode must be 'skip' or 'overwrite'."
-  }
-}
-
-variable "navidrome_ingest_youtube_lookup_enabled" {
-  description = "Whether the worker should query YouTube via yt-dlp for metadata enrichment before LLM tagging."
-  type        = bool
-  default     = true
-}
-
-variable "navidrome_ingest_youtube_proxy_url" {
-  description = "HTTP proxy URL yt-dlp routes through. Defaults to the in-cluster exitnode-haproxy so YouTube sees rotating egress IPs."
-  type        = string
-  default     = "http://exitnode-haproxy.exitnode.svc.cluster.local:8888"
-}
-
-variable "navidrome_ingest_concurrency" {
-  description = "How many dropzone files the worker processes in parallel per poll cycle. Each in-flight file holds a tmp file, runs ffmpeg-via-PyAV, a yt-dlp lookup, and an LLM call — so this also caps simultaneous LiteLLM concurrency from this worker."
-  type        = number
-  default     = 5
-  validation {
-    condition     = var.navidrome_ingest_concurrency >= 1
-    error_message = "navidrome_ingest_concurrency must be >= 1."
-  }
-}
-
-variable "navidrome_ingest_confidence_threshold" {
-  description = "Below this LLM-reported confidence, the file is moved to dropzone/music/failed/ instead of into the music PVC."
-  type        = number
-  default     = 0.5
-}
-
 variable "litellm_user_keys" {
   description = <<-EOT
     Map of app name -> LiteLLM virtual key (sk-...). Each value is a key
     you create out-of-band via the LiteLLM admin UI/API, scoped to the
     models + budget that app should be allowed to use. Apps reference
-    their entry by name (e.g. var.litellm_user_keys["ingestor"]) to pull
+    their entry by name (e.g. var.litellm_user_keys["opencode"]) to pull
     a scoped key into Vault rather than handing every workload the
     master key.
 
     Set via .env:
-      export TF_VAR_litellm_user_keys='{"ingestor":"sk-...","other-app":"sk-..."}'
+      export TF_VAR_litellm_user_keys='{"opencode":"sk-...","other-app":"sk-..."}'
 
     A blank value is allowed (treated as "not yet provisioned") — the
     pod will boot but every LLM call returns 401 until you populate it.
 
     Known consumers (each needs its own scoped LiteLLM key):
-      - ingestor — navidrome-ingest filename NER worker
       - opencode — remote opencode `web` server (services/opencode.tf)
   EOT
   type        = map(string)
   sensitive   = true
   default = {
-    ingestor = ""
     opencode = ""
   }
 }
@@ -678,12 +599,6 @@ variable "image_jellyfin_upstream" {
   description = "Upstream Jellyfin image used as the FROM base for the in-cluster build. The runtime image (`local.jellyfin_image`) bakes the 9p4/jellyfin-plugin-sso plugin on top of this."
   type        = string
   default     = "jellyfin/jellyfin:latest"
-}
-
-variable "image_jellyfin_seed" {
-  description = "Image used by the jellyfin seed Job (bootstrap + SSO plugin reconcile). Stdlib-only Python script — no extra packages installed at runtime."
-  type        = string
-  default     = "python:3.14-alpine"
 }
 
 variable "jellyfin_sso_plugin_version" {
@@ -727,12 +642,6 @@ variable "audiobookshelf_domain" {
 variable "image_audiobookshelf" {
   type    = string
   default = "advplyr/audiobookshelf:latest"
-}
-
-variable "image_audiobookshelf_seed" {
-  description = "Image used by the audiobookshelf seed Job (bootstrap + reconcile). Stdlib-only Python script — no extra packages installed at runtime, so the version tag matters mainly for cache locality."
-  type        = string
-  default     = "python:3.14-alpine"
 }
 
 variable "audiobookshelf_config_size" {
@@ -873,11 +782,6 @@ variable "image_oauth2_proxy" {
   default = "quay.io/oauth2-proxy/oauth2-proxy:v7.15.2"
 }
 
-variable "image_python" {
-  type    = string
-  default = "python:3-alpine"
-}
-
 variable "image_wireguard" {
   type    = string
   default = "linuxserver/wireguard:latest"
@@ -1007,7 +911,7 @@ variable "llm_models" {
       provider              = "llamaswap"
       model_id              = "qwen3.6-35b-a3b"
       max_tokens            = 8192
-      context_window        = 65536
+      context_window        = 131072
       input_cost_per_token  = 0
       output_cost_per_token = 0
     }
@@ -1434,7 +1338,7 @@ variable "image_openobserve" {
 variable "image_otel_collector" {
   type        = string
   default     = ""
-  description = "OTel collector image. Leave empty to use the custom in-cluster build from otel-collector-jobs.tf (alpine + systemd + upstream binary). Override only if you explicitly want upstream contrib (no journald receiver support)."
+  description = "OTel collector image. Leave empty to use the custom in-cluster build from otel-collector.tf (alpine + systemd + upstream binary). Override only if you explicitly want upstream contrib (no journald receiver support)."
 }
 
 variable "zitadel_personal_user" {
@@ -1559,9 +1463,6 @@ locals {
   exitnode_3proxy_image    = "${local.thunderbolt_registry}/exitnode-3proxy:latest"
 
   searxng_ranker_image = "${local.thunderbolt_registry}/searxng-ranker:latest"
-
-  ingest_ui_image        = "${local.thunderbolt_registry}/ingest-ui:latest"
-  navidrome_ingest_image = "${local.thunderbolt_registry}/navidrome-ingest:latest"
 
   homeassist_image = "${local.thunderbolt_registry}/homeassist:latest"
 

@@ -46,37 +46,6 @@ resource "kubernetes_network_policy" "exitnode_from_searxng" {
   }
 }
 
-# Ingress from ingest ns on :8888. The ingest-ui pod runs yt-dlp with
-# `--proxy http://exitnode-<x>-proxy:8888` to keep YouTube downloads on a
-# rotating, residential-friendly egress IP set.
-resource "kubernetes_network_policy" "exitnode_from_ingest" {
-  metadata {
-    name      = "exitnode-from-ingest"
-    namespace = kubernetes_namespace.exitnode.metadata[0].name
-  }
-
-  spec {
-    pod_selector {}
-    policy_types = ["Ingress"]
-
-    ingress {
-      from {
-        namespace_selector {
-          match_labels = {
-            "kubernetes.io/metadata.name" = kubernetes_namespace.ingest.metadata[0].name
-          }
-        }
-        pod_selector { match_labels = { app = "ingest-ui" } }
-      }
-      ports {
-        protocol = "TCP"
-        port     = "8888"
-      }
-    }
-  }
-}
-
-
 resource "kubernetes_network_policy" "exitnode_socks_from_qbt" {
   metadata {
     name      = "exitnode-socks-from-qbt"
@@ -99,36 +68,6 @@ resource "kubernetes_network_policy" "exitnode_socks_from_qbt" {
       ports {
         protocol = "TCP"
         port     = "1080"
-      }
-    }
-  }
-}
-
-# Ingress from navidrome ns on :8888. The navidrome-ingest worker runs
-# yt-dlp through this proxy for YouTube metadata enrichment so the LLM
-# tagger gets uploader/description/tags context, on rotating egress IPs.
-resource "kubernetes_network_policy" "exitnode_from_navidrome" {
-  metadata {
-    name      = "exitnode-from-navidrome"
-    namespace = kubernetes_namespace.exitnode.metadata[0].name
-  }
-
-  spec {
-    pod_selector {}
-    policy_types = ["Ingress"]
-
-    ingress {
-      from {
-        namespace_selector {
-          match_labels = {
-            "kubernetes.io/metadata.name" = kubernetes_namespace.navidrome.metadata[0].name
-          }
-        }
-        pod_selector { match_labels = { app = "navidrome-ingest" } }
-      }
-      ports {
-        protocol = "TCP"
-        port     = "8888"
       }
     }
   }

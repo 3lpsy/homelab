@@ -201,12 +201,15 @@ module "thunderbolt_frontend_build" {
 
   build_args = {
     THUNDERBOLT_REF = var.thunderbolt_ref
+    # npm registry → in-cluster Verdaccio proxy (resolved via the npm host_alias
+    # in local.buildkit_job_shared). Same FQDN form opencode uses. docs/DEP_SAFETY.md
+    NPM_REGISTRY = "https://${var.npm_domain}.${local.magic_fqdn_suffix}/"
   }
   context_hash_extra = var.thunderbolt_ref
 
   resources = {
-    requests = { cpu = "500m", memory = "1Gi" }
-    limits   = { cpu = "4", memory = "6Gi" }
+    requests = { cpu = "1", memory = "2Gi" }
+    limits   = { cpu = "8", memory = "12Gi" }
   }
   timeout = "20m"
 
@@ -231,12 +234,15 @@ module "thunderbolt_backend_build" {
 
   build_args = {
     THUNDERBOLT_REF = var.thunderbolt_ref
+    # npm registry → in-cluster Verdaccio proxy (resolved via the npm host_alias
+    # in local.buildkit_job_shared). Same FQDN form opencode uses. docs/DEP_SAFETY.md
+    NPM_REGISTRY = "https://${var.npm_domain}.${local.magic_fqdn_suffix}/"
   }
   context_hash_extra = var.thunderbolt_ref
 
   resources = {
-    requests = { cpu = "300m", memory = "768Mi" }
-    limits   = { cpu = "3", memory = "3Gi" }
+    requests = { cpu = "1", memory = "2Gi" }
+    limits   = { cpu = "6", memory = "8Gi" }
   }
   timeout = "20m"
 

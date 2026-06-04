@@ -27,6 +27,16 @@ http {
     location /v2/ {
       client_max_body_size 0;
 
+      # Stream large layer PUTs straight to the registry instead of buffering the
+      # whole body in nginx memory first (default proxy_request_buffering=on).
+      # Buffering big concurrent blob pushes OOMKilled this 256Mi sidecar, which
+      # took the registry endpoint down mid-push (`connection reset`/`refused` on
+      # builders). Off = constant low memory regardless of layer size.
+      proxy_request_buffering off;
+      proxy_http_version 1.1;
+      proxy_read_timeout 900s;
+      proxy_send_timeout 900s;
+
       proxy_pass http://registry;
       proxy_set_header Host $http_host;
       proxy_set_header X-Real-IP $remote_addr;

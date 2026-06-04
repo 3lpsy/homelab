@@ -1,16 +1,22 @@
 # Verdaccio config for the `npm` read-only, anonymous, 7-day-cooldown cache.
 #
 # Pure uplink cache of registry.npmjs.org — NO private packages, NO publishing.
-# The 7-day minimum-age gate (verdaccio-plugin-delay-filter, baked into the
-# custom image at data/images/verdaccio/Dockerfile) hides every version
-# published less than 7 days ago and recomputes dist-tags/`latest`, so a
-# freshly-published (potentially compromised) version cannot be installed
-# until it has survived a week — a supply-chain blast-radius reducer.
+# The 7-day minimum-age gate hides every version published less than 7 days ago
+# and recomputes dist-tags/`latest`, so a freshly-published (potentially
+# compromised) version cannot be installed until it has survived a week — a
+# supply-chain blast-radius reducer.
 #
-# Plugin key is `plugin-delay-filter` (verdaccio strips the `verdaccio-`
-# prefix from `verdaccio-plugin-delay-filter`). The built-in
-# @verdaccio/package-filter is Verdaccio 8 only, so we use the standalone
-# plugin on stable Verdaccio 6.x.
+# Uses the BUILT-IN @verdaccio/package-filter, bundled since verdaccio@6.4.0
+# (we track the floating `6` tag, always ≥6.4.0). This previously used the
+# standalone verdaccio-plugin-delay-
+# filter under the mistaken belief the built-in was "v8 only" — but the standalone
+# mishandled bun's abbreviated metadata (application/vnd.npm.install-v1+json) and
+# dropped AGED versions, so transitive ranges like glob@^13.0.1 (whose matches are
+# months old) "failed to resolve". The built-in keeps aged versions + recomputes
+# `latest`, and supports block/strategy:replace (substitute a blocked version with
+# the nearest older safe one). No plugin install needed — we run the STOCK
+# verdaccio/verdaccio:6 image directly (custom build removed; tag `6` + pull-always
+# tracks the latest 6.x), pulled through the in-cluster docker.io mirror.
 
 storage: /verdaccio/storage
 
@@ -26,12 +32,30 @@ uplinks:
     url: https://registry.npmjs.org/
     cache: true        # cache upstream tarballs on disk for repeat installs
     maxage: 10m        # metadata freshness window (independent of the 7d gate)
-    max_fails: 2
-    fail_timeout: 5m
+    # Tuned for COLD-CACHE BULK installs. A lockless `bun install` fires hundreds
+    # of concurrent packument fetches; with the old max_fails:2 / fail_timeout:5m
+    # a couple of transient npmjs hiccups tripped the circuit breaker and blacked
+    # out the uplink for 5 min, so every still-uncached package (old or new)
+    # returned 404 → "failed to resolve". Tolerate many more transient fails,
+    # recover fast, and give slow fetches headroom + a bigger socket pool.
+    max_fails: 30
+    fail_timeout: 30s
+    # opencode-ai's platform packages are 13-14 MB packuments and bun fetches ~13
+    # concurrently; thunderbolt pulls multi-MB tarballs (react-email 14MB, pglite
+    # 9MB, posthog 9.5MB). Under bun's 64-way burst on a cold cache some uplink
+    # sockets stall → ESOCKETTIMEDOUT → 503. 300s gives the big concurrent fetches
+    # room; once cached they serve from disk with no uplink. The nginx sidecar
+    # also retries 503s now (registry-proxy-passthrough.nginx.conf.tpl).
+    timeout: 300s
+    agent_options:
+      keepAlive: true
+      maxSockets: 80
+      maxFreeSockets: 16
 
 filters:
-  plugin-delay-filter:
-    minAgeDays: 7      # HARD REQUIREMENT: block versions younger than 7 days
+  '@verdaccio/package-filter':
+    minAgeDays: 7      # hide versions published <7 days ago (built-in; keeps aged
+                       # versions so ranges resolve to the newest aged match)
 
 packages:
   '@*/*':

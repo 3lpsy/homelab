@@ -534,11 +534,11 @@ resource "kubernetes_deployment" "prometheus" {
 
         container {
           name  = "ntfy-bridge"
-          image = var.image_python
+          image = var.python_base_image
           image_pull_policy = "Always"
 
           command = [
-            "python3", "/app/ntfy-bridge.py",
+            "uv", "run", "--no-project", "/app/ntfy-bridge.py",
             "--ntfy-url", "https://${var.ntfy_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}",
             "--ntfy-topic", var.ntfy_alert_topic,
             "--port", "8085",
@@ -934,7 +934,7 @@ resource "kubernetes_network_policy" "prometheus_to_oidc" {
 # The bridge resolves `ntfy.<hs>.<magic>` via host_aliases (pinned to the
 # ntfy Service ClusterIP in the ntfy ns) so SNI carries the FQDN and the
 # Let's Encrypt cert validates without a tailscale hop.
-# Mirror ingress lives in services/ntfy-network.tf as ntfy-from-prometheus.
+# Mirror ingress lives in services/ntfy.tf as ntfy-from-prometheus.
 resource "kubernetes_network_policy" "prometheus_to_ntfy" {
   metadata {
     name      = "prometheus-to-ntfy"

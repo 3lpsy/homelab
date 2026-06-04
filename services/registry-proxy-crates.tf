@@ -164,16 +164,24 @@ resource "kubernetes_deployment" "crates" {
             name  = var.crates_proxy_cooldown_env
             value = var.crates_proxy_cooldown_value
           }
+          # Also enforce the cooldown on .crate file downloads (403 for too-new
+          # versions), closing the direct-download bypass the index gate leaves.
+          # 0.3.0 parses these flags with clap → boolean true/false, NOT 1/0.
+          env {
+            name  = "CRATES_IO_PROXY_RESTRICT_DOWNLOADS"
+            value = "true"
+          }
           env {
             name  = "LOG_LEVEL"
             value = var.crates_proxy_log_level
           }
           # Metrics: JSON listing of cached crates at GET /metrics (port 3080,
           # reachable via the nginx passthrough at https://crates.<magic>/metrics).
-          # Disabled by default (endpoint 404s) — enable it here.
+          # Disabled by default (endpoint 404s) — enable it here. clap bool flag
+          # in 0.3.0 → value must be true/false, not 1/0.
           env {
             name  = "CRATES_IO_PROXY_ENABLE_METRICS"
-            value = "1"
+            value = "true"
           }
 
           volume_mount {

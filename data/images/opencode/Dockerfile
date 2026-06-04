@@ -9,6 +9,42 @@ FROM oven/bun:1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# npm registry → in-cluster Verdaccio proxy (7-day supply-chain gate). Passed as
+# a build_arg from services/opencode-jobs.tf so it tracks var.npm_domain (same
+# source of truth as the runtime .npmrc ConfigMap). Two env vars on purpose:
+#   - BUN_CONFIG_REGISTRY  — bun's GUARANTEED native registry knob. NPM_CONFIG_*
+#     support in bun is "npm-compatible" but undocumented for case/precedence,
+#     and bun has a known bug ignoring $HOME/.npmrc (oven-sh/bun#22971) — so we
+#     don't trust it alone for the `bun install -g` steps below.
+#   - NPM_CONFIG_REGISTRY  — honored by pnpm (and the npm→pnpm shim in §4).
+# Both persist into the runtime image (the mounted .npmrc sets the same value).
+# The npm CLI itself is removed in §4; pnpm/bun are the only package managers,
+# both gated through this proxy. See docs/DEP_SAFETY.md.
+#
+# BUN_CONFIG_MAX_HTTP_REQUESTS caps bun's parallel HTTP (fetch + install). Set
+# GLOBAL here (not just on build steps) so the runtime opencode AGENT's own
+# `bun install` in user projects is throttled too — single-threaded Verdaccio +
+# the cooldown filter can't take bun's default ~48-way burst (it abandons
+# stragglers → "failed to resolve"). Trade-off: this also caps the opencode web
+# server's own runtime HTTP concurrency to 8 — fine for a single-user agent;
+# raise it if that proves limiting. Re-exported in §5b bashrc for SSH shells.
+ARG NPM_REGISTRY
+ENV BUN_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    BUN_CONFIG_MAX_HTTP_REQUESTS=8
+
+# crates.io → in-cluster chilled-crates proxy (same 7-day gate). Cargo env-config
+# form of `[source.crates-io] replace-with` + `[registries.chilled-crates] index`,
+# so image-build cargo routes through the proxy too — specifically cargo-binstall's
+# source-compile fallback (§2b/§5c) when no GitHub-release binary matches, and any
+# `cargo install`/build during the image build. Runtime cargo is ADDITIONALLY
+# covered by the mounted /usr/local/cargo/config.toml ConfigMap (services/opencode.tf),
+# which carries the same values. build_arg from services/opencode-jobs.tf (tracks
+# var.crates_domain). See docs/DEP_SAFETY.md.
+ARG CRATES_REGISTRY
+ENV CARGO_SOURCE_CRATES_IO_REPLACE_WITH=chilled-crates \
+    CARGO_REGISTRIES_CHILLED_CRATES_INDEX=${CRATES_REGISTRY}
+
 # ─── 1. System base — apt utilities. Rebuilds rarely. ──────────────────────
 # Build deps + core CLIs the agent reaches for. fd-find / batcat install
 # under non-canonical names on Debian; symlink to expected names.
@@ -56,17 +92,28 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --component rust-analyzer \
  && rustup component add clippy rustfmt
 
-# ─── 2b. Cargo helper binaries an LLM actually reaches for ────────────────
-# udeps + expand need nightly (unstable cargo features / proc-macro
-# expander); audit is stable. cargo-binstall fetches pre-built binaries
-# from each crate's GitHub releases and only falls back to compile-from-
-# source when no release artifact matches the target — turns a ~5-minute
-# compile chain into ~30 seconds of download. All three of these crates
-# publish musl/glibc x86_64 release binaries, so the fast path hits.
+# ─── 2b. Cargo dev tools — compiled from source THROUGH the crates proxy ────
+# Built with `cargo install` (NOT cargo-binstall): the from-source compile pulls
+# every crate through chilled-crates (the CARGO_* env at §top), so these tool
+# installs are gated like all other crates. cargo-binstall is intentionally NOT
+# installed — it fetches prebuilt binaries from GitHub releases + queries the
+# crates.io API, both of which bypass the gate. Trade-off: a cold build compiles
+# these (minutes) instead of downloading (~30s). Placed HIGH — right after the
+# toolchain — so the heavy compiles cache and survive every later layer's
+# changes; they only rebuild when the Rust toolchain (§2) does. This is also why
+# dioxus-cli + just (formerly their own late §5c/§5e layers) now live here.
+#   - udeps + expand are invoked with +nightly at runtime (nightly installed
+#     here), but build fine on stable. audit is stable.
+#   - dioxus-cli (dx) needs the wasm32 target (added here).
+#   - just is a command runner.
+# Last cargo-touching layer → make CARGO_HOME/RUSTUP_HOME world-writable
+# (rust-image pattern) so a runtime `cargo install` as `user` still works.
 RUN rustup toolchain install nightly --profile minimal \
- && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
-    | bash \
- && cargo binstall -y --locked cargo-udeps cargo-expand cargo-audit
+ && rustup target add wasm32-unknown-unknown \
+ && cargo install --locked cargo-udeps cargo-expand cargo-audit \
+ && cargo install --locked dioxus-cli \
+ && cargo install --locked just \
+ && chmod -R a+w "$CARGO_HOME" "$RUSTUP_HOME"
 
 # ─── 3. uv + Python 3.14 + Python tooling — uv ships weekly ───────────────
 # uv binary → /usr/local/bin (UV_INSTALL_DIR). uv-managed Python →
@@ -75,19 +122,41 @@ RUN rustup toolchain install nightly --profile minimal \
 # so `user` (not just root) can use them. chmod a+rwX so a runtime
 # `uv tool install` / `uv python install` as `user` can write the dirs too.
 ENV UV_INSTALL_DIR=/usr/local/bin
+# 7-day PyPI publish cooldown for every uv invocation — the build-time tool
+# installs below AND runtime `uvx` / `uv tool install` as `user`. uv refuses any
+# dep published more recently. Threaded from var.pip_proxy_cooldown_value via the
+# BuildKit build-arg. See docs/PYTHON_SAFETY.md.
+ARG UV_EXCLUDE_NEWER="7 days"
+ENV UV_EXCLUDE_NEWER=${UV_EXCLUDE_NEWER}
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
  && uv python install 3.14 \
  && uv tool install ruff \
  && uv tool install basedpyright \
  && chmod -R a+rwX /usr/local/uv
 
-# ─── 4. Node 22 + npm-distributed LSPs — turn over monthly ─────────────────
-# typescript-language-server + tsc for TS; bash/yaml language servers
-# for the homelab's heavy YAML+shell footprint; vscode-langservers-extracted
-# bundles JSON/HTML/CSS/ESLint LSPs.
+# ─── 4. Node 22 runtime + pnpm + npm-distributed LSPs — turn over monthly ───
+# The node runtime stays (the LSP servers are #!/usr/bin/env node), but the
+# bundled npm/npx CLIs are BANNED: every package install must go through bun or
+# pnpm against the Verdaccio proxy (§top), so the 7-day supply-chain gate can't
+# be sidestepped by an `npm install`. We therefore:
+#   1. delete the npm/npx/corepack CLIs nodesource bundles (corepack is Node's
+#      pnpm/yarn shim manager — an ungated npm-registry fetch path we don't use),
+#   2. install pnpm via bun (pulled through the proxy via NPM_CONFIG_REGISTRY),
+#   3. symlink npm→pnpm and npx→bunx so any stray `npm`/`npx` call still works
+#      AND stays gated (pnpm honors NPM_CONFIG_REGISTRY/.npmrc; bunx is bun).
+# typescript-language-server + tsc for TS; bash/yaml language servers for the
+# homelab's heavy YAML+shell footprint; vscode-langservers-extracted bundles
+# JSON/HTML/CSS/ESLint LSPs. Installed with bun (gated). See docs/DEP_SAFETY.md.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
- && npm install -g \
+ && rm -rf /usr/lib/node_modules/npm /usr/local/lib/node_modules/npm \
+      /usr/lib/node_modules/corepack /usr/local/lib/node_modules/corepack \
+      /usr/bin/npm /usr/bin/npx /usr/bin/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+ && bun install -g pnpm \
+ && ln -sf /usr/local/bun/bin/pnpm /usr/local/bin/npm \
+ && ln -sf "$(command -v bunx)" /usr/local/bin/npx \
+ && bun install -g \
       typescript \
       typescript-language-server \
       bash-language-server \
@@ -197,29 +266,25 @@ RUN printf '%s\n' \
       '  *) export PATH="/usr/local/cargo/bin:/usr/local/bun/bin:$PATH" ;;' \
       'esac' \
       "alias ll='ls -alh'" \
+      >> /etc/bash.bashrc \
+ # Re-export the package-proxy registry vars for SSH login shells. sshd hands a
+ # scrubbed env (the Docker ENV at the top doesn't propagate), and bun IGNORES
+ # $HOME/.npmrc (oven-sh/bun#22971), so without this an interactive `bun install`
+ # over SSH would bypass Verdaccio and hit npmjs direct. BUN_CONFIG_REGISTRY is
+ # bun's reliable knob; NPM_CONFIG_REGISTRY covers pnpm. Baked from the
+ # NPM_REGISTRY build_arg (literal URL). opencode-spawned shells already inherit
+ # these via setpriv, so this only matters for SSH. See docs/DEP_SAFETY.md.
+ && printf '%s\n' \
+      "export BUN_CONFIG_REGISTRY=${NPM_REGISTRY}" \
+      "export NPM_CONFIG_REGISTRY=${NPM_REGISTRY}" \
+      "export BUN_CONFIG_MAX_HTTP_REQUESTS=8" \
+      "export UV_EXCLUDE_NEWER='${UV_EXCLUDE_NEWER}'" \
       >> /etc/bash.bashrc
-
-# ─── 5c. Dioxus toolchain — wasm target + dioxus-cli (dx) ──────────────────
-# Placed below the Rust install (§2) + cargo-binstall (§2b) so those heavy
-# layers stay cached; a dioxus-cli bump only rebuilds from here. `stable`
-# is already the default toolchain (§2) — reinstall is idempotent. binstall
-# fetches the dx prebuilt binary; --force overwrites any stale dx.
-RUN rustup toolchain install stable \
- && rustup target add wasm32-unknown-unknown \
- && cargo binstall -y dioxus-cli --force
 
 # ─── 5d. Tailwind CSS CLI — dioxus styling pipeline ────────────────────────
 # v4 standalone CLI; installs a `tailwindcss` binary on PATH. Own layer so
 # an opencode bump (§6) doesn't reinstall it.
 RUN bun install -g @tailwindcss/cli
-
-# ─── 5e. just — command runner (Makefile alternative) ─────────────────────
-# Static Rust binary via binstall (§2b); own layer so it doesn't churn the
-# opencode layer below. Last cargo-touching layer → make CARGO_HOME +
-# RUSTUP_HOME world-writable (rust-image pattern) so `user` can run cargo /
-# rustup at runtime (registry cache + toolchain writes land here).
-RUN cargo binstall -y just \
- && chmod -R a+w "$CARGO_HOME" "$RUSTUP_HOME"
 
 # ─── 5g. Rootless podman (+ compose) for one-off nested dev containers ─────
 # Lets opencode spawn throwaway dev containers INSIDE this pod — not
@@ -304,6 +369,9 @@ RUN find / -xdev -perm /6000 -type f \
 # `bun install -g` as `user` still works. /home/user dirs are pre-created +
 # chowned so opencode (uid 1001) owns its config/state/working tree from the
 # first boot (the entrypoint also chowns the PVC/emptyDir mounts at runtime).
+# BUN_CONFIG_MAX_HTTP_REQUESTS (global ENV at top) throttles bun AND its `fetch`,
+# so it also caps opencode-ai's postinstall (which fetches the ~13 platform
+# packages under bun) — the path that was 502'ing Verdaccio.
 RUN bun install -g opencode-ai \
  && mkdir -p /home/user/.config/opencode /home/user/.local/share/opencode /home/user/working \
  && chown -R user:user /home/user \

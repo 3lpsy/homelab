@@ -70,7 +70,7 @@ resource "kubernetes_service_account" "immich" {
   automount_service_account_token = false
 }
 
-resource "kubernetes_secret" "immich_tailscale_state_v2" {
+resource "kubernetes_secret" "immich_tailscale_state" {
   metadata {
     name      = "immich-tailscale-state"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -82,7 +82,7 @@ resource "kubernetes_secret" "immich_tailscale_state_v2" {
   }
 }
 
-resource "kubernetes_role" "immich_tailscale_v2" {
+resource "kubernetes_role" "immich_tailscale" {
   metadata {
     name      = "tailscale"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -96,7 +96,7 @@ resource "kubernetes_role" "immich_tailscale_v2" {
   }
 }
 
-resource "kubernetes_role_binding" "immich_tailscale_v2" {
+resource "kubernetes_role_binding" "immich_tailscale" {
   metadata {
     name      = "tailscale"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -105,7 +105,7 @@ resource "kubernetes_role_binding" "immich_tailscale_v2" {
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "Role"
-    name      = kubernetes_role.immich_tailscale_v2.metadata[0].name
+    name      = kubernetes_role.immich_tailscale.metadata[0].name
   }
 
   subject {
@@ -115,20 +115,20 @@ resource "kubernetes_role_binding" "immich_tailscale_v2" {
   }
 }
 
-resource "headscale_pre_auth_key" "immich_server_v2" {
+resource "headscale_pre_auth_key" "immich_server" {
   user           = data.terraform_remote_state.homelab.outputs.tailnet_user_map.nextcloud_server_user
   reusable       = true
   time_to_expire = "3y"
 }
 
-resource "kubernetes_secret" "immich_tailscale_auth_v2" {
+resource "kubernetes_secret" "immich_tailscale_auth" {
   metadata {
     name      = "immich-tailscale-auth"
     namespace = kubernetes_namespace.immich.metadata[0].name
   }
   type = "Opaque"
   data = {
-    TS_AUTHKEY = headscale_pre_auth_key.immich_server_v2.key
+    TS_AUTHKEY = headscale_pre_auth_key.immich_server.key
   }
 }
 
@@ -202,7 +202,7 @@ resource "zitadel_user_grant" "immich_partner_user" {
 # would rewrite the email claim across other services for any user holding an
 # immich grant. Manual link sidesteps both problems.
 
-module "immich-tls-v2" {
+module "immich-tls" {
   source                = "./../templates/infra-tls"
   account_key_pem       = data.terraform_remote_state.homelab.outputs.acme_account_key_pem
   server_domain         = "${var.immich_domain}.${local.magic_fqdn_suffix}"
@@ -214,7 +214,7 @@ module "immich-tls-v2" {
   providers = { acme = acme }
 }
 
-resource "vault_kv_secret_v2" "immich_config_v2" {
+resource "vault_kv_secret_v2" "immich_config" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "immich/config"
   data_json = jsonencode({
@@ -232,12 +232,12 @@ resource "vault_kv_secret_v2" "immich_config_v2" {
   })
 }
 
-resource "vault_kv_secret_v2" "immich_tls_v2" {
+resource "vault_kv_secret_v2" "immich_tls" {
   mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   name  = "immich/tls"
   data_json = jsonencode({
-    fullchain_pem = module.immich-tls-v2.fullchain_pem
-    privkey_pem   = module.immich-tls-v2.privkey_pem
+    fullchain_pem = module.immich-tls.fullchain_pem
+    privkey_pem   = module.immich-tls.privkey_pem
   })
 
   # tls-rotator (services/tls-rotator.tf) owns rotation post-bootstrap.
@@ -246,7 +246,7 @@ resource "vault_kv_secret_v2" "immich_tls_v2" {
   }
 }
 
-resource "vault_policy" "immich_v2" {
+resource "vault_policy" "immich" {
   name = "immich-policy"
 
   policy = <<EOT
@@ -256,16 +256,16 @@ path "${data.terraform_remote_state.vault_conf.outputs.kv_mount_path}/data/immic
 EOT
 }
 
-resource "vault_kubernetes_auth_backend_role" "immich_v2" {
+resource "vault_kubernetes_auth_backend_role" "immich" {
   backend                          = "kubernetes"
   role_name                        = "immich"
   bound_service_account_names      = [kubernetes_service_account.immich.metadata[0].name]
   bound_service_account_namespaces = [kubernetes_namespace.immich.metadata[0].name]
-  token_policies                   = [vault_policy.immich_v2.name]
+  token_policies                   = [vault_policy.immich.name]
   token_ttl                        = 86400
 }
 
-resource "kubernetes_manifest" "immich_secret_provider_v2" {
+resource "kubernetes_manifest" "immich_secret_provider" {
   manifest = {
     apiVersion = "secrets-store.csi.x-k8s.io/v1"
     kind       = "SecretProviderClass"
@@ -341,13 +341,13 @@ resource "kubernetes_manifest" "immich_secret_provider_v2" {
 
   depends_on = [
     kubernetes_namespace.immich,
-    vault_kubernetes_auth_backend_role.immich_v2,
-    vault_kv_secret_v2.immich_config_v2,
-    vault_kv_secret_v2.immich_tls_v2
+    vault_kubernetes_auth_backend_role.immich,
+    vault_kv_secret_v2.immich_config,
+    vault_kv_secret_v2.immich_tls
   ]
 }
 
-resource "kubernetes_persistent_volume_claim" "immich_upload_v2" {
+resource "kubernetes_persistent_volume_claim" "immich_upload" {
   lifecycle {
     prevent_destroy = true
   }
@@ -367,7 +367,7 @@ resource "kubernetes_persistent_volume_claim" "immich_upload_v2" {
   wait_until_bound = false
 }
 
-resource "kubernetes_persistent_volume_claim" "immich_postgres_data_v2" {
+resource "kubernetes_persistent_volume_claim" "immich_postgres_data" {
   lifecycle {
     prevent_destroy = true
   }
@@ -387,7 +387,7 @@ resource "kubernetes_persistent_volume_claim" "immich_postgres_data_v2" {
   wait_until_bound = false
 }
 
-resource "kubernetes_config_map" "immich_nginx_config_v2" {
+resource "kubernetes_config_map" "immich_nginx_config" {
   metadata {
     name      = "immich-nginx-config"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -400,7 +400,7 @@ resource "kubernetes_config_map" "immich_nginx_config_v2" {
   }
 }
 
-resource "kubernetes_deployment" "immich_machine_learning_v2" {
+resource "kubernetes_deployment" "immich_machine_learning" {
   metadata {
     name      = "immich-machine-learning"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -484,7 +484,7 @@ resource "kubernetes_deployment" "immich_machine_learning_v2" {
   }
 }
 
-resource "kubernetes_service" "immich_machine_learning_v2" {
+resource "kubernetes_service" "immich_machine_learning" {
   metadata {
     name      = "immich-machine-learning"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -500,7 +500,7 @@ resource "kubernetes_service" "immich_machine_learning_v2" {
   }
 }
 
-resource "kubernetes_deployment" "immich_v2" {
+resource "kubernetes_deployment" "immich" {
   metadata {
     name      = "immich"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -523,7 +523,7 @@ resource "kubernetes_deployment" "immich_v2" {
           app = "immich"
         }
         annotations = {
-          "nginx-config-hash"                   = sha1(kubernetes_config_map.immich_nginx_config_v2.data["nginx.conf"])
+          "nginx-config-hash"                   = sha1(kubernetes_config_map.immich_nginx_config.data["nginx.conf"])
           "secret.reloader.stakater.com/reload" = "immich-secrets,immich-tls"
         }
       }
@@ -676,7 +676,7 @@ resource "kubernetes_deployment" "immich_v2" {
         volume {
           name = "immich-upload"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.immich_upload_v2.metadata[0].name
+            claim_name = kubernetes_persistent_volume_claim.immich_upload.metadata[0].name
           }
         }
         volume {
@@ -685,7 +685,7 @@ resource "kubernetes_deployment" "immich_v2" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.immich_secret_provider_v2.manifest.metadata.name
+              secretProviderClass = kubernetes_manifest.immich_secret_provider.manifest.metadata.name
             }
           }
         }
@@ -734,7 +734,7 @@ resource "kubernetes_deployment" "immich_v2" {
         volume {
           name = "nginx-config"
           config_map {
-            name = kubernetes_config_map.immich_nginx_config_v2.metadata[0].name
+            name = kubernetes_config_map.immich_nginx_config.metadata[0].name
           }
         }
 
@@ -760,7 +760,7 @@ resource "kubernetes_deployment" "immich_v2" {
             name = "TS_AUTHKEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret.immich_tailscale_auth_v2.metadata[0].name
+                name = kubernetes_secret.immich_tailscale_auth.metadata[0].name
                 key  = "TS_AUTHKEY"
               }
             }
@@ -822,11 +822,11 @@ resource "kubernetes_deployment" "immich_v2" {
   }
 
   depends_on = [
-    kubernetes_manifest.immich_secret_provider_v2,
-    kubernetes_role_binding.immich_tailscale_v2,
-    kubernetes_deployment.immich_postgres_v2,
-    kubernetes_deployment.immich_redis_v2,
-    kubernetes_deployment.immich_machine_learning_v2
+    kubernetes_manifest.immich_secret_provider,
+    kubernetes_role_binding.immich_tailscale,
+    kubernetes_deployment.immich_postgres,
+    kubernetes_deployment.immich_redis,
+    kubernetes_deployment.immich_machine_learning
   ]
 
   lifecycle {
@@ -837,7 +837,7 @@ resource "kubernetes_deployment" "immich_v2" {
   }
 }
 
-resource "kubernetes_deployment" "immich_postgres_v2" {
+resource "kubernetes_deployment" "immich_postgres" {
   metadata {
     name      = "immich-postgres"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -953,7 +953,7 @@ resource "kubernetes_deployment" "immich_postgres_v2" {
         volume {
           name = "immich-postgres-data"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.immich_postgres_data_v2.metadata[0].name
+            claim_name = kubernetes_persistent_volume_claim.immich_postgres_data.metadata[0].name
           }
         }
         volume {
@@ -962,7 +962,7 @@ resource "kubernetes_deployment" "immich_postgres_v2" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.immich_secret_provider_v2.manifest.metadata.name
+              secretProviderClass = kubernetes_manifest.immich_secret_provider.manifest.metadata.name
             }
           }
         }
@@ -971,7 +971,7 @@ resource "kubernetes_deployment" "immich_postgres_v2" {
   }
 
   depends_on = [
-    kubernetes_manifest.immich_secret_provider_v2
+    kubernetes_manifest.immich_secret_provider
   ]
 
   lifecycle {
@@ -982,7 +982,7 @@ resource "kubernetes_deployment" "immich_postgres_v2" {
   }
 }
 
-resource "kubernetes_service" "immich_postgres_v2" {
+resource "kubernetes_service" "immich_postgres" {
   metadata {
     name      = "immich-postgres"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -998,7 +998,7 @@ resource "kubernetes_service" "immich_postgres_v2" {
   }
 }
 
-resource "kubernetes_deployment" "immich_redis_v2" {
+resource "kubernetes_deployment" "immich_redis" {
   metadata {
     name      = "immich-redis"
     namespace = kubernetes_namespace.immich.metadata[0].name
@@ -1104,7 +1104,7 @@ resource "kubernetes_deployment" "immich_redis_v2" {
             driver    = "secrets-store.csi.k8s.io"
             read_only = true
             volume_attributes = {
-              secretProviderClass = kubernetes_manifest.immich_secret_provider_v2.manifest.metadata.name
+              secretProviderClass = kubernetes_manifest.immich_secret_provider.manifest.metadata.name
             }
           }
         }
@@ -1113,7 +1113,7 @@ resource "kubernetes_deployment" "immich_redis_v2" {
   }
 
   depends_on = [
-    kubernetes_manifest.immich_secret_provider_v2
+    kubernetes_manifest.immich_secret_provider
   ]
 
   lifecycle {
@@ -1124,7 +1124,7 @@ resource "kubernetes_deployment" "immich_redis_v2" {
   }
 }
 
-resource "kubernetes_service" "immich_redis_v2" {
+resource "kubernetes_service" "immich_redis" {
   metadata {
     name      = "immich-redis"
     namespace = kubernetes_namespace.immich.metadata[0].name

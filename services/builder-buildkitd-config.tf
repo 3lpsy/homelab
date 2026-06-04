@@ -27,6 +27,15 @@ locals {
     registry_dockerio_cluster_ip = kubernetes_service.registry_dockerio.spec[0].cluster_ip
     registry_ghcrio_fqdn         = "${var.registry_ghcrio_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
     registry_ghcrio_cluster_ip   = kubernetes_service.registry_ghcrio.spec[0].cluster_ip
+    # npm (Verdaccio) + crates.io (chilled-crates) package proxies. NOT mirrored
+    # in buildkitd.toml (they're not OCI registries) — these only feed the
+    # host_aliases on each build pod so `npm`/`bun`/`cargo` fetches in RUN steps
+    # resolve the proxy FQDN to its ClusterIP. Same magic-domain FQDN form the
+    # opencode runtime uses (services/opencode.tf). See docs/DEP_SAFETY.md.
+    npm_fqdn          = "${var.npm_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+    npm_cluster_ip    = kubernetes_service.npm.spec[0].cluster_ip
+    crates_fqdn       = "${var.crates_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}"
+    crates_cluster_ip = kubernetes_service.crates.spec[0].cluster_ip
     # Pinned to avoid silent SHA drift on `:rootless`/`:latest`. Bump
     # deliberately when upgrading; remember to bump pod_spec_sentinel in
     # templates/buildkit-job/main.tf so existing Jobs recreate.

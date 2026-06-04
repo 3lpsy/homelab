@@ -52,10 +52,6 @@
         href: https://${audiobookshelf_fqdn}
         description: Audiobooks & podcasts
         icon: audiobookshelf.svg
-    - Ingest UI:
-        href: https://${ingest_ui_fqdn}
-        description: Media ingest dashboard
-        icon: mdi-tray-arrow-down
 
 - Dev/AI:
     - Forgejo:

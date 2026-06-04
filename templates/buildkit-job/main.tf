@@ -94,7 +94,7 @@ locals {
   # `buildctl_args` and `context_files` don't capture. Job spec.template
   # is immutable, so this forces a clean destroy-and-recreate via the
   # `job_name` hash.
-  pod_spec_sentinel = "host-aliases=v1,bk=v0.29.0,debug=off,tmpdir,pprof,context-items=v1,materialize-context=v1,sched=v1"
+  pod_spec_sentinel = "host-aliases=v2-pkgproxy,bk=v0.29.0,debug=off,tmpdir,pprof,context-items=v1,materialize-context=v1,sched=v1,resources=v2"
 
   # Hash mixes every input that affects the Job spec — context files,
   # build-args, image_ref, the full buildctl args list, and the
@@ -148,10 +148,17 @@ resource "kubernetes_manifest" "build" {
           # the buildkitd.toml mirror entries (which still use the FQDN
           # form because BuildKit's resolver validates against cert SANs)
           # land on the nginx :443 of the corresponding registry pod.
+          # The first three pin OCI registry FQDNs (used by buildkitd.toml
+          # mirrors). The npm + crates entries pin the package-proxy FQDNs so
+          # `npm`/`bun`/`cargo` fetches inside RUN steps resolve to the
+          # in-cluster proxy ClusterIP (rootless RUN steps share the pod netns,
+          # so they see this /etc/hosts). See docs/DEP_SAFETY.md.
           hostAliases = [
             { ip = var.shared.registry_cluster_ip, hostnames = [var.shared.registry_fqdn] },
             { ip = var.shared.registry_dockerio_cluster_ip, hostnames = [var.shared.registry_dockerio_fqdn] },
             { ip = var.shared.registry_ghcrio_cluster_ip, hostnames = [var.shared.registry_ghcrio_fqdn] },
+            { ip = var.shared.npm_cluster_ip, hostnames = [var.shared.npm_fqdn] },
+            { ip = var.shared.crates_cluster_ip, hostnames = [var.shared.crates_fqdn] },
           ]
 
           # Materialize the ConfigMap into an emptyDir before buildkit

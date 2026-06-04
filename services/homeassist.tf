@@ -595,9 +595,9 @@ resource "kubernetes_deployment" "homeassist" {
         # Idempotent — see data/homeassist/render-auth-oidc.py.
         init_container {
           name    = "seed-auth-oidc"
-          image   = var.image_python
+          image   = var.python_base_image
           image_pull_policy = "Always"
-          command = ["python3", "/scripts/render-auth-oidc.py"]
+          command = ["uv", "run", "--no-project", "/scripts/render-auth-oidc.py"]
           env {
             name  = "OIDC_DISCOVERY_URL"
             value = "https://${data.terraform_remote_state.vault_conf.outputs.zitadel_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}/.well-known/openid-configuration"
@@ -628,9 +628,9 @@ resource "kubernetes_deployment" "homeassist" {
         # from /mnt/secrets so no secret leaks into the ConfigMap.
         init_container {
           name    = "seed-mqtt-broker"
-          image   = var.image_python
+          image   = var.python_base_image
           image_pull_policy = "Always"
-          command = ["python3", "/scripts/seed-mqtt-broker.py"]
+          command = ["uv", "run", "--no-project", "/scripts/seed-mqtt-broker.py"]
           volume_mount {
             name       = "homeassist-data"
             mount_path = "/config"
