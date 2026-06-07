@@ -36,7 +36,13 @@ module "opencode_build" {
     requests = { cpu = "2", memory = "4Gi" }
     limits   = { cpu = "8", memory = "16Gi" }
   }
-  timeout = "10m"
+  # 30m: a COLD build now compiles cargo-nextest + sccache FROM SOURCE (§2d/§2e,
+  # sccache alone is ~5-10m), adds the cranelift component (§2f), and installs
+  # chromium + chromedriver (§5h) on top of §2b's dioxus-cli/udeps/etc. compiles.
+  # This is the terraform WAIT timeout (Job → Complete), not a pod deadline —
+  # too-short just fails `apply` while the build keeps running. Warm rebuilds
+  # (cached layers) finish in seconds, so the headroom is free.
+  timeout = "30m"
 
   shared = local.buildkit_job_shared
 

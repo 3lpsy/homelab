@@ -625,7 +625,10 @@ resource "kubernetes_config_map" "opencode_pkg_proxy_config" {
 
     # Source replacement: every crates.io index lookup + crate download routes
     # through the proxy (which enforces the 7-day cooldown). chilled-crates is a
-    # transparent crates.io mirror, so checksums still match.
+    # transparent crates.io mirror, so checksums still match. Build-speed tuning
+    # (mold/cranelift/profiles) lives PER-PROJECT in each repo's .cargo/config.toml,
+    # not here — this global config stays minimal so it never fights a project's
+    # own settings. The tools themselves are baked in the image (Dockerfile §2c-2f).
     "cargo-config.toml" = <<-EOT
       [source.crates-io]
       replace-with = "chilled-crates"

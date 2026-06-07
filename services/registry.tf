@@ -45,20 +45,44 @@ resource "vault_kv_secret_v2" "registry_config" {
   })
 }
 
-# Bcrypt-hashed htpasswd file for the nginx sidecar's basic-auth. Bcrypt is
-# non-deterministic so every plan re-hashes; ignore_changes prevents the
-# fake drift. Rotation: `terraform apply -replace=vault_kv_secret_v2.registry_htpasswd`.
-resource "vault_kv_secret_v2" "registry_htpasswd" {
-  mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
-  name  = "registry/htpasswd"
-  data_json = jsonencode({
-    htpasswd = join("\n", [
-      for user in var.registry_users :
-      "${user}:${bcrypt(random_password.registry_user_passwords[user].result)}"
-    ])
-  })
-  lifecycle {
-    ignore_changes = [data_json]
+# Plaintext per-user password source for the registry nginx htpasswd.
+#
+# The htpasswd file is NOT generated at TF time: bcrypt() is non-deterministic
+# (re-salts every plan), which is why the old TF-built `registry/htpasswd` Vault
+# secret carried `lifecycle { ignore_changes = [data_json] }` to suppress the
+# churn — but that froze the WHOLE value, so a new user added to
+# var.registry_users never propagated and the registry 401'd it (this bit the
+# git-runner `forgejo-runner` user). {SHA}/{PLAIN} are the only schemes TF could
+# emit deterministically, and both are weak.
+#
+# Instead, follow the repo's runtime-hash convention (ingest-syncthing,
+# homeassist-mosquitto): TF ships only the plaintext (deterministic — same data
+# already in registry/config), and the `build-htpasswd` init container hashes it
+# to salted nginx {SSHA} at pod start. Deterministic source ⇒ no fake drift, no
+# ignore_changes; adding a user is a real diff that flows: this Secret changes →
+# Reloader rolls the registry → the init regenerates htpasswd with the new user.
+# Stdlib-only hashing (hashlib/base64/os) — deliberately NO uv/PyPI fetch in the
+# critical registry's startup path.
+# Rotate a user: `terraform apply -replace='random_password.registry_user_passwords["<user>"]'`.
+resource "kubernetes_secret" "registry_htpasswd_src" {
+  metadata {
+    name      = "registry-htpasswd-src"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  data = {
+    for user in var.registry_users :
+    "password_${user}" => random_password.registry_user_passwords[user].result
+  }
+}
+
+# {SSHA} htpasswd generator run by the build-htpasswd init container.
+resource "kubernetes_config_map" "registry_htpasswd_script" {
+  metadata {
+    name      = "registry-htpasswd-script"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  data = {
+    "registry-htpasswd-ssha.py" = file("${path.module}/../data/scripts/registry-htpasswd-ssha.py")
   }
 }
 
@@ -78,27 +102,12 @@ module "registry_tls_vault" {
 
   vault_kv_mount = data.terraform_remote_state.vault_conf.outputs.kv_mount_path
   # config_secrets left empty — registry/config is hand-rolled above with a
-  # users-map shape that doesn't fit the module's flat key=value. Module
-  # policy still grants `registry/*` read so the SPC can fetch htpasswd
-  # below.
-
-  extra_secret_objects = [
-    {
-      secret_name = "registry-htpasswd"
-      items = [
-        {
-          object_name = "htpasswd"
-          k8s_key     = "htpasswd"
-          vault_path  = "registry/htpasswd"
-          vault_key   = "htpasswd"
-        }
-      ]
-    }
-  ]
+  # users-map shape that doesn't fit the module's flat key=value. The htpasswd
+  # is no longer sourced from Vault/CSI (the nginx file is built at runtime by
+  # the build-htpasswd init from kubernetes_secret.registry_htpasswd_src), so
+  # this module now manages only the TLS cert + SPC.
 
   providers = { acme = acme }
-
-  depends_on = [vault_kv_secret_v2.registry_htpasswd]
 }
 
 resource "kubernetes_persistent_volume_claim" "registry_data" {
@@ -200,7 +209,8 @@ resource "kubernetes_deployment" "registry" {
         labels = { app = "registry" }
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_nginx_config.data["nginx.conf"])
-          "secret.reloader.stakater.com/reload" = "registry-htpasswd,${module.registry_tls_vault.tls_secret_name}"
+          "htpasswd-script-hash"                = sha1(kubernetes_config_map.registry_htpasswd_script.data["registry-htpasswd-ssha.py"])
+          "secret.reloader.stakater.com/reload" = "registry-htpasswd-src,${module.registry_tls_vault.tls_secret_name}"
           # Image layers are rebuildable from Dockerfiles in data/images/* via
           # the BuildKit jobs in the builder namespace; backing them up via
           # Velero FSB would double tens of GB for no recovery value.
@@ -217,14 +227,53 @@ resource "kubernetes_deployment" "registry" {
           image_pull_policy = "IfNotPresent"
           command = [
             "sh", "-c",
+            # Gate on the CSI-mounted TLS cert (htpasswd no longer comes from
+            # CSI — it's built by the build-htpasswd init below).
             templatefile("${path.module}/../data/scripts/wait-for-secrets.sh.tpl", {
-              secret_file = "htpasswd"
+              secret_file = "tls_crt"
             })
           ]
           volume_mount {
             name       = "secrets-store"
             mount_path = "/mnt/secrets"
             read_only  = true
+          }
+        }
+
+        # Build the nginx htpasswd from the plaintext per-user passwords using
+        # salted nginx {SSHA} (stdlib hashlib/base64/os — NO uv/PyPI fetch, so
+        # the critical registry's startup has no external dependency). Reads
+        # /mnt/secrets/password_<user> from registry_htpasswd_src and writes
+        # /htpasswd/htpasswd (emptyDir shared with the nginx sidecar). Reruns on
+        # every roll, so adding/rotating a user (which rolls the pod via
+        # Reloader) regenerates the file.
+        init_container {
+          name              = "build-htpasswd"
+          image             = var.python_base_image
+          image_pull_policy = "IfNotPresent"
+          # Tested: data/scripts/test_registry_htpasswd_ssha.py.
+          command = ["python3", "/scripts/registry-htpasswd-ssha.py"]
+          env {
+            name  = "HTPASSWD_SRC_DIR"
+            value = "/mnt/htpasswd-src"
+          }
+          env {
+            name  = "HTPASSWD_OUT_FILE"
+            value = "/htpasswd/htpasswd"
+          }
+          volume_mount {
+            name       = "htpasswd-script"
+            mount_path = "/scripts"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "htpasswd-src"
+            mount_path = "/mnt/htpasswd-src"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "nginx-htpasswd"
+            mount_path = "/htpasswd"
           }
         }
 
@@ -360,9 +409,24 @@ resource "kubernetes_deployment" "registry" {
             name = kubernetes_config_map.registry_nginx_config.metadata[0].name
           }
         }
+        # Built at runtime by the build-htpasswd init; shared with the nginx
+        # sidecar (which mounts it at /etc/nginx/htpasswd via subPath).
         volume {
           name = "nginx-htpasswd"
-          secret { secret_name = "registry-htpasswd" }
+          empty_dir {}
+        }
+        # Plaintext per-user passwords consumed only by build-htpasswd.
+        volume {
+          name = "htpasswd-src"
+          secret {
+            secret_name = kubernetes_secret.registry_htpasswd_src.metadata[0].name
+          }
+        }
+        volume {
+          name = "htpasswd-script"
+          config_map {
+            name = kubernetes_config_map.registry_htpasswd_script.metadata[0].name
+          }
         }
 
         # Tailscale

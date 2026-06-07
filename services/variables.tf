@@ -125,9 +125,28 @@ variable "homeassist_z2m_usb_device_path" {
 }
 
 variable "registry_users" {
-  description = "List of registry usernames"
+  description = "List of registry usernames. `forgejo-runner` is the dedicated CI push/pull user for the Forgejo Actions runner (services/git-runner.tf), isolated + independently rotatable from `internal`."
   type        = list(string)
-  default     = ["internal", "jim"]
+  default     = ["internal", "jim", "forgejo-runner"]
+}
+
+variable "git_runner_version" {
+  # forgejo-runner tracks Forgejo's version scheme (12.x), NOT the old 1.x/6.x
+  # numbers. Latest stable as of 2026-05-26 is 12.10.2. Bump deliberately and
+  # cross-check https://code.forgejo.org/forgejo/runner/releases. The image is
+  # built FROM fedora + this binary (data/images/git-runner/Dockerfile) rather
+  # than the official data.forgejo.org/forgejo/runner image, because the latter
+  # is Alpine with no container runtime (the docs pair it with a privileged
+  # docker:dind sidecar) — we bake rootless podman instead.
+  description = "Pinned forgejo-runner release built into the git-runner image (data/images/git-runner/Dockerfile)."
+  type        = string
+  default     = "12.10.2"
+}
+
+variable "git_runner_storage_size" {
+  description = "PVC size for the Forgejo Actions runner (holds the .runner file + act cache)."
+  type        = string
+  default     = "20Gi"
 }
 
 variable "registry_domain" {
@@ -917,11 +936,26 @@ variable "llm_models" {
     }
 
     # Coding specialist, Q6_K, spans both cards (swaps with the headline).
-    "coding-qwen3-coder" = {
+    "coding-qwen3-coder-30b-a3b" = {
       provider              = "llamaswap"
-      model_id              = "qwen3-coder-30b"
+      model_id              = "qwen3-coder-30b-a3b"
       max_tokens            = 8192
       context_window        = 65536
+      input_cost_per_token  = 0
+      output_cost_per_token = 0
+    }
+
+    # EXPERIMENTAL: Qwen3-Coder-Next 80B-A3B, UD-Q4_K_XL (~49.6GB), spans both
+    # cards. Hybrid Gated-DeltaNet arch — full 262144 native ctx fits (cheap
+    # KV). Present so it's selectable, but NOT opencode's default main; the
+    # Vulkan path for this arch is immature (see data/llama-swap/config.yaml
+    # block for the gated_delta_net-shader + tool-call-EOS caveats to verify
+    # before promoting it).
+    "coding-qwen3-coder-next-80b-a3b" = {
+      provider              = "llamaswap"
+      model_id              = "qwen3-coder-next-80b-a3b"
+      max_tokens            = 8192
+      context_window        = 262144
       input_cost_per_token  = 0
       output_cost_per_token = 0
     }

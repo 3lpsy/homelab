@@ -21,7 +21,7 @@
 #   - LLAMACPP_REF       github.com/ggml-org/llama.cpp/releases  (the
 #                        llama-<ref>-bin-ubuntu-vulkan-x64.tar.gz asset)
 #   - LLAMA_SWAP_VERSION github.com/mostlygeek/llama-swap/releases
-ARG LLAMACPP_REF=b9297
+ARG LLAMACPP_REF=b9515
 ARG LLAMA_SWAP_VERSION=217
 
 FROM ubuntu:26.04

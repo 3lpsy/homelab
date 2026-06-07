@@ -189,9 +189,13 @@ resource "kubernetes_deployment" "crates" {
             mount_path = "/var/cache/chilled-crates"
           }
 
+          # Modest headroom for a parallel `cargo` resolution burst (many
+          # concurrent index fetches + the cooldown re-serialization). NOTE this
+          # is NOT what fixes upstream-503s from crates.io — those are egress/
+          # crates.io-side; this just gives the single-threaded backend room.
           resources {
-            requests = { cpu = "100m", memory = "128Mi" }
-            limits   = { cpu = "1", memory = "512Mi" }
+            requests = { cpu = "100m", memory = "256Mi" }
+            limits   = { cpu = "1", memory = "1Gi" }
           }
 
           liveness_probe {

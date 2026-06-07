@@ -115,6 +115,39 @@ RUN rustup toolchain install nightly --profile minimal \
  && cargo install --locked just \
  && chmod -R a+w "$CARGO_HOME" "$RUSTUP_HOME"
 
+# ─── 2c. mold — fastest Linux linker. apt (gated), stable, caches like §2b. ─
+# Beats the lld from §1 (which stays as a fallback). Installed only; WIRED IN
+# via cargo config you add later (rustflags `-C link-arg=-fuse-ld=mold`). gcc 14
+# (trixie) supports -fuse-ld=mold directly, so no clang needed for it.
+RUN apt-get update && apt-get install -y --no-install-recommends mold \
+ && rm -rf /var/lib/apt/lists/*
+
+# ─── 2d. cargo-nextest — faster, better-isolated test runner. ──────────────
+# Own layer (NOT folded into §2b's && chain) so adding it doesn't invalidate
+# §2b's heavy compiles, and a future nextest bump doesn't rebuild sccache.
+# cargo install --locked (NOT binstall) to stay behind the crates gate. Re-chmod
+# a+w: this adds new bins + registry entries under CARGO_HOME after §2b's chmod.
+RUN cargo install --locked cargo-nextest \
+ && chmod -R a+w "$CARGO_HOME"
+
+# ─── 2e. sccache — compilation cache. Own layer (caches independently). ────
+# Installed only; OPT IN via cargo config (`[build] rustc-wrapper = "sccache"`)
+# or RUSTC_WRAPPER, and point SCCACHE_DIR at the PVC so the cache survives pod
+# restarts. NOTE: sccache and incremental compilation are mutually exclusive —
+# best for clean/branch-switch builds, not tight edit-rebuild loops (see the
+# config proposal in the PR description / docs).
+RUN cargo install --locked sccache \
+ && chmod -R a+w "$CARGO_HOME"
+
+# ─── 2f. Cranelift codegen backend (nightly) — faster DEV codegen. ─────────
+# rustup component on the nightly toolchain installed in §2b. Faster debug
+# compiles than LLVM (dev-only; release still uses LLVM). Installed only —
+# opt in per-project via `[profile.dev] codegen-backend = "cranelift"` +
+# `[unstable] codegen-backend = true`, with a nightly toolchain. Writes under
+# RUSTUP_HOME, so re-chmod it (not CARGO_HOME) for runtime use by `user`.
+RUN rustup component add --toolchain nightly rustc-codegen-cranelift-preview \
+ && chmod -R a+w "$RUSTUP_HOME"
+
 # ─── 3. uv + Python 3.14 + Python tooling — uv ships weekly ───────────────
 # uv binary → /usr/local/bin (UV_INSTALL_DIR). uv-managed Python →
 # UV_PYTHON_INSTALL_DIR, uv tools (ruff, basedpyright) → UV_TOOL_DIR with
@@ -349,19 +382,48 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       '{ "default": [ { "type": "insecureAcceptAnything" } ] }' \
       > /etc/containers/policy.json
 
-# ─── 5h. Setuid hardening — no privesc path to root for `user` ─────────────
+# ─── 5h. Chromium + chromedriver for thirtyfour e2e testing ────────────────
+# thirtyfour (Rust WebDriver client) drives a REAL browser through a WebDriver
+# server, so it needs BOTH the driver AND the browser. chromium + chromium-driver
+# (chromedriver) come from the Debian repo, version-locked together (148.x) so
+# the driver always matches the browser. chromedriver installs at
+# /usr/bin/chromedriver (on PATH); chromium at /usr/bin/chromium. (Firefox /
+# geckodriver omitted by request — add firefox-esr + the Mozilla geckodriver
+# release here if you ever want the gecko engine too.)
+# Placed LOW (just above the setuid strip + opencode) so adding it leaves the
+# expensive Rust/Python/node layers above fully cached — only §6 rebuilds.
+# IN-CONTAINER NOTE: pass `--no-sandbox` in your thirtyfour Chrome caps — the
+# chromium setuid sandbox helper is stripped by §5i below, and userns sandboxing
+# isn't available in this pod anyway. Add `--headless=new` for headless runs.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium chromium-driver \
+ && rm -rf /var/lib/apt/lists/*
+
+# ─── 5i. Setuid hardening — no privesc path to root for `user` ─────────────
 # opencode runs as the unprivileged `user`; the ONLY way to root is opkssh
 # sshd. Strip the setuid/setgid bit from every binary EXCEPT podman's id-map
 # helpers (newuidmap/newgidmap), which rootless podman genuinely needs and
 # which only write a userns uid_map (not a general root-shell vector). This
 # removes su/mount/umount/passwd/chsh/chfn/gpasswd/newgrp/etc. as escalation
-# surface. sudo is NOT installed (and must never be); root has no password
-# (opkssh-only). allow_privilege_escalation stays true in the pod (podman),
-# so the boundary is the absence of escalation TARGETS, enforced here.
+# surface — including chromium's chrome-sandbox helper (§5h), which is why
+# thirtyfour Chrome runs need `--no-sandbox`. sudo is NOT installed (and must
+# never be); root has no password (opkssh-only). allow_privilege_escalation
+# stays true in the pod (podman), so the boundary is the absence of escalation
+# TARGETS, enforced here.
 RUN find / -xdev -perm /6000 -type f \
       ! -path /usr/bin/newuidmap \
       ! -path /usr/bin/newgidmap \
       -exec chmod a-s {} + 2>/dev/null || true
+
+# Force the setuid BIT on the id-map helpers. Debian ships them with file
+# capabilities (cap_setuid,cap_setgid+ep), NOT the setuid bit — but the
+# in-cluster ROOTLESS BuildKit that builds this image can't set the
+# security.capability xattr (needs CAP_SETFCAP), so the caps are lost and the
+# helpers ship unprivileged → rootless podman fails with "newuidmap: write to
+# uid_map failed: Operation not permitted". The setuid bit is a plain mode bit
+# that survives the build; with allow_privilege_escalation=true the helper runs
+# as userns-root and can write the map. (Same fix as data/images/git-runner.)
+RUN chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap
 
 # ─── 6. opencode itself — changes most often ──────────────────────────────
 # bun global dir is /usr/local/bun (BUN_INSTALL, §1b) — opencode + the §5d

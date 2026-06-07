@@ -71,6 +71,9 @@ locals {
     dl Qwen/Qwen3-1.7B-GGUF                       Qwen3-1.7B-Q8_0.gguf
     dl unsloth/gemma-4-31B-it-GGUF                gemma-4-31B-it-Q5_K_M.gguf
     dl unsloth/gemma-4-31B-it-GGUF                mmproj-F16.gguf               gemma-4-mmproj-F16.gguf
+    # EXPERIMENTAL Qwen3-Coder-Next 80B-A3B (~49.6GB single file, root of the
+    # repo — the UD-Q5/Q6 quants are sharded-in-folders, UD-Q4_K_XL is not).
+    dl unsloth/Qwen3-Coder-Next-GGUF              Qwen3-Coder-Next-UD-Q4_K_XL.gguf
     echo "all models present"
   EOT
 }

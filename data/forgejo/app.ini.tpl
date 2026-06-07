@@ -101,7 +101,11 @@ DEFAULT_THEME = forgejo-auto
 ENABLED = false
 
 [actions]
-ENABLED = false
+; Forgejo Actions (GitHub-Actions-equivalent CI). Workflows are executed by
+; the in-cluster runner in services/git-runner.tf. DEFAULT_ACTIONS_URL is left
+; at the upstream default (code.forgejo.org) for `uses:` action resolution;
+; set it to `github` if workflows pull GitHub-only actions.
+ENABLED = true
 
 [federation]
 ENABLED = false

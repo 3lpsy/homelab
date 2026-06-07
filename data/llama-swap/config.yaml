@@ -101,7 +101,7 @@ models:
       - "qwen3-30b"
 
   # ── Coding specialist (same footprint; swaps with the headline) ──
-  "qwen3-coder-30b":
+  "qwen3-coder-30b-a3b":
     cmd: |
       ${bin}
       -m ${models_dir}/Qwen3-Coder-30B-A3B-Instruct-Q6_K.gguf
@@ -110,6 +110,40 @@ models:
       --jinja --reasoning-budget 0
       ${qwen_sampler_no_reasoning} --repeat-penalty 1.05
     ttl: 600
+
+  # ── EXPERIMENTAL: Qwen3-Coder-Next 80B-A3B, UD-Q4_K_XL (~49.6GB) ──
+  # Hybrid Gated-DeltaNet + Gated-Attention arch. Spans both cards (49.6GB >
+  # one 32GB card). DELIBERATELY does NOT use ${span_both}: that macro sets
+  # -ub 2048, but Qwen3-Next on Vulkan HALVES throughput at -ub > 512
+  # (llama.cpp#18725), so this overrides to -ub 512 -b 2048. DeltaNet KV is
+  # ~4x cheaper than a dense transformer, so -c 262144 (full native ctx) fits
+  # the ~14GB headroom easily. Instruct → --reasoning-budget 0 (no think tags,
+  # so no --reasoning-format needed, same as qwen3-coder-30b-a3b).
+  # Sampler is Qwen's OWN Coder-Next recommendation (temp 1.0 / top-p 0.95 /
+  # top-k 40 / min-p 0.01 — verified against the Qwen + Unsloth model cards),
+  # NOT the generic qwen_sampler_no_reasoning macro: Coder-Next wants higher
+  # temp and top-k than the other Qwen3 non-thinking models.
+  #
+  # BEFORE TRUSTING THIS, verify on first load (the Vulkan path for this arch
+  # is immature as of mid-2026). The pinned LLAMACPP_REF (b9515) post-dates the
+  # Vulkan gated_delta_net.comp merge (missing at b8234, llama.cpp#20354), so
+  # the shader IS present — but still confirm at runtime:
+  #   1. Grep the startup log for any SSM/DeltaNet op assigned to CPU. If the
+  #      DeltaNet layers fall back to CPU, decode crawls (no-go).
+  #   2. Confirm tool calls actually fire in opencode — Qwen3-Coder-Next has a
+  #      reported "EOS instead of tool_call" bug (llama.cpp#19513) that would
+  #      break agentic use.
+  # Only promote to opencode's main `model` once both pass.
+  "qwen3-coder-next-80b-a3b":
+    cmd: |
+      ${bin}
+      -m ${models_dir}/Qwen3-Coder-Next-UD-Q4_K_XL.gguf
+      -ngl 999 -sm layer -ts 1,1 -fa on --host 0.0.0.0 --port ${PORT}
+      -ub 512 -b 2048
+      -c 262144 --parallel 1 --cache-type-k q8_0 --cache-type-v q8_0
+      --jinja --reasoning-budget 0
+      --temp 1.0 --top-p 0.95 --top-k 40 --min-p 0.01
+    ttl: 900
 
   # ── Small 4B (cheap subtasks: titles, explore/commit-msg subagents) ──
   "qwen3-4b":
