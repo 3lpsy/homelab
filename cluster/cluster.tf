@@ -93,6 +93,8 @@ module "cluster-provision" {
   enable_lact               = false
   # No atlantic/AQC NIC on delphi.
   enable_atlantic_gso_fix   = false
+  # Subuid pool for hostUsers:false pods (provisioned but currently unused).
+  enable_user_namespaces    = true
   # NUT primary: delphi has the UPS on USB. Runs the driver + upsd + upsmon and
   # serves status to artemis over the LAN. Shutdown fires at ~3 min remaining
   # runtime (default nut_runtime_low) with a 10-min wall-clock backstop.
@@ -268,6 +270,8 @@ module "artemis-provision" {
   # AQC113 10GbE (atlantic driver) — disable its broken UDP-GSO or all tailscale
   # off artemis is capped at ~9.5 Mbps. See node-provision-server/main.tf.
   enable_atlantic_gso_fix = true
+  # Subuid pool for hostUsers:false pods (provisioned but currently unused).
+  enable_user_namespaces = true
   # Agent join: delphi's fqdn is in its k3s serving cert (--tls-san), so the
   # https URL validates. node-token read above.
   k3s_role       = "agent"

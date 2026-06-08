@@ -227,6 +227,20 @@ RUN mkdir -p /etc/apt/keyrings \
  && rm -rf /tmp/delta.tgz "/tmp/delta-${DELTA_VERSION}-x86_64-unknown-linux-musl" \
  && rm -rf /var/lib/apt/lists/*
 
+# ─── 5a2. fj (forgejo-cli) — Forgejo-native CLI for PRs/issues/Actions ──────
+# Remote API client (like gh/tea). Authenticates with a Forgejo PAT, configured
+# at runtime from ~/.local/share/forgejo-cli/keys.json (written by the entrypoint
+# from FORGEJO_TOKEN — a write:repository,write:issue token minted for the
+# RESTRICTED `opencode` Forgejo user by the git bootstrap). Lets opencode read
+# PRs/commits + Actions tasks and dispatch/comment. Pinned + checksum-verified
+# (it's a contrib tool, not first-party Forgejo).
+RUN curl -fsSL -o /tmp/fj.tgz \
+      "https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/v0.5.0/forgejo-cli-x86_64-linux.tar.gz" \
+ && echo "a6fe25844cb15d8a97e4909933a336e4969b228bffc0da489e100d5860362255  /tmp/fj.tgz" | sha256sum -c - \
+ && tar -xzf /tmp/fj.tgz -C /usr/local/bin fj \
+ && chmod 0755 /usr/local/bin/fj \
+ && rm -f /tmp/fj.tgz
+
 # ─── 5b. SSH server + opkssh (OpenID-authenticated SSH) ────────────────────
 # Lets the user SSH straight into THIS container (not the tailscale
 # sidecar) authenticated by Zitadel. opkssh's `verify` runs as the
@@ -319,69 +333,6 @@ RUN printf '%s\n' \
 # an opencode bump (§6) doesn't reinstall it.
 RUN bun install -g @tailwindcss/cli
 
-# ─── 5g. Rootless podman (+ compose) for one-off nested dev containers ─────
-# Lets opencode spawn throwaway dev containers INSIDE this pod — not
-# docker-in-docker, not the host containerd. Works unprivileged because the
-# k3s nodes give us userns (no seccomp block) + native rootless overlayfs
-# (kernel ≥ 7.0.9), so NO /dev/fuse and NO fuse-overlayfs are needed. crun
-# over runc (lighter, better cgroup-v2 + rootless). uidmap ships the setuid
-# newuidmap/newgidmap helpers that map the subuid range; slirp4netns gives
-# nested containers userspace networking (NATs out as the pod's own egress).
-# /etc/subuid + subgid grant root one full /16 of subordinate ids (podman
-# default range).
-#
-# `podman compose` is wired to the Docker Compose v2 binary as its provider
-# (compose_providers below) — podman is the engine, there is NO Docker
-# daemon. `podman compose up` drives rootless podman against a transient
-# socket podman provisions itself. Invoke `podman compose`, not bare
-# `docker-compose` (the latter would hunt for a dockerd that isn't here).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      podman crun uidmap slirp4netns \
- && rm -rf /var/lib/apt/lists/* \
- # Subordinate id ranges: `user` (uid 1001) runs rootless podman, so it needs
- # its OWN non-overlapping subuid/subgid range. root keeps 100000-165535;
- # `user` gets 165536-231071. Overlapping ranges are rejected by newuidmap.
- && printf '%s\n' 'root:100000:65536' 'user:165536:65536' > /etc/subuid \
- && printf '%s\n' 'root:100000:65536' 'user:165536:65536' > /etc/subgid \
- # Docker Compose v2 (static Go binary) as podman's compose provider. Latest
- # release, matching yq's URL form in §5. amd64-only (image targets amd64).
- && curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
-       -o /usr/local/bin/docker-compose \
- && chmod +x /usr/local/bin/docker-compose \
- && mkdir -p /etc/containers \
- # containers.conf: cgroupfs + cgroups disabled (no cgroup-v2 delegation
- # rootless-in-pod; the pod's own k8s limits still cap the whole thing),
- # crun runtime, slirp4netns networking, file event logger (no journald).
- # compose_providers pins `podman compose` to the docker-compose binary above.
- && printf '%s\n' \
-      '[engine]' \
-      'cgroup_manager = "cgroupfs"' \
-      'events_logger = "file"' \
-      'runtime = "crun"' \
-      'compose_providers = ["docker-compose"]' \
-      'compose_warning_logs = false' \
-      '' \
-      '[containers]' \
-      'cgroups = "disabled"' \
-      'netns = "slirp4netns"' \
-      > /etc/containers/containers.conf \
- # storage.conf: native kernel overlay (NO mount_program key = no
- # fuse-overlayfs). graphroot defaults to $HOME/.local/share/containers,
- # which opencode.tf backs with a disk emptyDir to dodge overlay-on-overlay.
- # vfs is the fallback if native overlay is ever rejected.
- && printf '%s\n' \
-      '[storage]' \
-      'driver = "overlay"' \
-      'runroot = "/run/containers/storage"' \
-      '' \
-      '[storage.options.overlay]' \
-      '# no mount_program => native rootless overlay' \
-      > /etc/containers/storage.conf \
- # policy.json: permissive — single-user dev pod, no image signing.
- && printf '%s\n' \
-      '{ "default": [ { "type": "insecureAcceptAnything" } ] }' \
-      > /etc/containers/policy.json
-
 # ─── 5h. Chromium + chromedriver for thirtyfour e2e testing ────────────────
 # thirtyfour (Rust WebDriver client) drives a REAL browser through a WebDriver
 # server, so it needs BOTH the driver AND the browser. chromium + chromium-driver
@@ -401,29 +352,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ─── 5i. Setuid hardening — no privesc path to root for `user` ─────────────
 # opencode runs as the unprivileged `user`; the ONLY way to root is opkssh
-# sshd. Strip the setuid/setgid bit from every binary EXCEPT podman's id-map
-# helpers (newuidmap/newgidmap), which rootless podman genuinely needs and
-# which only write a userns uid_map (not a general root-shell vector). This
-# removes su/mount/umount/passwd/chsh/chfn/gpasswd/newgrp/etc. as escalation
-# surface — including chromium's chrome-sandbox helper (§5h), which is why
-# thirtyfour Chrome runs need `--no-sandbox`. sudo is NOT installed (and must
-# never be); root has no password (opkssh-only). allow_privilege_escalation
-# stays true in the pod (podman), so the boundary is the absence of escalation
-# TARGETS, enforced here.
-RUN find / -xdev -perm /6000 -type f \
-      ! -path /usr/bin/newuidmap \
-      ! -path /usr/bin/newgidmap \
-      -exec chmod a-s {} + 2>/dev/null || true
-
-# Force the setuid BIT on the id-map helpers. Debian ships them with file
-# capabilities (cap_setuid,cap_setgid+ep), NOT the setuid bit — but the
-# in-cluster ROOTLESS BuildKit that builds this image can't set the
-# security.capability xattr (needs CAP_SETFCAP), so the caps are lost and the
-# helpers ship unprivileged → rootless podman fails with "newuidmap: write to
-# uid_map failed: Operation not permitted". The setuid bit is a plain mode bit
-# that survives the build; with allow_privilege_escalation=true the helper runs
-# as userns-root and can write the map. (Same fix as data/images/git-runner.)
-RUN chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap
+# sshd. Strip the setuid/setgid bit from EVERY binary. Removes
+# su/mount/umount/passwd/chsh/chfn/
+# gpasswd/newgrp/etc. + chromium's chrome-sandbox helper (§5h, hence
+# `--no-sandbox` for thirtyfour) as escalation surface. sudo is NOT installed;
+# root has no password (opkssh-only). Combined with allow_privilege_escalation
+# = false on the pod, `user` has no path to root.
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
 # ─── 6. opencode itself — changes most often ──────────────────────────────
 # bun global dir is /usr/local/bun (BUN_INSTALL, §1b) — opencode + the §5d

@@ -189,6 +189,78 @@ resource "kubernetes_network_policy" "registry_from_builder" {
   }
 }
 
+# ─── Registry GC sidecar ──────────────────────────────────────────────────────
+# Garbage collection runs as a SIDECAR in the registry pod (container defined in
+# the Deployment below), NOT a CronJob+kubectl-exec. RBAC cannot restrict
+# `pods/exec` to a single command, so an exec cron's ServiceAccount would be a
+# general code-exec foothold in the registry. The sidecar instead has NO token
+# (masked by an emptyDir over the token path), NO Role/RoleBinding, NO kubectl —
+# its only command is `registry garbage-collect`. It shares registry-data in-pod
+# (no RWO remount, no scaling, no API).
+#
+# GC is mark-and-sweep: deletes blobs no longer referenced by any tagged
+# manifest; --delete-untagged also drops untagged manifests (e.g. pruned
+# ci-test-*) + their blobs. It must not race a push (a not-yet-referenced blob
+# could be swept → corruption), so it runs WEEKLY in a no-CI window.
+variable "registry_gc_hour" {
+  type        = number
+  default     = 10
+  description = "UTC hour (0-23) for the weekly registry GC. Pick a no-CI-push window; default 10 UTC (~04:00-05:00 CST)."
+  validation {
+    condition     = var.registry_gc_hour >= 0 && var.registry_gc_hour <= 23
+    error_message = "registry_gc_hour must be an integer hour 0-23 (UTC)."
+  }
+}
+
+variable "registry_gc_dow" {
+  type        = number
+  default     = 0
+  description = "Day of week for the weekly registry GC: 0=Sunday … 6=Saturday (UTC). Default Sunday."
+  validation {
+    condition     = var.registry_gc_dow >= 0 && var.registry_gc_dow <= 6
+    error_message = "registry_gc_dow must be 0-6 (0=Sunday)."
+  }
+}
+
+variable "image_registry_ui" {
+  type        = string
+  default     = "joxit/docker-registry-ui:2.5.7"
+  description = "Joxit docker-registry-ui image for the registry web UI sidecar (served at registry.<magic>/ui)."
+}
+
+resource "kubernetes_config_map" "registry_gc_script" {
+  metadata {
+    name      = "registry-gc-script"
+    namespace = kubernetes_namespace.registry.metadata[0].name
+  }
+  data = {
+    # POSIX sh (Alpine busybox in registry:2). Epoch math (date +%s/%w) avoids
+    # leading-zero/octal pitfalls; GC_HOUR/GC_DOW come from container env so there
+    # is no Terraform ${...} interpolation in the body. The image's default
+    # /etc/docker/registry/config.yml already points rootdirectory at
+    # /var/lib/registry (the PVC mount). Its ONLY action is garbage-collect.
+    "registry-gc.sh" = <<-EOT
+      #!/bin/sh
+      set -u
+      echo "registry-gc: sidecar started; weekly GC on dow $GC_DOW at $GC_HOUR:00 UTC"
+      while true; do
+        now=$(date -u +%s)
+        dow=$(date -u +%w)
+        days=$(( (GC_DOW - dow + 7) % 7 ))
+        secs=$(( days * 86400 + GC_HOUR * 3600 - now % 86400 ))
+        if [ "$secs" -le 0 ]; then secs=$(( secs + 604800 )); fi
+        echo "registry-gc: sleeping $secs s until next weekly run"
+        sleep "$secs"
+        echo "registry-gc: garbage-collect start $(date -u)"
+        registry garbage-collect --delete-untagged /etc/docker/registry/config.yml \
+          || echo "registry-gc: garbage-collect FAILED (will retry next cycle)"
+        echo "registry-gc: garbage-collect done $(date -u)"
+        sleep 60
+      done
+    EOT
+  }
+}
+
 resource "kubernetes_deployment" "registry" {
   metadata {
     name      = "registry"
@@ -210,6 +282,7 @@ resource "kubernetes_deployment" "registry" {
         annotations = {
           "nginx-config-hash"                   = sha1(kubernetes_config_map.registry_nginx_config.data["nginx.conf"])
           "htpasswd-script-hash"                = sha1(kubernetes_config_map.registry_htpasswd_script.data["registry-htpasswd-ssha.py"])
+          "gc-script-hash"                      = sha1(kubernetes_config_map.registry_gc_script.data["registry-gc.sh"])
           "secret.reloader.stakater.com/reload" = "registry-htpasswd-src,${module.registry_tls_vault.tls_secret_name}"
           # Image layers are rebuildable from Dockerfiles in data/images/* via
           # the BuildKit jobs in the builder namespace; backing them up via
@@ -339,6 +412,99 @@ resource "kubernetes_deployment" "registry" {
           }
         }
 
+        # GC sidecar — reclaims unreferenced blobs WEEKLY. Its ONLY command is
+        # `registry garbage-collect` (see /scripts/registry-gc.sh). NO kubectl, NO
+        # RBAC, NO ServiceAccount token (masked below) — it cannot do anything
+        # else. Shares registry-data in-pod so no remount/scale/API is needed.
+        # Rationale + script + schedule vars are above this resource.
+        container {
+          name              = "registry-gc"
+          image             = var.image_registry
+          image_pull_policy = "IfNotPresent"
+          command           = ["/bin/sh", "/scripts/registry-gc.sh"]
+
+          env {
+            name  = "GC_HOUR"
+            value = tostring(var.registry_gc_hour)
+          }
+          env {
+            name  = "GC_DOW"
+            value = tostring(var.registry_gc_dow)
+          }
+
+          # Same store the main container writes, so GC can delete unreferenced
+          # blobs. (Image default config.yml rootdirectory == /var/lib/registry.)
+          volume_mount {
+            name       = "registry-data"
+            mount_path = "/var/lib/registry"
+          }
+          volume_mount {
+            name       = "registry-gc-script"
+            mount_path = "/scripts"
+            read_only  = true
+          }
+          # Mask the SA token in THIS container only — the sidecar must never
+          # reach the kube API. The main container keeps its token (CSI/Vault).
+          volume_mount {
+            name       = "registry-gc-no-token"
+            mount_path = "/var/run/secrets/kubernetes.io/serviceaccount"
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "500m", memory = "256Mi" }
+          }
+        }
+
+        # Registry UI (Joxit) — static SPA, served behind the nginx sidecar at
+        # /ui. Pure SPA mode: it serves only web assets on :8080; the browser
+        # calls the registry API at https://<registry>/v2/ (SAME origin via the
+        # nginx /v2/ location → no CORS). The UI's Delete button uses the
+        # registry delete API (REGISTRY_STORAGE_DELETE_ENABLED=true above); the GC
+        # sidecar reclaims the freed blobs. Joxit has no runtime base-path option,
+        # so the nginx /ui/ location rewrites root-absolute asset paths (see
+        # data/nginx/registry.nginx.conf.tpl).
+        container {
+          name              = "registry-ui"
+          image             = var.image_registry_ui
+          image_pull_policy = "IfNotPresent"
+
+          env {
+            name  = "REGISTRY_TITLE"
+            value = "${var.registry_domain}.${local.magic_fqdn_suffix}"
+          }
+          env {
+            name  = "REGISTRY_URL"
+            value = "https://${var.registry_domain}.${local.magic_fqdn_suffix}"
+          }
+          env {
+            name  = "SINGLE_REGISTRY"
+            value = "true"
+          }
+          env {
+            name  = "DELETE_IMAGES"
+            value = "true"
+          }
+          env {
+            name  = "SHOW_CONTENT_DIGEST"
+            value = "true"
+          }
+          env {
+            name  = "NGINX_LISTEN_PORT"
+            value = "8080"
+          }
+
+          port {
+            container_port = 8080
+            name           = "ui"
+          }
+
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "300m", memory = "128Mi" }
+          }
+        }
+
         # Registry Volumes
         volume {
           name = "registry-data"
@@ -355,6 +521,18 @@ resource "kubernetes_deployment" "registry" {
               secretProviderClass = module.registry_tls_vault.spc_name
             }
           }
+        }
+        # GC sidecar volumes (see the GC section above this resource).
+        volume {
+          name = "registry-gc-script"
+          config_map {
+            name         = kubernetes_config_map.registry_gc_script.metadata[0].name
+            default_mode = "0555"
+          }
+        }
+        volume {
+          name = "registry-gc-no-token"
+          empty_dir {}
         }
 
         # Nginx

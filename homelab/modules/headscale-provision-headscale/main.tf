@@ -94,6 +94,55 @@ resource "null_resource" "headscale_service" {
   depends_on = [null_resource.headscale_config, null_resource.headscale_merge_script]
 }
 
+resource "null_resource" "headscale_oidc_watchdog" {
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = trimspace(file(var.ssh_priv_key_path))
+    timeout     = "1m"
+  }
+
+  triggers = {
+    script = md5(templatefile("${path.root}/../data/headscale/headscale-oidc-watchdog.sh.tpl", {
+      magic_fqdn_suffix = var.headscale_magic_domain
+    }))
+    service = md5(templatefile("${path.root}/../data/headscale/headscale-oidc-watchdog.service.tpl", {}))
+    timer   = md5(templatefile("${path.root}/../data/headscale/headscale-oidc-watchdog.timer.tpl", {}))
+  }
+
+  provisioner "file" {
+    content = templatefile("${path.root}/../data/headscale/headscale-oidc-watchdog.sh.tpl", {
+      magic_fqdn_suffix = var.headscale_magic_domain
+    })
+    destination = "/home/${var.ssh_user}/headscale-oidc-watchdog.sh"
+  }
+
+  provisioner "file" {
+    content     = templatefile("${path.root}/../data/headscale/headscale-oidc-watchdog.service.tpl", {})
+    destination = "/home/${var.ssh_user}/headscale-oidc-watchdog.service"
+  }
+
+  provisioner "file" {
+    content     = templatefile("${path.root}/../data/headscale/headscale-oidc-watchdog.timer.tpl", {})
+    destination = "/home/${var.ssh_user}/headscale-oidc-watchdog.timer"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -eu",
+      "sudo install -m 0755 -o root -g root /home/${var.ssh_user}/headscale-oidc-watchdog.sh /usr/local/sbin/headscale-oidc-watchdog.sh",
+      "sudo install -m 0644 -o root -g root /home/${var.ssh_user}/headscale-oidc-watchdog.service /etc/systemd/system/headscale-oidc-watchdog.service",
+      "sudo install -m 0644 -o root -g root /home/${var.ssh_user}/headscale-oidc-watchdog.timer /etc/systemd/system/headscale-oidc-watchdog.timer",
+      "rm -f /home/${var.ssh_user}/headscale-oidc-watchdog.sh /home/${var.ssh_user}/headscale-oidc-watchdog.service /home/${var.ssh_user}/headscale-oidc-watchdog.timer",
+      "command -v restorecon >/dev/null 2>&1 && sudo restorecon -v /usr/local/sbin/headscale-oidc-watchdog.sh /etc/systemd/system/headscale-oidc-watchdog.service /etc/systemd/system/headscale-oidc-watchdog.timer || true",
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable --now headscale-oidc-watchdog.timer",
+    ]
+  }
+  depends_on = [null_resource.headscale_service]
+}
+
 resource "null_resource" "headscale_restart" {
   connection {
     type        = "ssh"

@@ -105,8 +105,8 @@
         description: DNS sinkhole
         icon: pi-hole.svg
     - Registry:
-        href: https://${registry_fqdn}
-        description: Container registry
+        href: https://${registry_fqdn}/ui/
+        description: Container registry (Joxit UI)
         icon: mdi-package-variant-closed
     - Ntfy:
         href: https://${ntfy_fqdn}

@@ -1,11 +1,16 @@
 # Forgejo Actions runner (GitHub-Actions-equivalent CI for the Forgejo forge).
 #
-# Single pod in the `git` namespace. The main container runs a rootless
-# podman Docker-API socket + `forgejo-runner daemon`; workflow jobs run in
-# unprivileged podman containers (no privileged DinD) — same rootless stack
-# as opencode (project_opencode_rootless_podman). NOT on the tailnet: the
-# runner only dials out (Forgejo API + registries), so there's no headscale
-# user, ACL, nginx, or Tailscale sidecar.
+# Single pod in the `git` namespace. The main container runs a podman
+# Docker-API socket + `forgejo-runner daemon` as the unprivileged `runner` user
+# (uid 1001) — ROOTLESS podman in an UNPRIVILEGED pod. Nested job containers run
+# in a further user namespace (subuid/subgid 100000:65536), so "root" inside any
+# job maps to an unprivileged host uid, NOT node root: a malicious CI dependency
+# that gains container-root cannot pivot to compromise artemis. Same isolation
+# model as the rootless BuildKit `builder`. Mitigations stack: user-scoped runner
+# (only your repos), pinned to artemis, fenced by NetworkPolicies, and the admin
+# cred is isolated to the init container. NOT on the tailnet: the runner only
+# dials out (Forgejo API + registries), so there's no headscale user, ACL,
+# nginx, or Tailscale sidecar.
 #
 # Registration is user-scoped and automatic: an init container mints a
 # user-scoped registration token (gitadmin + `Sudo:` header) and writes
@@ -18,38 +23,38 @@
 # into every job via container.options) — repo workflows push with NO secret.
 # Per-repo external creds belong in repo-level Forgejo secrets.
 #
-# Cross-referenced against https://forgejo.org/docs/latest/admin/actions/security/:
-#   ✓ privileged=false + rootless podman (no "act as root on the runner")
-#   ✓ container.network="" (fresh isolated network per job; not host/bridge)
-#   ✓ runner.timeout bounded; per-job --memory/--cpus (see config.yaml.tpl)
-#   ✓ admin cred isolated to the init container; .runner is NOT in
-#     valid_volumes, so jobs can't read the runner token
-#   ✓ instance already locks down Mallory: app.ini DISABLE_REGISTRATION=true
-#     + REQUIRE_SIGNIN_VIEW=true (no anonymous accounts)
-#   ~ Scope is USER-level (covers all your repos), not the docs' tightest
-#     repo-level — a deliberate choice (AskUserQuestion). Re-register
-#     repo-scoped if you want minimal blast radius.
-#   ~ NOT ephemeral: this is a persistent `daemon` (k8s Deployment), not
-#     `forgejo-runner one-job --ephemeral`. The docs prefer ephemeral so a
-#     job can't reuse the runner; persistent is the pragmatic k8s choice for
-#     a single-user homelab. The ambient registry cred (dedicated
-#     `forgejo-runner` user) IS readable by any job (valid_volumes) — fine
-#     while the runner only serves your own repos; reconsider if you ever run
-#     untrusted/fork-PR workflows here (scope the registry user tighter).
+# Security notes (https://forgejo.org/docs/latest/admin/actions/security/):
+#   - The pod is UNPRIVILEGED + rootless (see the container security_context).
+#     Container-root != node-root via the userns mapping; blast radius is further
+#     bounded by user-scoped registration, artemis-only scheduling, NetworkPolicies,
+#     and the admin cred isolated to the init container (.runner is not in
+#     valid_volumes).
+#   - Scope is USER-level (covers all your repos), not the docs' tightest
+#     repo-level — a deliberate choice. Re-register repo-scoped to minimize it.
+#   - NOT ephemeral: persistent `daemon` (k8s Deployment). The ambient registry
+#     cred (dedicated `forgejo-runner` user) IS readable by any job — fine while
+#     the runner only serves your own repos. Rootless reduces but does not erase
+#     this risk: do NOT point this runner at untrusted/fork-PR workflows.
 
 locals {
   git_runner_image = "${local.thunderbolt_registry}/git-runner:latest"
+  # CI job image (the `ci-podman` label) — self-built podman+Node image in the
+  # in-cluster registry, replacing upstream catthehacker. Built by
+  # services/git-runner-jobs.tf.
+  ci_podman_image = "${local.thunderbolt_registry}/ci-podman:latest"
 
   git_runner_dockerio_fqdn = "${var.registry_dockerio_domain}.${local.magic_fqdn_suffix}"
   git_runner_ghcrio_fqdn   = "${var.registry_ghcrio_domain}.${local.magic_fqdn_suffix}"
   git_runner_npm_fqdn      = "${var.npm_domain}.${local.magic_fqdn_suffix}"
   git_runner_crates_fqdn   = "${var.crates_domain}.${local.magic_fqdn_suffix}"
 
-  # Default job images are pulled (by the podman service, in the runner pod
-  # netns) through the in-cluster ghcr.io mirror.
+  # Single label `ci-podman` → our self-built podman+Node job image in the
+  # in-cluster registry (only official bases / images we build; no catthehacker).
+  # The runner's podman pulls it authenticated (REGISTRY_AUTH_FILE on the runner
+  # container) over the existing netpol egress to the registry ns. Workflows use
+  # `runs-on: ci-podman`.
   git_runner_labels = join(",", [
-    "ubuntu-latest:docker://${local.git_runner_ghcrio_fqdn}/catthehacker/ubuntu:act-22.04",
-    "ubuntu-22.04:docker://${local.git_runner_ghcrio_fqdn}/catthehacker/ubuntu:act-22.04",
+    "ci-podman:docker://${local.ci_podman_image}",
   ])
 }
 
@@ -113,6 +118,8 @@ resource "kubernetes_config_map" "git_runner_config" {
   }
   data = {
     "config.yaml" = templatefile("${path.module}/../data/git-runner/config.yaml.tpl", {
+      git_fqdn                     = local.git_fqdn
+      git_cluster_ip               = kubernetes_service.git.spec[0].cluster_ip
       registry_fqdn                = local.thunderbolt_registry
       registry_cluster_ip          = kubernetes_service.registry.spec[0].cluster_ip
       registry_dockerio_fqdn       = local.git_runner_dockerio_fqdn
@@ -128,7 +135,7 @@ resource "kubernetes_config_map" "git_runner_config" {
 }
 
 # Podman mirror drop-in for the runner pod (base-image pulls → in-cluster
-# caches). Same shape as opencode_podman_registries.
+# caches).
 resource "kubernetes_config_map" "git_runner_registries" {
   metadata {
     name      = "git-runner-registries"
@@ -181,10 +188,23 @@ resource "kubernetes_config_map" "git_runner_ci_cargo" {
   }
 }
 
-# ─── PVC (.runner file + act cache) ──────────────────────────────────────────
+# ─── PVC (.runner file + act cache + /data/build-cache) ──────────────────────
+# The pod runs rootless as uid 1001; the pod-level fs_group=1001 makes this
+# local-path PV (otherwise root-owned) writable by the runner. Also holds
+# /data/build-cache, bind-mounted into every job at /cache for the dev-release
+# incremental CARGO_HOME/CARGO_TARGET_DIR + staged-binary handoff (see
+# config.yaml.tpl + the entrypoint mkdir/chmod). (Image storage/graphroot stays
+# on a separate emptyDir, NOT this PVC: overlay can't stack on local-path.)
 resource "kubernetes_persistent_volume_claim" "git_runner_data" {
   lifecycle {
     prevent_destroy = true
+    # local-path's StorageClass has no allowVolumeExpansion, so resizing an
+    # EXISTING PVC is rejected by the API. Ignore request changes so bumping
+    # var.git_runner_storage_size only affects FRESH provisions and never errors
+    # an apply on the live PVC. NOTE: local-path doesn't enforce the size anyway —
+    # the build-cache grows on artemis's real disk (no PVC-size eviction, unlike
+    # the emptyDir graphroot); the number is nominal. Watch the node's disk.
+    ignore_changes = [spec[0].resources[0].requests]
   }
   metadata {
     name      = "git-runner-data"
@@ -236,13 +256,22 @@ resource "kubernetes_deployment" "git_runner" {
       spec {
         service_account_name = kubernetes_service_account.git_runner.metadata[0].name
 
-        # MUST run on artemis. Rootless nested podman (the whole point of this
-        # runner) needs artemis's kernel 7.x — delphi, the control-plane node, is
-        # held on an older kernel for the Coral gasket-dkms driver and the
-        # rootless userns uid_map setup fails there ("newuidmap: write to uid_map
-        # failed: Operation not permitted"). artemis carries gpu=true:NoSchedule,
-        # so this needs BOTH the selector and the toleration — same as opencode
-        # and the BuildKit builder (the other rootless-podman workloads).
+        # Rootless pod. fs_group=1001 hands the local-path PVC + the podman
+        # graphroot/runroot emptyDirs to the runner uid (they arrive root-owned).
+        # seccomp Unconfined: rootless podman's userns setup (unshare/clone) +
+        # nested-container mounts need syscalls a confined profile blocks — same
+        # as the rootless BuildKit pod (templates/buildkit-job).
+        security_context {
+          fs_group = 1001
+          seccomp_profile {
+            type = "Unconfined"
+          }
+        }
+
+        # Run on artemis (the compute node), alongside the BuildKit builder —
+        # off delphi's user-facing services + its node-bound local-path PVCs.
+        # artemis carries gpu=true:NoSchedule, so this needs BOTH the selector
+        # and the toleration.
         node_selector = { node = "artemis" }
         toleration {
           key      = "gpu"
@@ -290,6 +319,16 @@ resource "kubernetes_deployment" "git_runner" {
           image_pull_policy = "Always"
           command           = ["/register-init.sh"]
 
+          # Run as the runner uid so /data/.runner is owned 1001:1001 (matching
+          # the main container, which must rewrite it). Pure curl/jq + a file
+          # write — no setuid needed, so escalation stays off here.
+          security_context {
+            allow_privilege_escalation = false
+            run_as_user                = 1001
+            run_as_group               = 1001
+            run_as_non_root            = true
+          }
+
           env {
             name  = "GIT_FQDN"
             value = local.git_fqdn
@@ -324,22 +363,56 @@ resource "kubernetes_deployment" "git_runner" {
           }
         }
 
-        # ── Runner daemon + rootless podman (no admin cred mounted) ──
+        # ── Runner daemon + podman (no admin cred mounted) ──
         container {
           name              = "git-runner"
           image             = local.git_runner_image
           image_pull_policy = "Always"
 
-          # Rootless podman needs to set up a userns: allow_privilege_escalation
-          # must stay true (newuidmap/newgidmap are setuid-root); seccomp
-          # Unconfined for unshare(CLONE_NEWUSER). The image strips all other
-          # setuid bits + has no sudo, so this can't become a root shell.
-          # Per project_opencode_rootless_podman.
+          # The runner pulls the `ci-podman` job image from the in-cluster
+          # registry (authenticated, via the forgejo-runner registry user whose
+          # dockerconfigjson is mounted at /etc/ci-auth/config.json). forgejo-
+          # runner/act issues the pull over the Docker API and reads creds from
+          # $DOCKER_CONFIG/config.json — NOT REGISTRY_AUTH_FILE (that's podman-CLI
+          # only). So DOCKER_CONFIG is the one that actually authenticates the
+          # job-image pull; REGISTRY_AUTH_FILE is kept for any direct podman CLI
+          # use. Egress to the registry ns is allowed by git_runner_to_registry.
+          env {
+            name  = "DOCKER_CONFIG"
+            value = "/etc/ci-auth"
+          }
+          env {
+            name  = "REGISTRY_AUTH_FILE"
+            value = "/etc/ci-auth/config.json"
+          }
+
+          # Rootless: the runner + its podman run as the unprivileged `runner`
+          # user (uid 1001), and nested job containers get their own userns
+          # (subuid/subgid baked in the image), so container-root maps to an
+          # unprivileged host uid — never node root.
+          # allow_privilege_escalation MUST stay true: rootless podman invokes
+          # the setuid newuidmap/newgidmap helpers to write the nested-container
+          # uid/gid range mapping; with NoNewPrivs on (escalation=false) they
+          # fail ("newuidmap: write to uid_map failed"). This does NOT grant node
+          # root — newuidmap only writes within the allowed subuid range.
           security_context {
             privileged                 = false
             allow_privilege_escalation = true
-            seccomp_profile {
-              type = "Unconfined"
+            run_as_user                = 1001
+            run_as_group               = 1001
+            run_as_non_root            = true
+            # Keep SETUID/SETGID in the bounding set (they're in the default set
+            # already; explicit = intent + guarantee). The ACTUAL fix for the
+            # rootless userns mapping lives in the image: newuidmap/newgidmap are
+            # given file capabilities (cap_setuid/setgid +ep) so they run with
+            # CAP_SETUID at uid 1001 and can write the nested-container
+            # uid_map/gid_map — the Fedora setuid-bit path does not grant caps in
+            # this pod. File caps pull from THIS bounding set, and need
+            # NoNewPrivs=0 (allow_privilege_escalation above) to apply. See
+            # data/images/git-runner/Dockerfile. Not a path to node root: the
+            # helpers only map IDs within the runner's /etc/sub{u,g}id range.
+            capabilities {
+              add = ["SETUID", "SETGID"]
             }
           }
 
@@ -362,7 +435,7 @@ resource "kubernetes_deployment" "git_runner" {
             sub_path   = "config.yaml"
             read_only  = true
           }
-          # Rootless podman storage: graphroot on a DISK emptyDir (native
+          # Podman storage: graphroot on a DISK emptyDir (native
           # overlay refuses an upperdir on the local-path PVC's overlay);
           # runroot on tmpfs; the Docker-API socket on a shared emptyDir.
           volume_mount {
@@ -452,7 +525,13 @@ resource "kubernetes_deployment" "git_runner" {
         volume {
           name = "podman-graphroot"
           empty_dir {
-            size_limit = "40Gi"
+            # Runner podman image/layer storage. The runner is UNPRIVILEGED so it
+            # uses the vfs driver (no overlay), which full-copies every layer —
+            # heavy (Rust CI) images balloon here. 50Gi is headroom; the real
+            # cure is getting the runner onto overlay (see storage.conf note in
+            # data/images/git-runner/Dockerfile). Bump higher if builds still
+            # evict — artemis has the disk.
+            size_limit = "50Gi"
           }
         }
         volume {
@@ -469,7 +548,7 @@ resource "kubernetes_deployment" "git_runner" {
     }
   }
 
-  depends_on = [module.git_runner_build]
+  depends_on = [module.git_runner_build, module.ci_podman_build]
 }
 
 # ─── NetworkPolicies ─────────────────────────────────────────────────────────

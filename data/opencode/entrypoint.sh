@@ -51,16 +51,13 @@ fi
 install -o root -g opksshuser -m 660 /dev/null /var/log/opkssh.log
 
 # 3. Hand the runtime-mounted dirs that `user` must write over to `user`.
-#    These are k8s volume mounts (the opencode-data PVC + the podman
-#    graphroot/runroot emptyDirs + the git-ssh emptyDir) that arrive
-#    root-owned (fsGroup=0); uid 1001 cannot write them until chowned. Runs
-#    every boot — self-healing across restarts/node migrations. The PVC
-#    chown is O(files); if it ever gets slow, gate on a top-level owner check.
+#    These are k8s volume mounts (the opencode-data PVC + the git-ssh emptyDir)
+#    that arrive root-owned (fsGroup=0); uid 1001 cannot write them until
+#    chowned. Runs every boot — self-healing across restarts/node migrations.
+#    The PVC chown is O(files); if it ever gets slow, gate on a top-level check.
 chown -R "${RUN_UID}:${RUN_GID}" \
   /home/user/.local/share/opencode \
   /home/user/working \
-  /home/user/.local/share/containers \
-  /run/containers \
   /home/user/.ssh 2>/dev/null || true
 # Re-assert 0600 on the host key — the recursive chown above re-touched its
 # dir, and sshd (started next) bails on a loose-perm key.
@@ -76,14 +73,34 @@ chmod 600 "${HOST_KEY}"
 mkdir -p /run/sshd
 /usr/sbin/sshd || echo "WARN: sshd failed to start; continuing without SSH" >&2
 
+# 4b. Forgejo CLI (fj) auth. If a scoped token was minted + delivered
+#     (FORGEJO_TOKEN, from the opencode-forgejo-token Secret the git bootstrap
+#     patches — write:repository,write:issue only, for the RESTRICTED opencode
+#     user; the account password never reaches this pod), write fj's keys.json so
+#     opencode can drive PRs/issues/Actions via `fj` and curl the API with
+#     $FORGEJO_TOKEN. Token is hex (no JSON-escaping needed). Absent on first boot
+#     (before the bootstrap mints it) → skip; Reloader rolls the pod once the
+#     Secret is populated. forgejo-cli is NOT on the opencode-data PVC, so this is
+#     rewritten every boot.
+if [ -n "${FORGEJO_TOKEN:-}" ] && [ -n "${FORGEJO_HOST:-}" ]; then
+  FJ_DIR=/home/user/.local/share/forgejo-cli
+  mkdir -p "$FJ_DIR"
+  cat > "$FJ_DIR/keys.json" <<JSON
+{"hosts":{"${FORGEJO_HOST}":{"type":"Application","name":"opencode","token":"${FORGEJO_TOKEN}"}},"aliases":{},"default_ssh":[]}
+JSON
+  chown -R "${RUN_UID}:${RUN_GID}" "$FJ_DIR"
+  chmod 0600 "$FJ_DIR/keys.json"
+  echo "opencode: fj configured for ${FORGEJO_HOST}"
+else
+  echo "WARN: FORGEJO_TOKEN/FORGEJO_HOST unset; skipping fj auth (picks up after the bootstrap mints the token)" >&2
+fi
+
 # 5. Drop to `user` and exec opencode in the foreground (PID-significant for
 #    the liveness probe). setpriv (not su/runuser): a direct exec with no PAM
 #    session and no intermediate process, so opencode is PID 1's direct
-#    successor. CRITICAL: do NOT pass --no-new-privs — rootless podman's
-#    setuid newuidmap/newgidmap helpers need privilege escalation to map the
-#    subuid range; no_new_privs would neuter them. --init-groups sets `user`'s
-#    supplementary groups from /etc/group (none privileged). HOME must be set
-#    explicitly (setpriv does not).
+#    successor. --init-groups sets `user`'s supplementary groups from
+#    /etc/group (none privileged). HOME must be set explicitly (setpriv does
+#    not).
 export HOME=/home/user
 exec setpriv --reuid="${RUN_UID}" --regid="${RUN_GID}" --init-groups --inh-caps=-all \
   opencode web --hostname 0.0.0.0 --port 4096 "$@"

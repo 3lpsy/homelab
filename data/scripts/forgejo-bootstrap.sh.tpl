@@ -161,11 +161,15 @@ else
     -d "{\"title\":\"$PERSONAL_KEY_TITLE\",\"key\":\"$PERSONAL_PUB\",\"read_only\":false}" >/dev/null
 fi
 
-# ─── 5. Opencode local user ────────────────────────────────────────────────
+# ─── 5. Opencode local user (RESTRICTED, no org creation) ──────────────────
+# opencode is an automated agent: create it as a RESTRICTED account so it can
+# only see/interact with repos + orgs where it's an explicit collaborator/member
+# (not the whole instance), and with org creation disabled. Both are enforced
+# idempotently below so they also apply to a pre-existing user / correct drift.
 if ! $CURL_ADMIN "$API/users/$OPENCODE_USER" >/dev/null 2>&1; then
-  log "creating opencode user"
+  log "creating opencode user (restricted)"
   $CURL_ADMIN -X POST -H "Content-Type: application/json" "$API/admin/users" \
-    -d "{\"login_name\":\"$OPENCODE_USER\",\"username\":\"$OPENCODE_USER\",\"email\":\"$OPENCODE_EMAIL\",\"password\":\"$OPENCODE_USER_PASSWORD\",\"must_change_password\":false,\"source_id\":0}" >/dev/null
+    -d "{\"login_name\":\"$OPENCODE_USER\",\"username\":\"$OPENCODE_USER\",\"email\":\"$OPENCODE_EMAIL\",\"password\":\"$OPENCODE_USER_PASSWORD\",\"must_change_password\":false,\"source_id\":0,\"restricted\":true}" >/dev/null
 else
   log "opencode user exists; reconciling password from Vault"
   # Password-only PATCH for a local user — Forgejo uses the existing
@@ -174,6 +178,15 @@ else
   $CURL_ADMIN -X PATCH -H "Content-Type: application/json" "$API/admin/users/$OPENCODE_USER" \
     -d "{\"password\":\"$OPENCODE_USER_PASSWORD\"}" >/dev/null
 fi
+
+# Enforce restricted + disable org creation (idempotent; covers the create path,
+# the reconcile path, and any manual drift). EditUserOption: restricted +
+# allow_create_organization. login_name/source_id omitted (opencode is local;
+# the "must be set together or omitted together" rule is satisfied by omitting
+# both, exactly like the password-only PATCH above).
+log "enforcing restricted + no-org-creation on $OPENCODE_USER"
+$CURL_ADMIN -X PATCH -H "Content-Type: application/json" "$API/admin/users/$OPENCODE_USER" \
+  -d "{\"restricted\":true,\"allow_create_organization\":false}" >/dev/null
 
 # ─── 6. Register opencode SSH key ──────────────────────────────────────────
 OPENCODE_PUB=$(cat /etc/keys/opencode.pub)
@@ -184,6 +197,41 @@ else
   $CURL_ADMIN -X POST -H "Content-Type: application/json" \
     "$API/admin/users/$OPENCODE_USER/keys" \
     -d "{\"title\":\"$OPENCODE_KEY_TITLE\",\"key\":\"$OPENCODE_PUB\",\"read_only\":false}" >/dev/null
+fi
+
+# ─── 7. Mint opencode's scoped Forgejo API token + deliver to opencode ns ───
+# opencode's `fj` CLI / API access. Mint a token scoped to
+# ${opencode_token_scopes} for the RESTRICTED opencode user via the OFFLINE admin
+# CLI (works without the user's password — and the password never leaves Forgejo).
+# Then PATCH it into the opencode-forgejo-token Secret in the opencode namespace
+# via the k8s API, authenticating with the bootstrap pod's `git` SA token (its
+# only API right is get/patch on that one Secret). Idempotent: generate-access-token fails
+# if the named token already exists, so re-runs skip and leave the already-
+# delivered Secret intact. Rotate: delete the token in Forgejo + clear the
+# Secret's data, then re-run this bootstrap.
+OPENCODE_TOKEN_NAME="${opencode_token_name}"
+OPENCODE_TOKEN_SCOPES="${opencode_token_scopes}"
+OPENCODE_TOKEN_NS="${opencode_token_namespace}"
+OPENCODE_TOKEN_SECRET="${opencode_token_secret}"
+
+if NEW_TOKEN=$(forgejo admin user generate-access-token \
+      --username "$OPENCODE_USER" \
+      --token-name "$OPENCODE_TOKEN_NAME" \
+      --scopes "$OPENCODE_TOKEN_SCOPES" \
+      --raw 2>/dev/null); then
+  log "minted opencode token '$OPENCODE_TOKEN_NAME' ($OPENCODE_TOKEN_SCOPES); delivering to $OPENCODE_TOKEN_NS/$OPENCODE_TOKEN_SECRET"
+  SA=/var/run/secrets/kubernetes.io/serviceaccount
+  K8S_TOKEN_B64=$(printf '%s' "$NEW_TOKEN" | base64 | tr -d '\n')
+  curl -fsS \
+    --cacert "$SA/ca.crt" \
+    -H "Authorization: Bearer $(cat "$SA/token")" \
+    -H "Content-Type: application/merge-patch+json" \
+    -X PATCH \
+    "https://kubernetes.default.svc/api/v1/namespaces/$OPENCODE_TOKEN_NS/secrets/$OPENCODE_TOKEN_SECRET" \
+    -d "{\"data\":{\"token\":\"$K8S_TOKEN_B64\"}}" >/dev/null
+  log "opencode token delivered (Reloader will roll opencode to pick it up)"
+else
+  log "opencode token '$OPENCODE_TOKEN_NAME' already exists; leaving existing Secret"
 fi
 
 log "bootstrap complete"

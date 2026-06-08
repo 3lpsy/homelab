@@ -75,6 +75,12 @@ variable "enable_atlantic_gso_fix" {
   default     = false
 }
 
+variable "enable_user_namespaces" {
+  type        = bool
+  description = "Provision a subordinate uid/gid pool for root in /etc/subuid + /etc/subgid, supporting pods that set hostUsers:false (Kubernetes user namespaces). NOTE: with containerd the kubelet allocates host ranges itself, so this is likely a no-op (it's a CRI-O-style requirement); it's harmless and provisioned for completeness."
+  default     = false
+}
+
 variable "k3s_role" {
   type        = string
   description = "K3s install role. \"server\" = control-plane node that also runs workloads (delphi). \"agent\" = worker-only node that joins an existing server's control plane (artemis). Agents require k3s_server_url + k3s_token."

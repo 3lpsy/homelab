@@ -8,6 +8,10 @@ http {
     server localhost:5000;
   }
 
+  upstream registry_ui {
+    server localhost:8080;
+  }
+
   client_max_body_size 0;
   chunked_transfer_encoding on;
 
@@ -45,6 +49,33 @@ http {
 
       auth_basic           "Docker Registry";
       auth_basic_user_file /etc/nginx/htpasswd;
+    }
+
+    # Registry web UI (Joxit) served at /ui. Joxit has no runtime base-path
+    # option and serves the SPA with root-absolute asset paths, so we strip the
+    # /ui prefix to its container (proxy_pass trailing slash) AND sub_filter the
+    # served HTML/JS to repoint root-absolute asset URLs under /ui/. The SPA
+    # calls the registry API at https://<host>/v2/ (same origin → no CORS). Same
+    # basic-auth realm as /v2/, so one login covers the UI and its API calls.
+    location = /ui {
+      return 301 /ui/;
+    }
+    location /ui/ {
+      auth_basic           "Docker Registry";
+      auth_basic_user_file /etc/nginx/htpasswd;
+
+      proxy_pass http://registry_ui/;
+      proxy_set_header Host $http_host;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      # sub_filter must see uncompressed responses to rewrite them.
+      proxy_set_header Accept-Encoding "";
+
+      sub_filter_once  off;
+      sub_filter_types text/html application/javascript application/json;
+      sub_filter '<base href="/">' '<base href="/ui/">';
+      sub_filter 'href="/'         'href="/ui/';
+      sub_filter 'src="/'          'src="/ui/';
+      sub_filter '"/static/'       '"/ui/static/';
     }
 
     location = / {

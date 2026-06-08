@@ -137,16 +137,16 @@ variable "git_runner_version" {
   # built FROM fedora + this binary (data/images/git-runner/Dockerfile) rather
   # than the official data.forgejo.org/forgejo/runner image, because the latter
   # is Alpine with no container runtime (the docs pair it with a privileged
-  # docker:dind sidecar) — we bake rootless podman instead.
+  # docker:dind sidecar) — we bake podman in.
   description = "Pinned forgejo-runner release built into the git-runner image (data/images/git-runner/Dockerfile)."
   type        = string
   default     = "12.10.2"
 }
 
 variable "git_runner_storage_size" {
-  description = "PVC size for the Forgejo Actions runner (holds the .runner file + act cache)."
+  description = "PVC size for the Forgejo Actions runner: .runner file + act cache + /data/build-cache (the dev-release incremental CARGO_HOME/CARGO_TARGET_DIR injected into jobs as /cache). target/ + cargo registry are large, hence the bump."
   type        = string
-  default     = "20Gi"
+  default     = "60Gi"
 }
 
 variable "registry_domain" {

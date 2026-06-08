@@ -44,6 +44,16 @@ locals {
     # remove via UI: Settings → SSH/GPG Keys.
     personal_key_title = "personal-default-${substr(sha256(var.git_personal_user_ssh_pub_key), 0, 12)}"
     opencode_key_title = "opencode-cluster-${substr(sha256(tls_private_key.opencode_git_ssh.public_key_openssh), 0, 12)}"
+
+    # opencode Forgejo API token (for its `fj` CLI). The bootstrap mints a
+    # write:repository,write:issue token for the restricted opencode user and
+    # PATCHes it into the opencode-forgejo-token Secret in the opencode ns
+    # (kubernetes_secret.opencode_forgejo_token), via the k8s API using the
+    # bootstrap pod's `git` SA token (RBAC: kubernetes_role.opencode_forgejo_token_writer).
+    opencode_token_name      = "opencode-fj"
+    opencode_token_scopes    = "write:repository,write:issue"
+    opencode_token_namespace = kubernetes_namespace.opencode.metadata[0].name
+    opencode_token_secret    = kubernetes_secret.opencode_forgejo_token.metadata[0].name
   })
 }
 
@@ -60,6 +70,7 @@ resource "kubernetes_service_account" "git" {
   }
   automount_service_account_token = false
 }
+
 
 # ─── Secrets (Vault is canonical) ─────────────────────────────────────────────
 resource "random_password" "git_secret_key" {
@@ -846,8 +857,15 @@ resource "kubernetes_job_v1" "git_bootstrap" {
         labels = { app = "forgejo-bootstrap" }
       }
       spec {
-        restart_policy       = "OnFailure"
-        service_account_name = kubernetes_service_account.git.metadata[0].name
+        restart_policy = "OnFailure"
+        # Use the Vault-authorized `git` SA (the CSI secrets-store mount logs into
+        # Vault as this SA; a different SA gets "service account name not
+        # authorized"). Override automount to TRUE for this one-shot Job pod so the
+        # bootstrap can PATCH the opencode token Secret via the k8s API — the SA
+        # default stays automount=false, so the long-running forgejo pod gets no
+        # token.
+        service_account_name            = kubernetes_service_account.git.metadata[0].name
+        automount_service_account_token = true
 
         # Must land on artemis alongside the live forgejo pod — it mounts the
         # same node-bound git-data PVC. Unpinned it could schedule on delphi

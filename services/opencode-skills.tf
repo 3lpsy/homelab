@@ -27,7 +27,7 @@
 # No ConfigMap-key or volume-items edit — both sides are dynamic.
 
 locals {
-  # <name>/SKILL.md relative paths, e.g. "podman/SKILL.md".
+  # <name>/SKILL.md relative paths, e.g. "rust-review/SKILL.md".
   opencode_skill_files = fileset("${path.module}/../data/opencode/skills", "*/SKILL.md")
   # Skill names = the directory component. Used here for the ConfigMap keys
   # and in services/opencode.tf for the dynamic volume `items` blocks.

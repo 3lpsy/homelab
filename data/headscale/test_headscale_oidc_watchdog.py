@@ -18,7 +18,7 @@ from pathlib import Path
 TPL = Path(__file__).with_name("headscale-oidc-watchdog.sh.tpl")
 
 
-def render(tpl_text: str, magic_fqdn_suffix: str = "hs.fgsci.com") -> str:
+def render(tpl_text: str, magic_fqdn_suffix: str) -> str:
     """Mimic Terraform templatefile(): interpolate the one var, then
     collapse the doubled escapes ($${ -> ${, %%{ -> %{)."""
     return (

@@ -28,3 +28,25 @@ module "git_runner_build" {
     kubernetes_config_map.builder_buildkitd_config,
   ]
 }
+
+# BuildKit Job for the CI job image (the `ci-podman` runner label). Podman +
+# Node, built FROM the official podman image — replaces the upstream catthehacker
+# image. Runs PRIVILEGED inside the rootless runner for podman-in-podman; see
+# data/images/ci-podman/Dockerfile + config.yaml.tpl.
+module "ci_podman_build" {
+  source = "./../templates/buildkit-job"
+
+  name      = "ci-podman"
+  image_ref = local.ci_podman_image
+
+  context_files = {
+    "Dockerfile" = file("${path.module}/../data/images/ci-podman/Dockerfile")
+  }
+
+  shared = local.buildkit_job_shared
+
+  depends_on = [
+    kubernetes_secret.builder_registry_pull_secret,
+    kubernetes_config_map.builder_buildkitd_config,
+  ]
+}

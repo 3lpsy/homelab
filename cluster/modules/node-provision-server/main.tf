@@ -247,6 +247,35 @@ EOF
   depends_on = [null_resource.install_deps]
 }
 
+# Subordinate uid/gid pool for root → enables pods with hostUsers:false
+# (Kubernetes user namespaces). Thin + rerunnable: idempotently rewrites only
+# root's line in /etc/subuid + /etc/subgid (the trigger re-runs it if the range
+# changes). Likely a no-op under containerd (kubelet allocates its own ranges)
+# — kept for completeness; harmless. Gated by var.enable_user_namespaces.
+resource "null_resource" "user_namespaces_subid" {
+  count = var.enable_user_namespaces ? 1 : 0
+
+  triggers = {
+    subid = "root:1048576:1073741824"
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_priv_key
+    timeout     = "1m"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "for f in /etc/subuid /etc/subgid; do sudo touch $f; sudo sed -i '/^root:/d' $f; echo '${self.triggers.subid}' | sudo tee -a $f >/dev/null; done",
+    ]
+  }
+
+  depends_on = [null_resource.install_deps]
+}
+
 # Aquantia/Marvell AQC-series NICs on the in-tree `atlantic` driver ship a
 # broken UDP segmentation offload. TCP (TSO) hits line rate, but GSO'd UDP
 # super-packets get mangled, which collapses any UDP-tunnel throughput —
