@@ -58,14 +58,17 @@ resource "kubernetes_role" "mcp_k8s_reader" {
   # deployments (monitoring) are not in this list — they exist by the time
   # this deployment runs.
   depends_on = [
+    kubernetes_namespace.amd_gpu,
     kubernetes_namespace.builder,
     kubernetes_namespace.exitnode,
     kubernetes_namespace.frigate,
     kubernetes_namespace.homeassist,
     kubernetes_namespace.litellm,
+    kubernetes_namespace.llm,
     kubernetes_namespace.mcp,
     kubernetes_namespace.navidrome,
     kubernetes_namespace.nextcloud,
+    kubernetes_namespace.pdf,
     kubernetes_namespace.pihole,
     kubernetes_namespace.radicale,
     kubernetes_namespace.registry,
@@ -136,14 +139,17 @@ resource "kubernetes_role_binding" "mcp_k8s_reader" {
   # the binding lives in the target namespace and would race namespace
   # creation otherwise.
   depends_on = [
+    kubernetes_namespace.amd_gpu,
     kubernetes_namespace.builder,
     kubernetes_namespace.exitnode,
     kubernetes_namespace.frigate,
     kubernetes_namespace.homeassist,
     kubernetes_namespace.litellm,
+    kubernetes_namespace.llm,
     kubernetes_namespace.mcp,
     kubernetes_namespace.navidrome,
     kubernetes_namespace.nextcloud,
+    kubernetes_namespace.pdf,
     kubernetes_namespace.pihole,
     kubernetes_namespace.radicale,
     kubernetes_namespace.registry,

@@ -109,8 +109,14 @@ resource "kubernetes_daemonset" "otel_collector" {
           }
 
           resources {
-            requests = { cpu = "100m", memory = "128Mi" }
-            limits   = { cpu = "500m", memory = "256Mi" }
+            # Bumped from 128Mi/256Mi: the delphi DaemonSet pod (control-plane
+            # node = far more pods → the filelog receiver tracks far more
+            # /var/log/pods files) climbed steadily into the 256Mi limit and
+            # OOMKilled (137) on a loop; artemis idled flat at ~245Mi, i.e. right
+            # at the old ceiling with no headroom. 512Mi gives the busy node room;
+            # request raised to 256Mi to match real steady-state usage.
+            requests = { cpu = "100m", memory = "256Mi" }
+            limits   = { cpu = "500m", memory = "512Mi" }
           }
 
           liveness_probe {

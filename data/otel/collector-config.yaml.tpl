@@ -10,6 +10,11 @@ receivers:
     # ReplicaSet revisions of the pod.
     exclude:
       - /var/log/pods/thunderbolt_thunderbolt-mongo-*/mongo/*.log
+      # halogen (podcasts app) is in active dev at debug level — keep its
+      # verbose app logs OUT of OpenObserve (kubectl logs still has them). Only
+      # the `podcasts` app container; the `podcasts-nginx` sidecar's JSON access
+      # logs still flow for per-service access analytics.
+      - /var/log/pods/podcasts_*/podcasts/*.log
     start_at: end
     include_file_path: true
     include_file_name: false

@@ -108,6 +108,39 @@ fn map_kube_err(e: kube::Error, what: &str) -> ErrorData {
     }
 }
 
+/// Hard deadline for a kube API future. Without it a stalled API-server
+/// connection or a stale projected SA token (these expire ~hourly) hangs the
+/// tool indefinitely — observed as a multi-hour hang on a CronJob namespace
+/// whose pods were Init:Error. On timeout the call is aborted and a clear error
+/// is returned to the agent; the next call re-establishes the connection /
+/// refreshes the token. Split from `k8s_call` so it's unit-testable without a
+/// cluster.
+async fn with_deadline<F, T>(
+    timeout: std::time::Duration,
+    what: &str,
+    fut: F,
+) -> Result<T, ErrorData>
+where
+    F: std::future::Future<Output = Result<T, kube::Error>>,
+{
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(map_kube_err(e, what)),
+        Err(_elapsed) => Err(tool_internal(format!(
+            "k8s API timeout after {}s: {what} — request aborted (API server unreachable or the ServiceAccount token went stale; retry to re-establish)",
+            timeout.as_secs()
+        ))),
+    }
+}
+
+/// `with_deadline` using the configured `api_timeout`. Wrap every kube call.
+async fn k8s_call<F, T>(cfg: &Arc<Config>, what: &str, fut: F) -> Result<T, ErrorData>
+where
+    F: std::future::Future<Output = Result<T, kube::Error>>,
+{
+    with_deadline(cfg.api_timeout, what, fut).await
+}
+
 fn pod_summary(pod: &Pod) -> Value {
     let meta = &pod.metadata;
     let spec = pod.spec.as_ref();
@@ -242,10 +275,12 @@ pub async fn pods_list(
     if let Some(f) = args.field_selector {
         params = params.fields(&f);
     }
-    let list = api
-        .list(&params)
-        .await
-        .map_err(|e| map_kube_err(e, &format!("list pods in {}", args.namespace)))?;
+    let list = k8s_call(
+        cfg,
+        &format!("list pods in {}", args.namespace),
+        api.list(&params),
+    )
+    .await?;
     let mut items: Vec<Pod> = list.items;
     let truncated = items.len() > cfg.max_pods;
     items.truncate(cfg.max_pods);
@@ -280,10 +315,12 @@ pub async fn pods_get(
 ) -> Result<CallToolResult, ErrorData> {
     check_ns(cfg, &args.namespace)?;
     let api: Api<Pod> = Api::namespaced(cfg.client.clone(), &args.namespace);
-    let pod = api
-        .get(&args.name)
-        .await
-        .map_err(|e| map_kube_err(e, &format!("get pod {}/{}", args.namespace, args.name)))?;
+    let pod = k8s_call(
+        cfg,
+        &format!("get pod {}/{}", args.namespace, args.name),
+        api.get(&args.name),
+    )
+    .await?;
 
     if args.detail == "full" {
         let mut v = pod_to_value(&pod);
@@ -298,10 +335,10 @@ pub async fn pods_get(
     let ev_params = ListParams::default()
         .fields(&format!("involvedObject.name={}", args.name))
         .limit(10);
-    let recent = events_api
-        .list(&ev_params)
+    let recent = tokio::time::timeout(cfg.api_timeout, events_api.list(&ev_params))
         .await
         .ok()
+        .and_then(Result::ok)
         .map(|l| {
             l.items
                 .into_iter()
@@ -364,10 +401,12 @@ pub async fn pods_log(
     let container = if let Some(c) = args.container.clone() {
         c
     } else {
-        let pod = api
-            .get(&args.name)
-            .await
-            .map_err(|e| map_kube_err(e, &format!("get pod {}/{}", args.namespace, args.name)))?;
+        let pod = k8s_call(
+            cfg,
+            &format!("get pod {}/{}", args.namespace, args.name),
+            api.get(&args.name),
+        )
+        .await?;
         let names: Vec<String> = pod
             .spec
             .as_ref()
@@ -391,10 +430,17 @@ pub async fn pods_log(
     if let Some(s) = args.since_seconds {
         lp.since_seconds = Some(s);
     }
-    let body = api
-        .logs(&args.name, &lp)
-        .await
-        .map_err(|e| map_kube_err(e, &format!("logs {}/{}", args.namespace, args.name)))?;
+    // If the target container never started (e.g. an init failed, leaving the
+    // app container in PodInitializing) there are no logs — the k8s API returns
+    // 400, which map_kube_err surfaces verbatim ("container ... is waiting to
+    // start: PodInitializing") rather than hanging. previous=true fetches a
+    // terminated container's last logs where available.
+    let body = k8s_call(
+        cfg,
+        &format!("logs {}/{}", args.namespace, args.name),
+        api.logs(&args.name, &lp),
+    )
+    .await?;
 
     let bytes = body.as_bytes();
     let mut truncated_head = false;
@@ -440,14 +486,20 @@ pub async fn pods_top(
         None => Api::all_with(cfg.client.clone(), &ar),
     };
 
-    let list = match api.list(&ListParams::default()).await {
-        Ok(l) => l,
-        Err(kube::Error::Api(api_err)) if api_err.code == 503 || api_err.code == 404 => {
+    let list = match tokio::time::timeout(cfg.api_timeout, api.list(&ListParams::default())).await {
+        Ok(Ok(l)) => l,
+        Ok(Err(kube::Error::Api(api_err))) if api_err.code == 503 || api_err.code == 404 => {
             return Err(tool_invalid(
                 "metrics-server unavailable (metrics.k8s.io API not registered)",
             ));
         }
-        Err(e) => return Err(map_kube_err(e, "list pod metrics")),
+        Ok(Err(e)) => return Err(map_kube_err(e, "list pod metrics")),
+        Err(_) => {
+            return Err(tool_internal(format!(
+                "k8s API timeout after {}s: list pod metrics — request aborted",
+                cfg.api_timeout.as_secs()
+            )))
+        }
     };
 
     let _ = gvr; // suppress unused
@@ -548,10 +600,12 @@ pub async fn events_list(
     if let Some(f) = args.field_selector {
         params = params.fields(&f);
     }
-    let list = api
-        .list(&params)
-        .await
-        .map_err(|e| map_kube_err(e, &format!("list events in {}", args.namespace)))?;
+    let list = k8s_call(
+        cfg,
+        &format!("list events in {}", args.namespace),
+        api.list(&params),
+    )
+    .await?;
 
     let allowed_types: std::collections::HashSet<String> = args
         .types
@@ -642,4 +696,31 @@ fn event_to_summary(ev: &Event) -> Value {
 fn json_ok<T: Serialize>(v: &T) -> Result<CallToolResult, ErrorData> {
     let text = serde_json::to_string(v).map_err(|e| tool_internal(format!("serialize: {e}")))?;
     Ok(CallToolResult::success(vec![Content::text(text)]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_deadline;
+    use std::time::Duration;
+
+    // A future that resolves before the deadline passes through unchanged.
+    #[tokio::test]
+    async fn fast_future_passes_through() {
+        let r: Result<i32, _> =
+            with_deadline(Duration::from_secs(5), "fast", async { Ok::<i32, kube::Error>(42) })
+                .await;
+        assert_eq!(r.unwrap(), 42);
+    }
+
+    // A future slower than the deadline is aborted with an error — never hangs.
+    // 10ms real deadline vs a 60s sleep → returns in ~10ms (no test-util needed).
+    #[tokio::test]
+    async fn slow_future_times_out() {
+        let r: Result<i32, _> = with_deadline(Duration::from_millis(10), "slow", async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            Ok::<i32, kube::Error>(1)
+        })
+        .await;
+        assert!(r.is_err(), "a call past the deadline must error, not hang");
+    }
 }

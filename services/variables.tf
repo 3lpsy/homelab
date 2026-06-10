@@ -693,6 +693,65 @@ variable "audiobookshelf_opml_path" {
   default     = "data/audiobookshelf/podcasts.opml"
 }
 
+# ─── halogen (self-hosted podcast app, dogfooded) ───────────────────────────
+# Separate from audiobookshelf: own `podcasts` namespace, own tailnet node at
+# `pod.<magic>` (audiobookshelf owns `podcast.<magic>`), same podcast_server_user.
+# Image is built + pushed as `halogen:dev` by git-runner — never built here.
+
+variable "podcasts_domain" {
+  description = "Tailnet hostname / TLS CN short name for halogen. Must not collide with audiobookshelf_domain (`podcast`)."
+  type        = string
+  default     = "pod"
+}
+
+variable "podcasts_storage_size" {
+  description = "PVC size for halogen's /data (sqlite DB + downloaded episode audio under /data/media)."
+  type        = string
+  default     = "50Gi"
+}
+
+variable "podcasts_admin_username" {
+  description = "Username for the admin account halogen seeds on first boot (HALOGEN_ADMIN_USERNAME). Password is a generated random_password stored in Vault."
+  type        = string
+  default     = "jim"
+}
+
+variable "podcasts_opml_path" {
+  description = "Path (relative to repo root) to an OPML file halogen imports on every boot (idempotent — existing feed URLs are skipped). Defaults to the shared gitignored audiobookshelf list; falls back to the checked-in example on a clean clone."
+  type        = string
+  default     = "data/audiobookshelf/podcasts.opml"
+}
+
+variable "podcasts_log_level" {
+  description = "HALOGEN_LOG_LEVEL (trace/debug/info/warn/error). Set to debug while halogen is in active development; its app logs are excluded from OpenObserve (see the filelog exclude in data/otel/collector-config.yaml.tpl) so the verbose output stays on the pod's stdout (kubectl logs) only."
+  type        = string
+  default     = "debug"
+}
+
+variable "podcasts_sync_on_start" {
+  description = "HALOGEN_SUBSCRIPTION_SYNC_ON_START — run a full RSS sync immediately on boot instead of waiting for the background poller (which otherwise picks feeds up within podcasts_poll_wake_interval_seconds)."
+  type        = bool
+  default     = true
+}
+
+variable "podcasts_fallback_poll_interval_seconds" {
+  description = "HALOGEN_SUBSCRIPTION_FALLBACK_POLL_INTERVAL — default per-feed RSS poll interval."
+  type        = number
+  default     = 3600
+}
+
+variable "podcasts_fallback_max_episodes" {
+  description = "HALOGEN_SUBSCRIPTION_FALLBACK_MAX_EPISODES — max episodes fetched per podcast."
+  type        = number
+  default     = 50
+}
+
+variable "podcasts_max_concurrent_downloads" {
+  description = "HALOGEN_SUBSCRIPTION_MAX_CONCURRENT_DOWNLOADS — parallel episode downloads."
+  type        = number
+  default     = 3
+}
+
 variable "audiobookshelf_podcast_default_max_episodes" {
   description = "Default `maxEpisodesToKeep` applied to every imported podcast (FIFO retention — newest N kept regardless of listened state). Set to 0 for unlimited. Per-podcast overrides allowed via audiobookshelf_auto_download_podcasts."
   type        = number
@@ -1108,6 +1167,7 @@ variable "mcp_k8s_allowed_namespaces" {
     # current namespace (events_list with no namespace arg) don't 403 —
     # there are no workloads here, so read grants are benign.
     "default",
+    "amd-gpu",
     "audiobookshelf",
     "builder",
     "collabora",
@@ -1123,6 +1183,7 @@ variable "mcp_k8s_allowed_namespaces" {
     "kube-state-metrics",
     "kube-system",
     "litellm",
+    "llm",
     "mcp",
     "navidrome",
     "nextcloud",
@@ -1131,6 +1192,7 @@ variable "mcp_k8s_allowed_namespaces" {
     "opencode",
     "openobserve",
     "otel-collector",
+    "pdf",
     "pihole",
     "prometheus",
     "provisioner",

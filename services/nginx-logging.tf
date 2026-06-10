@@ -31,6 +31,7 @@ locals {
     "openobserve",
     "opencode",
     "pdf",
+    "podcasts",
     "pihole",
     "prometheus",
     "qbt",

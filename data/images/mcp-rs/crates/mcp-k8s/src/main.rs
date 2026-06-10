@@ -29,6 +29,9 @@ async fn main() -> Result<(), McpError> {
     let max_events = env::env_usize("MCP_MAX_EVENTS", 200)?;
     let max_log_bytes = env::env_usize("MCP_MAX_LOG_BYTES", 65536)?;
     let max_log_tail_lines = env::env_usize("MCP_MAX_LOG_TAIL_LINES", 2000)?;
+    // Hard deadline on every kube API call so a stalled connection / expired SA
+    // token can never hang a tool. 30s default.
+    let api_timeout = std::time::Duration::from_secs_f64(env::env_f64("MCP_K8S_API_TIMEOUT", 30.0)?);
 
     let auth = BearerLayer::from_env()?;
     tracing::info!(
@@ -40,6 +43,7 @@ async fn main() -> Result<(), McpError> {
         max_events,
         max_log_bytes,
         max_log_tail_lines,
+        api_timeout_secs = api_timeout.as_secs_f64(),
         "startup"
     );
 
@@ -61,6 +65,7 @@ async fn main() -> Result<(), McpError> {
         max_events,
         max_log_bytes,
         max_log_tail_lines,
+        api_timeout,
     });
 
     let addr: SocketAddr = format!("{host}:{port}")

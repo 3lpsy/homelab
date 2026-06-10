@@ -25,6 +25,10 @@ pub struct Config {
     pub max_events: usize,
     pub max_log_bytes: usize,
     pub max_log_tail_lines: usize,
+    /// Hard per-call deadline for every kube API request. Without it a stalled
+    /// API-server connection or a stale projected SA token (these tokens expire
+    /// ~hourly) hangs the tool indefinitely — observed as a multi-hour hang.
+    pub api_timeout: std::time::Duration,
 }
 
 #[derive(Clone)]

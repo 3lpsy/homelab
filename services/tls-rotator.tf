@@ -30,6 +30,8 @@ locals {
   rotated_certs = [
     # User-facing service certs (`nextcloud`, `mcp`, `searxng`, `litellm`,
     # `thunderbolt`, etc. namespaces).
+    { name = "podcasts", domain = "${var.git_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "podcasts/tls" },
+    { name = "git", domain = "${var.git_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "git/tls" },
     { name = "nextcloud", domain = "${var.nextcloud_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "nextcloud/tls" },
     { name = "collabora", domain = "${var.collabora_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "collabora/tls" },
     { name = "immich", domain = "${var.immich_domain}.${var.headscale_subdomain}.${var.headscale_magic_domain}", vault_path = "immich/tls" },
@@ -117,7 +119,7 @@ resource "kubernetes_manifest" "tls_rotator_cronjob" {
 
               hostAliases = [
                 {
-                  ip = data.terraform_remote_state.vault.outputs.vault_cluster_ip
+                  ip        = data.terraform_remote_state.vault.outputs.vault_cluster_ip
                   hostnames = ["vault.${var.headscale_subdomain}.${var.headscale_magic_domain}"]
                 },
               ]
@@ -126,8 +128,8 @@ resource "kubernetes_manifest" "tls_rotator_cronjob" {
               # netpol-ipset registration race — see data/scripts/wait-for-vault.sh.tpl.
               initContainers = [
                 {
-                  name    = "wait-for-vault"
-                  image   = var.image_busybox
+                  name  = "wait-for-vault"
+                  image = var.image_busybox
                   command = [
                     "sh", "-c",
                     templatefile("${path.module}/../data/scripts/wait-for-vault.sh.tpl", {
@@ -144,9 +146,9 @@ resource "kubernetes_manifest" "tls_rotator_cronjob" {
 
               containers = [
                 {
-                  name              = "rotate"
-                  image             = local.tls_rotator_image
-                  imagePullPolicy   = "Always"
+                  name            = "rotate"
+                  image           = local.tls_rotator_image
+                  imagePullPolicy = "Always"
                   env = [
                     { name = "VAULT_ADDR", value = local.vault_tailnet_url_for_rotator },
                     { name = "VAULT_ROLE", value = vault_kubernetes_auth_backend_role.tls_rotator.role_name },
